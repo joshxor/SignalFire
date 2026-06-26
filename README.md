@@ -159,17 +159,3 @@ releases/                         Optional release zip archive copies
 * Full recruitment details are preserved in the addon UI instead of being forced into one chat message.
 
 ---
-
-## Future Ideas
-
-* Add support for Triumvirate’s dedicated guild recruitment channel as a preferred Recruitment Post Creator broadcast target.
-* Add a channel preference dropdown for recruitment broadcasts.
-* Add optional chat-link display modes.
-* Continue parser tuning for Triumvirate-specific dungeon, raid, world boss, and recruitment language.
-* Add more screenshots and visual documentation.
-
----
-
-## Maintainer
-
-Created and maintained for the Triumvirate community by **hs0j**.
