@@ -1,4 +1,4 @@
-﻿
+
 local function BLFG_IsFavorite(name)
   if not name or not BronzeLFGDB or not BronzeLFGDB.favorites then return false end
   local key = tostring(name):lower()
