@@ -15,7 +15,7 @@ end
 -- BronzeNet profiles, right-click options, autosave settings, UI polish.
 -- WoW 3.3.5 / Bronzebeard compatible.
 
-local VERSION = "5.7.19-stalelinkfix"
+local VERSION = SignalFire_VERSION or "1.4.23"
 local CHANNEL = "BLFG"
 local PREFIX = "BLFG312"
 
@@ -162,8 +162,36 @@ end
 local function playerName() return UnitName("player") or "Unknown" end
 local function playerLevel() return UnitLevel("player") or 60 end
 local function playerClass()
-  local c, f = UnitClass("player")
-  return c or "Unknown", f or "UNKNOWN"
+  local unitName, unitFile = "", ""
+  if UnitClass then unitName, unitFile = UnitClass("player") end
+  local guidName, guidFile = "", ""
+  if UnitGUID and GetPlayerInfoByGUID then
+    local guid = UnitGUID("player")
+    if guid then guidName, guidFile = GetPlayerInfoByGUID(guid) end
+  end
+
+  local uiName = ""
+  if CharacterClassText and CharacterClassText.GetText then
+    uiName = CharacterClassText:GetText() or ""
+  end
+
+  local f = (unitFile and unitFile ~= "") and unitFile or guidFile
+  local c = (unitName and unitName ~= "") and unitName or ""
+  local tokenLike = c == "" or c == f or string.find(c, "^[A-Z_]+$") ~= nil
+  if tokenLike and uiName ~= "" then c = uiName end
+  if (c == "" or c == f or string.find(c, "^[A-Z_]+$") ~= nil) and f and f ~= "" then
+    local upper = string.upper(tostring(f))
+    local localized = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[upper])
+      or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[upper])
+    if localized and localized ~= "" then c = localized end
+  end
+  if (c == "" or c == f or string.find(c, "^[A-Z_]+$") ~= nil) and guidName and guidName ~= "" and string.find(guidName, "^[A-Z_]+$") == nil then
+    c = guidName
+  end
+
+  if not c or c == "" then c = "Unknown" end
+  if not f or f == "" then f = "UNKNOWN" end
+  return c, f
 end
 local function memberCount()
   local raid = GetNumRaidMembers and GetNumRaidMembers() or 0
@@ -532,15 +560,15 @@ local function serializePresence()
   local spec = (BronzeLFG_DB and BronzeLFG_DB.profile and BronzeLFG_DB.profile.roleType) or ""
   local zone = currentZoneText()
   local guild = myGuildName()
-  return table.concat({PREFIX, "PING", clean(playerName()), clean(VERSION), clean(playerLevel()), clean(classFile or className), clean(role), clean(zone), clean(guild), clean(now()), clean(spec)}, "~")
+  return table.concat({PREFIX, "PING", clean(playerName()), clean(VERSION), clean(playerLevel()), clean(classFile or className), clean(role), clean(zone), clean(guild), clean(now()), clean(spec), clean(className or classFile)}, "~")
 end
 
 local function parsePresence(p)
   -- 3.7.5 sent seen at p[8]. 3.7.6 sends zone/guild/seen at p[8]/p[9]/p[10]. 3.9.0 adds spec at p[11].
   if tonumber(p[10]) then
-    return {name=p[3], version=p[4], level=p[5], classFile=p[6], role=p[7], zone=p[8], guild=p[9], seen=tonumber(p[10]) or now(), spec=p[11] or ""}
+    return {name=p[3], version=p[4], level=p[5], classFile=p[6], role=p[7], zone=p[8], guild=p[9], seen=tonumber(p[10]) or now(), spec=p[11] or "", className=p[12] or ""}
   end
-  return {name=p[3], version=p[4], level=p[5], classFile=p[6], role=p[7], zone="", guild="", seen=tonumber(p[8]) or now(), spec=""}
+  return {name=p[3], version=p[4], level=p[5], classFile=p[6], role=p[7], zone="", guild="", seen=tonumber(p[8]) or now(), spec="", className=""}
 end
 
 
@@ -741,6 +769,12 @@ if not SF_PUBLIC_PROFILE or (SF_PUBLIC_PROFILE.features and SF_PUBLIC_PROFILE.fe
 end
 PUBLIC_RAID_ACTIVITIES = SFProfileSet("raidActivities", PUBLIC_RAID_ACTIVITIES)
 
+-- SignalFire 1.4.30b: canonical activity names remain valid parser hints even
+-- when they are not exposed by the active profile's Create Listing pool.
+-- This keeps ordinary ICC/HoL advertisements classified as Raid/Dungeon.
+PUBLIC_DUNGEON_ACTIVITIES["Halls of Lightning"] = true
+PUBLIC_RAID_ACTIVITIES["Icecrown Citadel"] = true
+
 local function isPublicGuildText(text)
   local s = lower(cleanPublicChatText(text or ""))
   if string.find(s, "guild on", 1, true) or string.find(s, "top 2 guild", 1, true) or string.find(s, "top 5 guild", 1, true) or string.find(s, "competitive", 1, true) and string.find(s, "guild", 1, true) then return true end
@@ -757,7 +791,7 @@ local function isPublicGuildText(text)
   if string.find(s, "looking for new", 1, true) and (string.find(s, "players", 1, true) or string.find(s, "members", 1, true)) then return true end
   if string.find(s, "new and old players", 1, true) or string.find(s, "old players alike", 1, true) then return true end
   if string.find(s, "progress in a relaxed", 1, true) or string.find(s, "welcoming", 1, true) and string.find(s, "inclusive", 1, true) then return true end
-  if string.find(s, "<", 1, true) and string.find(s, ">", 1, true) and (string.find(s, "recruit", 1, true) or string.find(s, "seeking", 1, true) or string.find(s, "accepting", 1, true) or string.find(s, "join", 1, true) or string.find(s, "looking for", 1, true) or string.find(s, "players", 1, true) or string.find(s, "members", 1, true)) then return true end
+  if string.find(s, "<", 1, true) and string.find(s, ">", 1, true) and (string.find(s, "recruit", 1, true) or string.find(s, "seeking", 1, true) or string.find(s, "accepting", 1, true) or string.find(s, "join", 1, true) or string.find(s, "consider", 1, true) or string.find(s, "guild tag", 1, true) or string.find(s, "looking for", 1, true) or string.find(s, "players", 1, true) or string.find(s, "members", 1, true)) then return true end
   return false
 end
 
@@ -800,6 +834,13 @@ local function isPublicExternalAdText(text)
   local s = lower(cleanPublicChatText(text or ""))
   local hasLink = string.find(s, "youtube", 1, true) or string.find(s, "youtu.be", 1, true) or string.find(s, "twitch", 1, true) or string.find(s, "kick.com", 1, true) or string.find(s, "discord.gg", 1, true) or string.find(s, "www.", 1, true) or string.find(s, "http://", 1, true) or string.find(s, "https://", 1, true)
   if not hasLink then return false end
+
+  -- Stream/video promotions are never group listings, even when the poster uses
+  -- words such as "recruiting". Discord remains eligible for real guild/community
+  -- recruitment below, but Kick/Twitch/YouTube are rejected immediately.
+  if string.find(s, "kick.com", 1, true) or string.find(s, "twitch.tv", 1, true)
+    or string.find(s, "youtube.com", 1, true) or string.find(s, "youtu.be", 1, true)
+    or string.find(s, " youtube", 1, true) or string.find(s, " twitch", 1, true) then return true end
 
   -- Keep guild/community recruitment that merely includes Discord info.
   if isPublicGuildText(s) then return false end
@@ -1441,7 +1482,48 @@ local function edit(parent, w, h, multi)
   e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   return e
 end
+function BLFG_SF1430H_SuppressNativeDropdown(d)
+  if not d then return end
+  d.SFDisableNativeMenu = true
+  if d.SetAlpha then d:SetAlpha(0) end
+  if d.EnableMouse then d:EnableMouse(false) end
+  if d.SetScript then
+    d:SetScript("OnMouseDown", nil)
+    d:SetScript("OnMouseUp", nil)
+  end
+
+  local name = d.GetName and d:GetName() or nil
+  local b = name and _G[name .. "Button"] or nil
+  if b then
+    if b.EnableMouse then b:EnableMouse(false) end
+    if b.Disable then b:Disable() end
+    if b.SetScript then
+      b:SetScript("OnClick", nil)
+      b:SetScript("OnMouseDown", nil)
+      b:SetScript("OnMouseUp", nil)
+    end
+    if b.Hide then b:Hide() end
+  end
+
+  local catcher = d.sf135jClickCatcher
+  if catcher then
+    if catcher.EnableMouse then catcher:EnableMouse(false) end
+    if catcher.Disable then catcher:Disable() end
+    if catcher.SetScript then
+      catcher:SetScript("OnClick", nil)
+      catcher:SetScript("OnMouseDown", nil)
+      catcher:SetScript("OnMouseUp", nil)
+    end
+    if catcher.Hide then catcher:Hide() end
+  end
+  if d.sf135jArrow and d.sf135jArrow.Hide then d.sf135jArrow:Hide() end
+end
+
 function BLFG_FixDropdownButton(d)
+  if d and d.SFDisableNativeMenu then
+    BLFG_SF1430H_SuppressNativeDropdown(d)
+    return
+  end
   if not d or not d.GetName then return end
   local name = d:GetName()
   if not name then return end
@@ -1535,7 +1617,7 @@ local KEY_ALERT_OPTIONS = {
 }
 KEY_ALERT_OPTIONS = SFProfileList("keyAlertOptions", KEY_ALERT_OPTIONS)
 local EVENT_ALERT_OPTIONS = {"Any Event", "World Boss", "General Event"}
-local SCALE_OPTIONS = {"75%", "85%", "100%", "110%", "125%"}
+local SCALE_OPTIONS = {"75%", "85%", "90%", "100%", "110%", "120%", "125%"}
 
 function BLFG:CreateUI()
   if self.frame then return end
@@ -1567,7 +1649,7 @@ function BLFG:CreateUI()
   f:Hide()
   table.insert(UISpecialFrames, "BronzeLFGFrame")
 
-  local title = font(f, "SignalFire (Beta)", 22, 1, .75, 0)
+  local title = font(f, (SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)", 22, 1, .75, 0)
   title:SetPoint("TOP", f, "TOP", 0, -14)
   local ver = font(f, "", 10, .9, .8, .45)
   ver:SetPoint("LEFT", title, "RIGHT", 8, -4)
@@ -1603,7 +1685,49 @@ function BLFG:CreateUI()
   self:ShowBrowse()
 end
 
+
+-- SignalFire 1.4.9: core-side module check used by the original sidebar builder.
+-- Kept in the core file so the sidebar respects module defaults even if late wrapper files
+-- are skipped or overwritten by older SignalFire/BronzeLFG layers.
+function BLFG:SFCore149_ModuleEnabled(key)
+  BronzeLFG_DB = BronzeLFG_DB or {}
+  BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+  BronzeLFG_DB.options.modules = BronzeLFG_DB.options.modules or {}
+  BronzeLFG_DB.options.modulesByProfile = BronzeLFG_DB.options.modulesByProfile or {}
+
+  local profile = nil
+  if self.SF143_GetProfileId then profile = self:SF143_GetProfileId() end
+  if not profile or profile == "" then profile = BronzeLFG_DB.options.serverProfile or "Triumvirate" end
+  profile = tostring(profile or "Triumvirate")
+
+  -- Ascension/CoA has no Triumvirate invasions.  Do not let a saved
+  -- Triumvirate/global module flag leak into the Ascension profile.
+  if key == "invasions" and profile == "Ascension" then return false end
+
+  local byProfile = BronzeLFG_DB.options.modulesByProfile[profile]
+  if byProfile and byProfile[key] ~= nil then return byProfile[key] == true end
+
+  -- Legacy global module settings are only honored for Triumvirate so old
+  -- saved "Invasions on" state cannot make Ascension show the Invasions tab.
+  local mods = BronzeLFG_DB.options.modules
+  if profile ~= "Ascension" and mods and mods[key] ~= nil then return mods[key] == true end
+
+  if key == "invasions" then return profile ~= "Ascension" end
+  return true
+end
+
 function BLFG:BuildSide()
+  -- SignalFire 1.4.10: sidebar can be rebuilt when profile/modules change.
+  -- Hide controls from the previous build first so toggles do not stack duplicate buttons.
+  if self.side then
+    if self.sfCoreSideChildren then
+      for _, child in ipairs(self.sfCoreSideChildren) do
+        if child and child.Hide then child:Hide() end
+      end
+    end
+    if self.sideBrand and self.sideBrand.Hide then self.sideBrand:Hide() end
+    self.sfCoreSideChildren = {}
+  end
   local items = {
     {"Browse", "Find a group", "INV_Misc_Spyglass_02", function() BLFG:ShowBrowse() end},
     {"Create Listing", "Make your own group", "INV_Misc_Note_01", function() BLFG:ShowCreate() end},
@@ -1611,14 +1735,18 @@ function BLFG:BuildSide()
     {"Applicants", "Review applicants", "INV_Misc_GroupNeedMore", function() BLFG:ShowApplicants() end},
     {"Public Groups", "From chat channels", "INV_Misc_Map_01", function() BLFG:ShowPublicGroups() end},
     {"Guild Browser", "Find guilds", "INV_Misc_TabardPVP_01", function() BLFG:ShowGuildBrowser() end},
-    {"Invasions", "Nearby invasion groups", "INV_Misc_Head_Dragon_01", function() BLFG:ShowInvasions() end},
     {"My Listing", "Manage your group", "INV_Misc_Book_09", function() BLFG:ShowMyListing() end},
     {"Options", "Addon settings", "INV_Misc_Gear_01", function() BLFG:ShowOptions() end},
+    {"Network", "SignalFire users", "INV_Misc_GroupLooking", function() if BLFG.ShowSFNetwork then BLFG:ShowSFNetwork() else BLFG:ToggleOnlinePanel() end end},
   }
+  if self.SFCore149_ModuleEnabled and self:SFCore149_ModuleEnabled("invasions") then
+    table.insert(items, 7, {"Invasions", "Nearby invasion groups", "INV_Misc_Head_Dragon_01", function() BLFG:ShowInvasions() end})
+  end
   for i, it in ipairs(items) do
     local b = CreateFrame("Button", nil, self.side)
-    local sideStep = (#items > 8) and 50 or ((#items > 7) and 58 or 66)
-    local sideHeight = (#items > 8) and 43 or ((#items > 7) and 50 or 56)
+    if self.sfCoreSideChildren then table.insert(self.sfCoreSideChildren, b) end
+    local sideStep = (#items > 9) and 45 or ((#items > 8) and 50 or ((#items > 7) and 58 or 66))
+    local sideHeight = (#items > 9) and 38 or ((#items > 8) and 43 or ((#items > 7) and 50 or 56))
     b:SetWidth(158); b:SetHeight(sideHeight)
     b:SetPoint("TOP", self.side, "TOP", 0, -10 - ((i-1)*sideStep))
     backdrop(b, .82)
@@ -1677,7 +1805,10 @@ function BLFG:BuildSide()
   end
 
   local brand = font(self.side, "Triumvirate", 15, 1, .75, 0)
-  brand:SetPoint("BOTTOM", self.side, "BOTTOM", 0, 28)
+  if self.sfCoreSideChildren then table.insert(self.sfCoreSideChildren, brand) end
+  brand:SetPoint("BOTTOM", self.side, "BOTTOM", 0, 14)
+  self.sideBrand = brand
+  if self.SF143_UpdateServerBrand then self:SF143_UpdateServerBrand() end
 end
 
 function BLFG:BuildBrowse()
@@ -1833,6 +1964,11 @@ function BLFG:BuildCreate()
   self.specificDungeonDrop = dropdown(box, "BLFGSpecificDungeonDrop", 220, {"Select Dungeon"}, c.specificDungeon or "Select Dungeon", function()
     if BLFG.UpdateCreateControls then BLFG:UpdateCreateControls() end
   end)
+  -- SignalFire 1.4.30h: this one field uses the compact custom selector.
+  -- Mark it at construction time so every later dropdown hardening pass knows
+  -- never to restore the native arrow/click catcher or stock full-height menu.
+  self.specificDungeonDrop.SFDisableNativeMenu = true
+  if BLFG_SF1430H_SuppressNativeDropdown then BLFG_SF1430H_SuppressNativeDropdown(self.specificDungeonDrop) end
   self.specificDungeonDrop:SetPoint("TOPLEFT", box, "TOPLEFT", 550, -64)
 
   font(box, "Difficulty", 11, 1, .82, .35):SetPoint("TOPLEFT", box, "TOPLEFT", 18, -114)
@@ -1870,11 +2006,15 @@ function BLFG:BuildCreate()
   self.needTank:SetChecked(true); self.needHealer:SetChecked(true); self.needDPS:SetChecked(true)
 
   font(box, "Voice Chat", 11, 1, .82, .35):SetPoint("TOPLEFT", box, "TOPLEFT", 18, -265)
-  self.voiceDrop = dropdown(box, "BLFGVoiceDrop3", 135, VOICE, c.voice or "None")
+  self.voiceDrop = dropdown(box, "BLFGVoiceDrop3", 135, VOICE, c.voice or "None", function()
+    if BLFG.SFAM_UpdateCreatePreview then BLFG:SFAM_UpdateCreatePreview() end
+  end)
   self.voiceDrop:SetPoint("TOPLEFT", box, "TOPLEFT", 150, -261)
 
   font(box, "Loot Method", 11, 1, .82, .35):SetPoint("TOPLEFT", box, "TOPLEFT", 320, -265)
-  self.lootDrop = dropdown(box, "BLFGLootDrop3", 150, LOOT, c.loot or "Group Loot")
+  self.lootDrop = dropdown(box, "BLFGLootDrop3", 150, LOOT, c.loot or "Group Loot", function()
+    if BLFG.SFAM_UpdateCreatePreview then BLFG:SFAM_UpdateCreatePreview() end
+  end)
   self.lootDrop:SetPoint("TOPLEFT", box, "TOPLEFT", 430, -261)
 
   font(box, "Notes", 11, 1, .82, .35):SetPoint("TOPLEFT", box, "TOPLEFT", 18, -320)
@@ -2939,7 +3079,7 @@ function BLFG:GetOnlineUserRows()
   local mySpec = (BronzeLFG_DB and BronzeLFG_DB.profile and BronzeLFG_DB.profile.roleType) or ""
   local myZone = currentZoneText()
   local myGuild = myGuildName()
-  table.insert(rows, {name=playerName(), version=VERSION, level=tostring(playerLevel()), classFile=myClass or className or "", role=myRole or "", spec=mySpec or "", zone=myZone or "", guild=myGuild or "", seen=now(), self=true, friend=false, groupmate=false, favorite=self:IsFavorite(playerName())})
+  table.insert(rows, {name=playerName(), version=VERSION, level=tostring(playerLevel()), className=className or myClass or "", classFile=myClass or className or "", role=myRole or "", spec=mySpec or "", zone=myZone or "", guild=myGuild or "", seen=now(), self=true, friend=false, groupmate=false, favorite=self:IsFavorite(playerName())})
   for name, u in pairs(self.onlineUsers or {}) do
     if name ~= playerName() then
       u.friend = isFriendName(u.name)
@@ -3275,7 +3415,7 @@ function BLFG:ShowBronzeNetProfile(u)
   local lines = {}
   table.insert(lines, "|cFFFFCC00Status:|r " .. (u.self and "You" or (u.friend and "Friend" or (u.groupmate and "Party/Raid" or "SignalFire Network Online"))))
   table.insert(lines, "|cFFFFCC00Favorite:|r " .. (BLFG:IsFavorite(u.name) and "Yes â˜…" or "No"))
-  table.insert(lines, "|cFFFFCC00Class:|r " .. tostring(u.classFile or "Unknown") .. "   |cFFFFCC00Role:|r " .. tostring(u.role or "Unknown"))
+  table.insert(lines, "|cFFFFCC00Class:|r " .. tostring(u.className or u.class or u.classFile or "Unknown") .. "   |cFFFFCC00Role:|r " .. tostring(u.role or "Unknown"))
   if u.spec and u.spec ~= "" then table.insert(lines, "|cFFFFCC00Spec:|r " .. tostring(u.spec)) end
   if u.zone and u.zone ~= "" then table.insert(lines, "|cFFFFCC00Zone:|r " .. tostring(u.zone)) end
   table.insert(lines, "|cFFFFCC00Last Seen:|r " .. ageText(u.seen or now()))
@@ -4440,6 +4580,26 @@ function BLFG:BuildOptions()
     if BLFG.optionsStatus then BLFG.optionsStatus:SetText("Profile saved. /reload to apply parser data.") end
   end)
   self.serverProfileDD:SetPoint("TOPLEFT", box, "TOPLEFT", 580, -110)
+
+  -- SignalFire 1.4.9: Modules are visible from the core Options panel so profile-gated
+  -- features can be toggled even if a late module UI wrapper is skipped.
+  font(box, "Modules", 13, .35, .7, 1):SetPoint("TOPLEFT", box, "TOPLEFT", 580, -248)
+  self.optModuleInvasions = check("BLFGOptModuleInvasionsCore", "Invasions", 580, -270,
+    (self.SFCore149_ModuleEnabled and self:SFCore149_ModuleEnabled("invasions")) or false,
+    function(btn)
+      if BLFG.SFModuleSetEnabled then
+        BLFG:SFModuleSetEnabled("invasions", btn:GetChecked() and true or false)
+      else
+        BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+        BronzeLFG_DB.options.modulesByProfile = BronzeLFG_DB.options.modulesByProfile or {}
+        local profile = (BLFG.SF143_GetProfileId and BLFG:SF143_GetProfileId()) or BronzeLFG_DB.options.serverProfile or "Triumvirate"
+        BronzeLFG_DB.options.modulesByProfile[profile] = BronzeLFG_DB.options.modulesByProfile[profile] or {}
+        BronzeLFG_DB.options.modulesByProfile[profile].invasions = (profile ~= "Ascension") and (btn:GetChecked() and true or false) or false
+        if BLFG.side then BLFG:BuildSide() end
+      end
+      if BLFG.SFModulesApply then BLFG:SFModulesApply() elseif BLFG.side then BLFG:BuildSide() end
+      if BLFG.optionsStatus then BLFG.optionsStatus:SetText("Module saved: Invasions " .. ((BLFG.SFCore149_ModuleEnabled and BLFG:SFCore149_ModuleEnabled("invasions")) and "on" or "off") .. ".") end
+    end)
   self.optGuildWhoDiscovery = check("BLFGOptGuildWhoDiscovery", "Enable /who Discovery", 580, -205, opts.guildWhoDiscovery ~= false)
   font(box, "Discovery Mode: Manual Refresh Only", 10, .8, .8, .8):SetPoint("TOPLEFT", box, "TOPLEFT", 606, -229)
 
@@ -4937,7 +5097,7 @@ function BLFG:Apply()
   }
   if l.leader == playerName() then
     self.applicants[a.name] = a
-    self.newApplicantAlert = true
+    if self.SetApplicantAlert then self:SetApplicantAlert(true) else self.newApplicantAlert = true end
     flash("New applicant: " .. a.name)
     self:RefreshApplicants()
   else
@@ -5187,6 +5347,15 @@ function BLFG:HandlePresence(p)
   local u = parsePresence(p)
   if not u or not u.name or u.name == "" or u.name == playerName() then return end
   self.onlineUsers = self.onlineUsers or {}
+  local old = self.onlineUsers[u.name]
+  if old then
+    if not u.className or u.className == "" or u.className == "Unknown" then u.className = old.className end
+    if not u.classFile or u.classFile == "" or u.classFile == "UNKNOWN" then u.classFile = old.classFile end
+    if not u.role or u.role == "" then u.role = old.role end
+    if not u.spec or u.spec == "" then u.spec = old.spec end
+    if not u.zone or u.zone == "" then u.zone = old.zone end
+    if not u.guild or u.guild == "" then u.guild = old.guild end
+  end
   self.onlineUsers[u.name] = u
   if self.onlinePanel and self.onlinePanel:IsShown() then self:RefreshOnlinePanel() end
   if self.guildPanel and self.guildPanel:IsVisible() then self:RefreshGuildBrowser() end
@@ -5273,11 +5442,12 @@ pulse:SetScript("OnUpdate", function(self, elapsed)
     self.elapsed = 0
     getChannel()
     if BLFG.myListing then BLFG:CheckAutoCloseListing(); BLFG:Broadcast() end
+    if BLFG.SF151_RunSlowMaintenance then BLFG:SF151_RunSlowMaintenance() end
     if BLFG.frame and BLFG.frame:IsShown() then
-      BLFG:RefreshBrowse()
-      BLFG:RefreshApplicants()
-      BLFG:RefreshMyListing()
-      BLFG:RefreshPublicGroups()
+      if BLFG.browse and BLFG.browse:IsShown() then BLFG:RefreshBrowse() end
+      if BLFG.apps and BLFG.apps:IsShown() then BLFG:RefreshApplicants() end
+      if BLFG.myPanel and BLFG.myPanel:IsShown() then BLFG:RefreshMyListing() end
+      if BLFG.publicPanel and BLFG.publicPanel:IsShown() then BLFG:RefreshPublicGroups() end
       if BLFG.onlinePanel and BLFG.onlinePanel:IsShown() then BLFG:RefreshOnlinePanel() end
       if BLFG.guildPanel and BLFG.guildPanel:IsVisible() then BLFG:RefreshGuildBrowser() end
     end
@@ -5288,6 +5458,41 @@ SLASH_BRONZELFG1 = "/blfg"
 SLASH_BRONZELFG2 = "/bronzelfg"
 SlashCmdList["BRONZELFG"] = function(input)
   input = lower(input or "")
+  input = string.gsub(input, "^%s+", "")
+  input = string.gsub(input, "%s+$", "")
+
+  -- 1.4.8: core fallback for module commands, in case /sf is routed to the
+  -- older BronzeLFG command owner by Wrath's slash hash.
+  if SignalFireSlashFinal and SignalFireSlashFinal.HandleModuleSlash and SignalFireSlashFinal.HandleModuleSlash(input) then return end
+  if SignalFireModules and SignalFireModules.HandleSlash and SignalFireModules.HandleSlash(input, nil) then return end
+  if input == "modules" or input == "module" or input == "mods" or input == "mod" then
+    local profile = "Triumvirate"
+    if BLFG.SF143_GetProfileId then profile = BLFG:SF143_GetProfileId() elseif BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile then profile = tostring(BronzeLFG_DB.options.serverProfile or profile) end
+    local line = nil
+    if BLFG.SFModulesStatusLine then line = BLFG:SFModulesStatusLine() else
+      BronzeLFG_DB = BronzeLFG_DB or {}; BronzeLFG_DB.options = BronzeLFG_DB.options or {}; BronzeLFG_DB.options.modules = BronzeLFG_DB.options.modules or {}
+      local def = profile ~= "Ascension"
+      local enabled = BronzeLFG_DB.options.modules.invasions
+      if enabled == nil then enabled = def end
+      line = "Invasions=" .. (enabled and "on" or "off") .. " (default " .. (def and "on" or "off") .. ")"
+    end
+    msg("Active modules for " .. tostring(profile) .. ": " .. tostring(line))
+    msg("Module commands: /sf invasions on, /sf invasions off, /sf invasions default")
+    return
+  elseif input == "invasions on" or input == "module invasions on" or input == "modules invasions on" then
+    if BLFG.SFModuleSetEnabled then BLFG:SFModuleSetEnabled("invasions", true) else BronzeLFG_DB = BronzeLFG_DB or {}; BronzeLFG_DB.options = BronzeLFG_DB.options or {}; BronzeLFG_DB.options.modules = BronzeLFG_DB.options.modules or {}; BronzeLFG_DB.options.modules.invasions = true end
+    msg("Invasions module enabled.")
+    return
+  elseif input == "invasions off" or input == "module invasions off" or input == "modules invasions off" then
+    if BLFG.SFModuleSetEnabled then BLFG:SFModuleSetEnabled("invasions", false) else BronzeLFG_DB = BronzeLFG_DB or {}; BronzeLFG_DB.options = BronzeLFG_DB.options or {}; BronzeLFG_DB.options.modules = BronzeLFG_DB.options.modules or {}; BronzeLFG_DB.options.modules.invasions = false end
+    msg("Invasions module disabled.")
+    return
+  elseif input == "invasions default" or input == "module invasions default" or input == "modules invasions default" then
+    if BLFG.SFModuleUseProfileDefault then BLFG:SFModuleUseProfileDefault("invasions") else BronzeLFG_DB = BronzeLFG_DB or {}; BronzeLFG_DB.options = BronzeLFG_DB.options or {}; BronzeLFG_DB.options.modules = BronzeLFG_DB.options.modules or {}; BronzeLFG_DB.options.modules.invasions = nil end
+    msg("Invasions module reset to profile default.")
+    return
+  end
+
   if input == "create" then BLFG:Show(); BLFG:ShowCreate()
   elseif input == "profile" then BLFG:ShowProfile()
   elseif input == "options" or input == "settings" then BLFG:ShowOptions()
@@ -5485,7 +5690,7 @@ local function blfgCreatorPostToChat(msg)
     clipped = true
   end
 
-  local channelName = BLFG_RecruitmentPostChannel or "global"
+  local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
   local id = GetChannelName and GetChannelName(channelName) or nil
   if (not id or id == 0) and channelName ~= "global" then
     id = GetChannelName and GetChannelName("global") or nil
@@ -9574,7 +9779,6 @@ end
 
 BLFG_5611_OldRefreshPublicGroups = BLFG.RefreshPublicGroups
 function BLFG:RefreshPublicGroups(...)
-  BLFG_5611_PurgeGhostPublicGroups()
   return BLFG_5611_OldRefreshPublicGroups and BLFG_5611_OldRefreshPublicGroups(self,...)
 end
 
@@ -9818,7 +10022,6 @@ end
 -- Keep ghost protocol rows and accidental sentence-guilds purged during normal refresh.
 BLFG_5612_OldRefreshPublicGroups = BLFG.RefreshPublicGroups
 function BLFG:RefreshPublicGroups(...)
-  if BLFG_5611_PurgeGhostPublicGroups then BLFG_5611_PurgeGhostPublicGroups() end
   BLFG_5612_PurgeBadGuilds()
   return BLFG_5612_OldRefreshPublicGroups and BLFG_5612_OldRefreshPublicGroups(self,...)
 end
@@ -11278,10 +11481,7 @@ end
 
 BLFG_5619_OldRefreshGuildBrowser = BLFG.RefreshGuildBrowser
 function BLFG:RefreshGuildBrowser(...)
-  local r = BLFG_5619_OldRefreshGuildBrowser and BLFG_5619_OldRefreshGuildBrowser(self, ...)
-  BLFG_5619_LayoutGuildFooter(self)
-  BLFG_5619_FixVersionText()
-  return r
+  return BLFG_5619_OldRefreshGuildBrowser and BLFG_5619_OldRefreshGuildBrowser(self, ...)
 end
 
 function BLFG_5619_PositionDungeonDropdown()
@@ -11428,10 +11628,7 @@ end
 
 BLFG_5620_OldRefreshGuildBrowser = BLFG.RefreshGuildBrowser
 function BLFG:RefreshGuildBrowser(...)
-  local r = BLFG_5620_OldRefreshGuildBrowser and BLFG_5620_OldRefreshGuildBrowser(self, ...)
-  BLFG_5620_LayoutGuildFooter(self)
-  BLFG_5620_FixVersionText()
-  return r
+  return BLFG_5620_OldRefreshGuildBrowser and BLFG_5620_OldRefreshGuildBrowser(self, ...)
 end
 
 BLFG_5620_OldBuildPublicGroups = BLFG.BuildPublicGroups
@@ -11452,11 +11649,7 @@ end
 BLFG_5620_OldRefreshPublicGroups = BLFG.RefreshPublicGroups
 function BLFG:RefreshPublicGroups(...)
   if self.publicFilter == "Guild" then self.publicFilter = "All" end
-  BLFG_5620_LayoutPublicFilterTabs(self)
-  local r = BLFG_5620_OldRefreshPublicGroups and BLFG_5620_OldRefreshPublicGroups(self, ...)
-  BLFG_5620_LayoutPublicFilterTabs(self)
-  BLFG_5620_FixVersionText()
-  return r
+  return BLFG_5620_OldRefreshPublicGroups and BLFG_5620_OldRefreshPublicGroups(self, ...)
 end
 
 BLFG_5620_OldShowOptions = BLFG.ShowOptions
@@ -11672,10 +11865,7 @@ end
 
 BLFG_5621_OldRefreshGuildBrowser = BLFG.RefreshGuildBrowser
 function BLFG:RefreshGuildBrowser(...)
-  local r = BLFG_5621_OldRefreshGuildBrowser and BLFG_5621_OldRefreshGuildBrowser(self, ...)
-  BLFG_5621_LayoutGuildFooter(self)
-  BLFG_5621_FixVersionText()
-  return r
+  return BLFG_5621_OldRefreshGuildBrowser and BLFG_5621_OldRefreshGuildBrowser(self, ...)
 end
 
 BLFG_5621_OldBuildPublicGroups = BLFG.BuildPublicGroups
@@ -11697,11 +11887,7 @@ BLFG_5621_OldRefreshPublicGroups = BLFG.RefreshPublicGroups
 function BLFG:RefreshPublicGroups(...)
   if self.publicFilter == "Guild" then self.publicFilter = "All" end
   if BronzeLFG_DB and BronzeLFG_DB.publicHiddenTypes then BronzeLFG_DB.publicHiddenTypes["Guild"] = nil end
-  BLFG_5621_LayoutPublicFilterTabs(self)
-  local r = BLFG_5621_OldRefreshPublicGroups and BLFG_5621_OldRefreshPublicGroups(self, ...)
-  BLFG_5621_LayoutPublicFilterTabs(self)
-  BLFG_5621_FixVersionText()
-  return r
+  return BLFG_5621_OldRefreshPublicGroups and BLFG_5621_OldRefreshPublicGroups(self, ...)
 end
 
 BLFG_5621_Login = CreateFrame("Frame")
@@ -11931,10 +12117,7 @@ end
 
 BLFG_5622_OldRefreshGuildBrowser = BLFG.RefreshGuildBrowser
 function BLFG:RefreshGuildBrowser(...)
-  local r = BLFG_5622_OldRefreshGuildBrowser and BLFG_5622_OldRefreshGuildBrowser(self, ...)
-  BLFG_5622_LayoutGuildFooter(self)
-  BLFG_5622_FixVersionText()
-  return r
+  return BLFG_5622_OldRefreshGuildBrowser and BLFG_5622_OldRefreshGuildBrowser(self, ...)
 end
 
 BLFG_5622_OldBuildPublicGroups = BLFG.BuildPublicGroups
@@ -11956,7 +12139,6 @@ BLFG_5622_OldRefreshPublicGroups = BLFG.RefreshPublicGroups
 function BLFG:RefreshPublicGroups(...)
   if self.publicFilter == "Guild" then self.publicFilter = "All" end
   if BronzeLFG_DB and BronzeLFG_DB.publicHiddenTypes then BronzeLFG_DB.publicHiddenTypes["Guild"] = nil end
-  BLFG_5622_LayoutPublicFilterTabs(self)
   local r = BLFG_5622_OldRefreshPublicGroups and BLFG_5622_OldRefreshPublicGroups(self, ...)
   BLFG_5622_LayoutPublicFilterTabs(self)
   BLFG_5622_FixVersionText()
@@ -14328,7 +14510,7 @@ function BLFG:UpdateGuildDetailTabs(g)
     local lines = {}
     for i, u in ipairs(members) do
       if i > 6 then break end
-      table.insert(lines, tostring(u.name or "Unknown") .. "  " .. tostring(u.level or "") .. "  " .. tostring(u.classFile or "") .. "  " .. tostring(u.zone or ""))
+      table.insert(lines, tostring(u.name or "Unknown") .. "  " .. tostring(u.level or "") .. "  " .. tostring(u.className or u.class or u.classFile or "") .. "  " .. tostring(u.zone or ""))
     end
     if #lines == 0 then table.insert(lines, "No players seen yet.") end
     if d.message then d.message:SetText(table.concat(lines, "\n")) end
@@ -14901,8 +15083,16 @@ local function SF574_FindMainBox(panel)
 end
 
 function BLFG:ApplySignalFireBetaTitle()
-  if self.titleText then self.titleText:SetText("SignalFire (Beta)") end
-  if self.versionText then self.versionText:SetText("") end
+  if BronzeLFG_ApplyVisibleVersion then
+    BronzeLFG_ApplyVisibleVersion()
+    return
+  end
+  if self.titleText then self.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)") end
+  if self.versionText then
+    self.versionText:SetText("")
+    if self.versionText.SetAlpha then self.versionText:SetAlpha(0) end
+    if self.versionText.Hide then self.versionText:Hide() end
+  end
 end
 
 BLFG_SF574_OldGetOnlineUserRows = BLFG.GetOnlineUserRows
@@ -15691,7 +15881,7 @@ function BLFG:PostInvasionToChat()
   local row = self:UpsertInvasionPublicListing(entry, playerName())
   if self.RefreshPublicGroups then self:RefreshPublicGroups() end
   local text = self:InvasionRecruitmentText(entry)
-  local channelName = BLFG_RecruitmentPostChannel or "global"
+  local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
   local channelId = GetChannelName and GetChannelName(channelName) or nil
   if (not channelId or channelId == 0) and channelName ~= "global" then
     channelId = GetChannelName and GetChannelName("global") or nil
@@ -16543,4 +16733,232 @@ function BLFG_SFGuildSourceLong(g)
   end
   if kind == "Network" then return "SignalFire Network" end
   return "Online"
+end
+
+-- ============================================================================
+-- SignalFire v1.3.5j: dropdown arrow hardening
+-- ============================================================================
+-- Several older tabs still use native UIDropDownMenuTemplate frames.  Some 3.3.5
+-- skins/addon stacks hide or misplace the template's tiny Button texture, so add
+-- a visible in-frame arrow overlay and keep the real dropdown button available.
+BLFG_SF135J_OrigFixDropdownButton = BLFG_SF135J_OrigFixDropdownButton or BLFG_FixDropdownButton
+function BLFG_FixDropdownButton(d)
+  -- SignalFire 1.4.30h: the specific-dungeon field intentionally opts out of
+  -- the legacy 1.3.5j arrow/click-catcher hardening. This check MUST happen
+  -- before calling the original fixer, otherwise it resurrects the stock menu.
+  if d and d.SFDisableNativeMenu then
+    if BLFG_SF1430H_SuppressNativeDropdown then BLFG_SF1430H_SuppressNativeDropdown(d) end
+    return
+  end
+  if BLFG_SF135J_OrigFixDropdownButton and BLFG_SF135J_OrigFixDropdownButton ~= BLFG_FixDropdownButton then
+    pcall(BLFG_SF135J_OrigFixDropdownButton, d)
+  end
+  if not d or not d.GetName then return end
+  local name = d:GetName()
+  if not name then return end
+
+  local b = _G[name .. "Button"]
+  local middle = _G[name .. "Middle"] or d
+  if b then
+    b:Show()
+    b:SetAlpha(1)
+    if b.SetWidth then b:SetWidth(24) end
+    if b.SetHeight then b:SetHeight(24) end
+    if b.ClearAllPoints then
+      b:ClearAllPoints()
+      b:SetPoint("RIGHT", middle, "RIGHT", 2, 1)
+    end
+    if b.SetFrameLevel and d.GetFrameLevel then b:SetFrameLevel((d:GetFrameLevel() or 1) + 10) end
+    if b.SetNormalTexture then b:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up") end
+    if b.SetPushedTexture then b:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down") end
+    if b.SetDisabledTexture then b:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled") end
+    if b.SetHighlightTexture then b:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight") end
+  end
+
+  if not d.sf135jArrow then
+    d.sf135jArrow = d:CreateTexture(nil, "OVERLAY")
+    d.sf135jArrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+    d.sf135jArrow:SetWidth(18)
+    d.sf135jArrow:SetHeight(18)
+  end
+  d.sf135jArrow:ClearAllPoints()
+  d.sf135jArrow:SetPoint("RIGHT", middle, "RIGHT", -2, 1)
+  d.sf135jArrow:Show()
+
+  if not d.sf135jClickCatcher then
+    d.sf135jClickCatcher = CreateFrame("Button", nil, d)
+    d.sf135jClickCatcher:RegisterForClicks("LeftButtonUp")
+    d.sf135jClickCatcher:SetScript("OnClick", function()
+      if ToggleDropDownMenu then ToggleDropDownMenu(1, nil, d, d, 0, 0) end
+      if BLFG_SF135J_FixDropdownLayers then BLFG_SF135J_FixDropdownLayers() end
+    end)
+  end
+  d.sf135jClickCatcher:ClearAllPoints()
+  d.sf135jClickCatcher:SetPoint("RIGHT", middle, "RIGHT", 4, 1)
+  d.sf135jClickCatcher:SetWidth(28)
+  d.sf135jClickCatcher:SetHeight(24)
+  d.sf135jClickCatcher:Show()
+  if d.sf135jClickCatcher.SetFrameLevel and d.GetFrameLevel then d.sf135jClickCatcher:SetFrameLevel((d:GetFrameLevel() or 1) + 11) end
+end
+
+function BLFG_SF135J_FixAllDropdowns(root)
+  if not root or not root.GetChildren then return end
+  local kids = {root:GetChildren()}
+  for _, child in ipairs(kids) do
+    if child and child.GetName then
+      local name = child:GetName()
+      if name and _G[name .. "Button"] then BLFG_FixDropdownButton(child) end
+    end
+    if child and child.GetChildren then BLFG_SF135J_FixAllDropdowns(child) end
+  end
+end
+
+function BLFG_SF135J_FixVisibleDropdowns()
+  if not BLFG then return end
+  BLFG_SF135J_FixAllDropdowns(BLFG.frame)
+  BLFG_SF135J_FixAllDropdowns(BLFG.content)
+  BLFG_SF135J_FixAllDropdowns(BLFG.optionsPanel)
+  BLFG_SF135J_FixAllDropdowns(BLFG.create)
+  BLFG_SF135J_FixAllDropdowns(BLFG.profile)
+end
+
+BLFG_SF135J_OldCreateUI = BLFG_SF135J_OldCreateUI or BLFG.CreateUI
+function BLFG:CreateUI(...)
+  local r = BLFG_SF135J_OldCreateUI and BLFG_SF135J_OldCreateUI(self, ...)
+  BLFG_SF135J_FixVisibleDropdowns()
+  return r
+end
+
+BLFG_SF135J_OldShowCreate = BLFG_SF135J_OldShowCreate or BLFG.ShowCreate
+function BLFG:ShowCreate(...)
+  local r = BLFG_SF135J_OldShowCreate and BLFG_SF135J_OldShowCreate(self, ...)
+  BLFG_SF135J_FixVisibleDropdowns()
+  return r
+end
+
+BLFG_SF135J_OldShowProfile = BLFG_SF135J_OldShowProfile or BLFG.ShowProfile
+function BLFG:ShowProfile(...)
+  local r = BLFG_SF135J_OldShowProfile and BLFG_SF135J_OldShowProfile(self, ...)
+  BLFG_SF135J_FixVisibleDropdowns()
+  return r
+end
+
+BLFG_SF135J_OldShowOptions = BLFG_SF135J_OldShowOptions or BLFG.ShowOptions
+function BLFG:ShowOptions(...)
+  local r = BLFG_SF135J_OldShowOptions and BLFG_SF135J_OldShowOptions(self, ...)
+  BLFG_SF135J_FixVisibleDropdowns()
+  return r
+end
+
+BLFG_SF135J_LoginFrame = BLFG_SF135J_LoginFrame or CreateFrame("Frame")
+BLFG_SF135J_LoginFrame:RegisterEvent("PLAYER_LOGIN")
+BLFG_SF135J_LoginFrame:SetScript("OnEvent", function()
+  if BLFG_SF135J_FixVisibleDropdowns then BLFG_SF135J_FixVisibleDropdowns() end
+end)
+
+function BLFG_SF135J_FixDropdownLayers()
+  -- Apply layering only when a SignalFire-owned dropdown has just opened.
+  -- Never attach hooks to Blizzard's global DropDownList frames: the same
+  -- frames are used by player/party portrait menus and must remain untouched.
+  local maxLevels = tonumber(UIDROPDOWNMENU_MAXLEVELS or 2) or 2
+  for i = 1, maxLevels do
+    local f = _G["DropDownList" .. tostring(i)]
+    if f and (not f.IsShown or f:IsShown()) then
+      if f.SetFrameStrata then f:SetFrameStrata("TOOLTIP") end
+      if f.SetFrameLevel then f:SetFrameLevel(1000 + i) end
+    end
+  end
+end
+
+
+-- SignalFire 1.4.30: side-effect-free probe for the full BronzeLFG parser.
+-- Defined in this file so it can use the local parser functions without
+-- adding another live chat hook or creating Public Groups rows.
+function BLFG:SF1430_CoreParseText(text)
+  local raw = tostring(text or "")
+  local result = {
+    input = raw,
+    eligible = false,
+    kind = "ignored",
+    reason = "No clear group or guild intent",
+  }
+
+  if raw == "" then
+    result.reason = "Empty text"
+    return result
+  end
+  if BronzeLFG_IsAddonSpam and BronzeLFG_IsAddonSpam(raw) then
+    result.reason = "Addon traffic"
+    return result
+  end
+  if isPublicJunkText and isPublicJunkText(raw) then
+    result.reason = "Noise, trade, or external promotion"
+    return result
+  end
+
+  local display = cleanPublicChatText(raw)
+  if not containsLFG(display) then return result end
+
+  local socialQuestion = isPublicSocialQuestion(display)
+  if isPublicConversation(display) and not socialQuestion then
+    result.reason = "Ordinary conversation"
+    return result
+  end
+
+  local intent = socialQuestion and "Social" or guessPublicIntent(display)
+  local activity = guessPublicActivity(display)
+  local publicType = classifyPublicType(display, activity, intent)
+  activity = normalizePublicActivity(publicType, activity, display)
+
+  result.eligible = true
+  result.kind = publicType == "Guild" and "guild" or "group"
+  result.type = publicType
+  result.activity = activity
+  result.intent = intent
+  result.roles = guessPublicRoles(display, intent)
+  result.tags = guessPublicTags(display, activity, publicType)
+
+  if result.kind == "guild" and extractGuildNameFromPost then
+    local ok, guildName = pcall(extractGuildNameFromPost, {message=display, player=""})
+    if ok and guildName and tostring(guildName) ~= "" then result.guild = tostring(guildName) end
+  end
+
+  result.reason = nil
+  return result
+end
+
+
+-- SignalFire 1.4.23: no-local central visible-version finalizer.
+-- Keep this block free of `local` declarations; BronzeLFG.lua is already near
+-- Lua 5.1/Wrath's 200-local main-chunk compiler limit.
+VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+BRONZELFG_VERSION = VERSION
+BLFG_VERSION = VERSION
+BronzeLFG_Version = VERSION
+if BronzeLFG then
+  BronzeLFG.version = VERSION
+  if BronzeLFG_ApplyVisibleVersion then
+    BronzeLFG_ApplyVisibleVersion()
+  elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
+    BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+  end
+end
+if CreateFrame then
+  BLFG_SFV_FinalizeFrame = BLFG_SFV_FinalizeFrame or CreateFrame("Frame")
+  BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_LOGIN")
+  BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  BLFG_SFV_FinalizeFrame:SetScript("OnEvent", function()
+    VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+    BRONZELFG_VERSION = VERSION
+    BLFG_VERSION = VERSION
+    BronzeLFG_Version = VERSION
+    if BronzeLFG then
+      BronzeLFG.version = VERSION
+      if BronzeLFG_ApplyVisibleVersion then
+        BronzeLFG_ApplyVisibleVersion()
+      elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
+        BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+      end
+    end
+  end)
 end

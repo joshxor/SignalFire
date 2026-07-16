@@ -1,0 +1,101 @@
+name: Validate and package SignalFire
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signalfire-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      - name: Validate addon structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f SignalFire/SignalFire.toc
+
+          mapfile -t toc_files < <(sed 's/\r$//' SignalFire/SignalFire.toc | grep -v '^##' | grep -v '^[[:space:]]*$')
+          test "${#toc_files[@]}" -eq 12
+
+          for file in "${toc_files[@]}"; do
+            test -f "SignalFire/$file" || {
+              echo "Missing TOC file: SignalFire/$file"
+              exit 1
+            }
+          done
+
+          mapfile -t lua_files < <(find SignalFire -maxdepth 1 -type f -name '*.lua' -printf '%f\n' | sort)
+          test "${#lua_files[@]}" -eq 12
+
+          for file in "${lua_files[@]}"; do
+            printf '%s\n' "${toc_files[@]}" | grep -Fxq "$file" || {
+              echo "Unlisted Lua file: SignalFire/$file"
+              exit 1
+            }
+          done
+
+      - name: Validate Lua syntax
+        run: luac5.1 -p SignalFire/*.lua
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^## Version:[[:space:]]*//p' SignalFire/SignalFire.toc | tr -d '\r')
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match TOC version v$version"
+            exit 1
+          fi
+
+      - name: Build release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip -r "dist/SignalFire-${{ steps.version.outputs.version }}.zip" SignalFire
+          cd dist
+          sha256sum "SignalFire-${{ steps.version.outputs.version }}.zip" > "SignalFire-${{ steps.version.outputs.version }}.zip.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SignalFire-${{ steps.version.outputs.version }}
+          path: |
+            dist/SignalFire-${{ steps.version.outputs.version }}.zip
+            dist/SignalFire-${{ steps.version.outputs.version }}.zip.sha256
+          if-no-files-found: error
+
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SignalFire ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: |
+            dist/SignalFire-${{ steps.version.outputs.version }}.zip
+            dist/SignalFire-${{ steps.version.outputs.version }}.zip.sha256
