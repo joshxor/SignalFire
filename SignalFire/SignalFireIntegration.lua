@@ -246,6 +246,9 @@ do
       SFSF.wrapper = function(input)
         local raw = tostring(input or "")
         local cmd = sfsf_low(raw)
+        local B = sfsf_B()
+
+        if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(cmd) then return true end
 
         if SFSF.HandleUtilitySlash and SFSF.HandleUtilitySlash(cmd) then return true end
         if SFSF.HandleModuleSlash and SFSF.HandleModuleSlash(cmd) then return true end
@@ -253,7 +256,6 @@ do
         local old = SFSF.oldSignalFire or SFSF.oldBronzeLFG
         if old and old ~= SFSF.wrapper then return old(raw) end
 
-        local B = sfsf_B()
         if cmd == "" and B then
           if B.ToggleFrame then B:ToggleFrame(); return true end
           if B.Toggle then B:Toggle(); return true end
@@ -1052,6 +1054,7 @@ do
         if u then table.insert(rows, u) end
       end
 
+      if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
       table.sort(rows, function(a, b)
         if a.self and not b.self then return true end
         if b.self and not a.self then return false end
@@ -1360,6 +1363,7 @@ do
     end
 
     local frame = CreateFrame("Frame")
+    BLFG._sfPerfPresencePulseFrame = frame
     frame:RegisterEvent("PLAYER_LOGIN")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("CHAT_MSG_CHANNEL")

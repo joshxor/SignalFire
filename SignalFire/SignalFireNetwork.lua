@@ -1264,6 +1264,7 @@ do
           end
         end
       end
+      if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
       table.sort(rows, function(a,b)
         if a.self and not b.self then return true end
         if b.self and not a.self then return false end
@@ -1629,6 +1630,7 @@ do
     end
 
     local SFN_Frame = CreateFrame("Frame")
+    BLFG._sfPerfNetworkPulseFrame = SFN_Frame
     SFN_Frame.elapsed = 45
     SFN_Frame:RegisterEvent("PLAYER_LOGIN")
     SFN_Frame:RegisterEvent("CHAT_MSG_CHANNEL")
@@ -2296,6 +2298,7 @@ do
           end
         end
       end
+      if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
       table.sort(rows, function(a,b)
         if a.self and not b.self then return true end
         if b.self and not a.self then return false end
@@ -2948,16 +2951,15 @@ do
       for _, child in ipairs(kids) do recursiveSkin(child, depth + 1) end
     end
 
-    local function setChildrenAbove(parent, frame)
-      if not parent or not frame then return end
+    local function setPrimaryChildrenAbove(parent)
+      if not parent then return end
       local base = parent.GetFrameLevel and parent:GetFrameLevel() or 1
-      local kids = { frame:GetChildren() }
-      for _, child in ipairs(kids) do
-        if child and child.SetFrameLevel and child ~= parent.SignalFireDragHandle and child ~= parent.SignalFireCloseButton then
+      local owner = _G.BronzeLFG
+      for _, child in ipairs({owner and owner.side, owner and owner.content}) do
+        if child and child.SetFrameLevel then
           local cur = child.GetFrameLevel and child:GetFrameLevel() or 0
           if cur <= base then child:SetFrameLevel(base + 5) end
         end
-        setChildrenAbove(parent, child)
       end
     end
 
@@ -2987,7 +2989,7 @@ do
       f:SetFrameStrata("HIGH")
       f:SetFrameLevel(50)
       if not f._sfChildrenAboveApplied then
-        setChildrenAbove(f, f)
+        setPrimaryChildrenAbove(f)
         f._sfChildrenAboveApplied = true
       end
       if not f.SignalFireDragHandle then
@@ -3199,6 +3201,7 @@ do
       msg = string.gsub(msg, "^%s+", "")
       msg = string.gsub(msg, "%s+$", "")
       local B = _G.BronzeLFG
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(msg) then return end
       -- 1.4.8: Handle module commands directly in the main /sf owner first.
       -- This avoids the old wrapper chain swallowing /sf modules before the module layer sees it.
       if sfcompat_handle_modules_slash and sfcompat_handle_modules_slash(msg) then return end

@@ -212,6 +212,8 @@ do
       local cmd = sfsff_low(raw)
       local B = sfsff_B()
 
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(cmd) then return true end
+
       if SignalFireSlashFinal and SignalFireSlashFinal.HandleUtilitySlash and SignalFireSlashFinal.HandleUtilitySlash(cmd) then return true end
       if SignalFireSlashFinal and SignalFireSlashFinal.HandleModuleSlash and SignalFireSlashFinal.HandleModuleSlash(cmd) then return true end
       if SignalFireModules and SignalFireModules.HandleSlash and SignalFireModules.HandleSlash(cmd, nil) then return true end
@@ -1926,6 +1928,7 @@ do
 
         local dd = CreateFrame("Frame", "SignalFireChatLinkScopeDropdown", panel, "UIDropDownMenuTemplate")
         f.scopeDropdown = dd
+        if BLFG_FixDropdownButton then BLFG_FixDropdownButton(dd) end
         dd:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -22, -242)
         UIDropDownMenu_SetWidth(dd, 150)
         UIDropDownMenu_Initialize(dd, function()

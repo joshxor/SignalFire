@@ -3088,6 +3088,7 @@ function BLFG:GetOnlineUserRows()
       table.insert(rows, u)
     end
   end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     if a.self and not b.self then return true end
     if b.self and not a.self then return false end
@@ -5429,6 +5430,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
 end)
 
 local pulse = CreateFrame("Frame")
+BLFG._sfPerfCorePulseFrame = pulse
 pulse.elapsed = 0
 pulse.presenceElapsed = 55
 pulse:SetScript("OnUpdate", function(self, elapsed)
@@ -14241,6 +14243,7 @@ function BLFG:GetOnlineUserRows(...)
   end
 
   local myZone = currentZoneText()
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     if a.self and not b.self then return true end
     if b.self and not a.self then return false end
@@ -15098,6 +15101,7 @@ end
 BLFG_SF574_OldGetOnlineUserRows = BLFG.GetOnlineUserRows
 function BLFG:GetOnlineUserRows(...)
   local rows = BLFG_SF574_OldGetOnlineUserRows and BLFG_SF574_OldGetOnlineUserRows(self, ...) or {}
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     local asf = SF574_IsSignalFireUser(a)
     local bsf = SF574_IsSignalFireUser(b)
@@ -16803,6 +16807,7 @@ end
 
 function BLFG_SF135J_FixAllDropdowns(root)
   if not root or not root.GetChildren then return end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("ui", "treeFramesVisited", 1) end
   local kids = {root:GetChildren()}
   for _, child in ipairs(kids) do
     if child and child.GetName then
@@ -16815,6 +16820,7 @@ end
 
 function BLFG_SF135J_FixVisibleDropdowns()
   if not BLFG then return end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("ui", "recursiveTreeScans", 1) end
   BLFG_SF135J_FixAllDropdowns(BLFG.frame)
   BLFG_SF135J_FixAllDropdowns(BLFG.content)
   BLFG_SF135J_FixAllDropdowns(BLFG.optionsPanel)

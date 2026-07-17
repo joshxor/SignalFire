@@ -1191,6 +1191,8 @@ do
       local raw = tostring(input or "")
       local cmd = sfm146_low(raw)
 
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(cmd) then return true end
+
       if cmd == "modules" or cmd == "module" or cmd == "mod" or cmd == "mods" then
         sfm146_msg("Active modules for " .. tostring(sfm146_profile_id()) .. ": " .. sfm146_status_line())
         sfm146_msg("Module commands: /sf invasions on, /sf invasions off, /sf invasions default")
@@ -1392,4 +1394,3 @@ do
     end)
   until true
 end
-

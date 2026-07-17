@@ -788,6 +788,9 @@ do
       for i = 1, 4 do table.insert(candidates, "party" .. tostring(i)) end
       for i = 1, 40 do table.insert(candidates, "raid" .. tostring(i)) end
       for _, unit in ipairs(candidates) do
+        if _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled then
+          _G.SignalFirePerf151:Note("network", "unitTokensScanned", 1)
+        end
         if (not UnitExists or UnitExists(unit)) and sf152_name_key(UnitName(unit)) == wanted then return unit end
       end
       return nil
@@ -834,6 +837,9 @@ do
         local key = sf152_name_key(row and row.name)
         if key ~= "" then
           for name, status in pairs(byStatus) do
+            if _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled then
+              _G.SignalFirePerf151:Note("network", "statusesScanned", 1)
+            end
             if sf152_name_key(name) == key then
               if not sf152_nonempty(row.className) and sf152_nonempty(status.className) then row.className = status.className end
               if not sf152_nonempty(row.classFile) and sf152_nonempty(status.classFile) then row.classFile = status.classFile end
@@ -1180,6 +1186,7 @@ do
         "decisionCacheMisses", "decisionNegativeHits", "testParseCalls", "testParseTimedCalls",
         "testParseMsTotal", "testParseMsMax", "hiddenFrameLinkSkips",
         "linkCacheHits", "linkCacheMisses",
+        "queueDrops", "consolidationRowsScanned", "entriesPruned",
       }
       for _, field in ipairs(fields) do
         if stats[field] == nil then stats[field] = 0 end
@@ -1188,8 +1195,9 @@ do
     end
 
     local function p3_diagnostics_enabled()
-      return BronzeLFG_DB and BronzeLFG_DB.options
-        and BronzeLFG_DB.options.developerDiagnostics == true
+      return (BronzeLFG_DB and BronzeLFG_DB.options
+        and BronzeLFG_DB.options.developerDiagnostics == true)
+        or (_G.SignalFirePerf151 and _G.SignalFirePerf151.enabled == true)
     end
 
     local function p3_note(field, amount)
@@ -1238,6 +1246,9 @@ do
       if type(probe) ~= "function" then return nil end
       local diagnostics = p3_diagnostics_enabled()
       local stats = diagnostics and p3_stats() or nil
+      if diagnostics and _G.SignalFirePerf151 and _G.SignalFirePerf151.Note then
+        _G.SignalFirePerf151:Note("chat", "uniqueMessagesClassified", 1)
+      end
       if stats then stats.testParseCalls = stats.testParseCalls + 1 end
       local started = diagnostics and debugprofilestop and debugprofilestop() or nil
       local ok, parsed = pcall(probe, raw)
@@ -1304,16 +1315,21 @@ do
     local function p3_prune(stamp)
       stamp = stamp or p3_now()
       local scanned = 0
+      local removed = 0
       for key, seen in pairs(B._sfP3Seen or {}) do
         scanned = scanned + 1
-        if (stamp - (tonumber(seen or 0) or 0)) > 20 then B._sfP3Seen[key] = nil end
+        if (stamp - (tonumber(seen or 0) or 0)) > 20 then B._sfP3Seen[key] = nil; removed = removed + 1 end
         if scanned > 240 then break end
       end
       scanned = 0
       for id, rec in pairs(B._sfP3Records or {}) do
         scanned = scanned + 1
-        if not rec or (stamp - (tonumber(rec.time or 0) or 0)) > 300 then B._sfP3Records[id] = nil end
+        if not rec or (stamp - (tonumber(rec.time or 0) or 0)) > 300 then B._sfP3Records[id] = nil; removed = removed + 1 end
         if scanned > 240 then break end
+      end
+      if removed > 0 then
+        p3_note("entriesPruned", removed)
+        if _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled then _G.SignalFirePerf151:Note("memory", "entriesPruned", removed) end
       end
     end
 
@@ -1351,7 +1367,10 @@ do
       B._sfP3Records[id] = rec
       B._sfP3Seen[key] = stamp
       B._sfP3Queue = B._sfP3Queue or {}
-      while #B._sfP3Queue >= 40 do table.remove(B._sfP3Queue, 1) end
+      while #B._sfP3Queue >= 40 do
+        table.remove(B._sfP3Queue, 1)
+        p3_note("queueDrops")
+      end
       table.insert(B._sfP3Queue, rec)
       P3._enqueueCount = (tonumber(P3._enqueueCount or 0) or 0) + 1
       local stats = p3_note("enqueued")
@@ -1375,7 +1394,10 @@ do
       local old = P3._decisionSlots[P3._decisionCursor]
       if old then
         local current = P3._decisionCache[old.key]
-        if current and current.stamp == old.stamp then P3._decisionCache[old.key] = nil end
+        if current and current.stamp == old.stamp then
+          P3._decisionCache[old.key] = nil
+          if _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled then _G.SignalFirePerf151:Note("memory", "entriesPruned", 1) end
+        end
       end
 
       local item = {rec=rec or false, stamp=stamp, expires=stamp + (ttl or 2)}
@@ -1392,6 +1414,9 @@ do
         return nil, false, key
       end
       p3_note("decisionCacheHits")
+      if _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled then
+        _G.SignalFirePerf151:Note("chat", "duplicateClassificationsAvoided", 1)
+      end
       if item.rec == false then
         p3_note("decisionNegativeHits")
         return nil, true, key
@@ -1451,7 +1476,9 @@ do
       local wantedAuthor = string.lower(p3_author(rec.author))
       local wantedText = p3_norm(rec.text)
       local remove = {}
+      local rowsScanned = 0
       for id, row in pairs(B.publicGroups) do
+        rowsScanned = rowsScanned + 1
         if row and id ~= rec.stableId
           and string.lower(p3_author(row.player or row.author)) == wantedAuthor
           and p3_norm(row.rawMessage or row.message) == wantedText then
@@ -1459,6 +1486,7 @@ do
           table.insert(remove, id)
         end
       end
+      p3_note("consolidationRowsScanned", rowsScanned)
       for _, id in ipairs(remove) do
         B.publicGroups[id] = nil
         if B.selectedPublic == id then B.selectedPublic = rec.stableId end
@@ -1683,6 +1711,9 @@ do
         channel = "Yell"
       end
       local rec = p3_resolve(author, raw, channel)
+      if diagnostics and _G.SignalFirePerf151 and _G.SignalFirePerf151.NoteChatReceiver then
+        _G.SignalFirePerf151:NoteChatReceiver(p3_key(author, raw), p3_frame_name(frame))
+      end
       diag.lastFilterWasEligible = rec ~= nil
       diag.lastFilterRec = rec
       if not rec then return false, msgText, author, ... end
@@ -1833,6 +1864,9 @@ do
       local author, body, channel = "", "", ""
       if not rec then author, body, channel = p3_display_parts(displayed, plain) end
       if not rec and author ~= "" and body ~= "" then rec = p3_resolve(author, body, channel) end
+      if diagnostics and rec and _G.SignalFirePerf151 and _G.SignalFirePerf151.NoteChatReceiver then
+        _G.SignalFirePerf151:NoteChatReceiver(p3_key(rec.author or author, rec.text or body), p3_frame_name(frame))
+      end
       if not rec then
         if author == "" or body == "" then
           if stats then stats.failedRenderedExtraction = stats.failedRenderedExtraction + 1 end
@@ -2419,3 +2453,369 @@ do
 end
 
 if SignalFire_InstallPhase6 then SignalFire_InstallPhase6() end
+
+-- Phase 2 UI lifecycle stabilization. This late owner keeps the compatibility
+-- wrapper chain intact for first-build recovery, then makes repeated UI calls
+-- cheap and replaces whole-tree dropdown discovery with explicit registration.
+-- SIGNALFIRE_PHASE2_UI_LIFECYCLE_BEGIN
+do
+  local B = _G.BronzeLFG
+  if B then
+    local L = _G.SignalFireUILifecycle151 or {}
+    _G.SignalFireUILifecycle151 = L
+    L.generation = "1.5.1-perf-phase2"
+    L.initialized = L.initialized == true
+    L.uiGeneration = tonumber(L.uiGeneration or 0) or 0
+    L.transactionDepth = tonumber(L.transactionDepth or 0) or 0
+    L.previewSignatures = L.previewSignatures or {}
+    L.moduleKeys = L.moduleKeys or {
+      "chatParsing", "guildBrowser", "recruitmentCreator", "events", "notices", "invasions", "ascensionListingTools",
+    }
+
+    -- Dropdown registration is session-only and stored on each dropdown frame.
+    -- Owner: SignalFireUILifecycle151; key: dropdown frame; maximum: one marker
+    -- per created dropdown; TTL: frame lifetime; eviction/cleanup: UI reload.
+    -- No registry table is retained, so destroyed frames cannot accumulate here.
+    local function p2_note(field, amount)
+      local perf = _G.SignalFirePerf151
+      if perf and perf.enabled and perf.Note then perf:Note("ui", field, amount or 1) end
+    end
+
+    local function p2_pack(...)
+      return {n=select("#", ...), ...}
+    end
+
+    local function p2_return(results)
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2, results.n)
+    end
+
+    local function p2_dropdown_text(dropdown)
+      if not dropdown then return "" end
+      if _G.BLFG_DropdownText then
+        local ok, value = pcall(_G.BLFG_DropdownText, dropdown)
+        if ok then return tostring(value or "") end
+      end
+      if UIDropDownMenu_GetText then
+        local ok, value = pcall(UIDropDownMenu_GetText, dropdown)
+        if ok then return tostring(value or "") end
+      end
+      if dropdown.GetText then
+        local ok, value = pcall(dropdown.GetText, dropdown)
+        if ok then return tostring(value or "") end
+      end
+      return ""
+    end
+
+    local function p2_text(control)
+      if not control or not control.GetText then return "" end
+      local ok, value = pcall(control.GetText, control)
+      return ok and tostring(value or "") or ""
+    end
+
+    local function p2_checked(control)
+      if not control or not control.GetChecked then return "0" end
+      local ok, value = pcall(control.GetChecked, control)
+      return ok and value and "1" or "0"
+    end
+
+    local function p2_profile_id(self)
+      if self and self.SF143_GetProfileId then
+        local ok, value = pcall(self.SF143_GetProfileId, self)
+        if ok and value then return tostring(value) end
+      end
+      return tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
+    end
+
+    local function p2_module_signature(profile)
+      local options = BronzeLFG_DB and BronzeLFG_DB.options or nil
+      local global = options and options.modules or nil
+      local scoped = options and options.modulesByProfile and options.modulesByProfile[profile] or nil
+      local out = ""
+      for _, key in ipairs(L.moduleKeys) do
+        local value = scoped and scoped[key]
+        if value == nil and global then value = global[key] end
+        out = out .. key .. "=" .. tostring(value) .. ";"
+      end
+      return out
+    end
+
+    local function p2_create_signature(self, target)
+      self = self or B
+      local profile = p2_profile_id(self)
+      return tostring(target or "create") .. "|g=" .. tostring(L.uiGeneration)
+        .. "|p=" .. profile .. "|m=" .. p2_module_signature(profile)
+        .. "|f=" .. tostring(self.frame) .. "|c=" .. tostring(self.create)
+        .. "|td=" .. tostring(self.typeDrop) .. ":" .. p2_dropdown_text(self.typeDrop)
+        .. "|ad=" .. tostring(self.activityDrop) .. ":" .. p2_dropdown_text(self.activityDrop)
+        .. "|sd=" .. tostring(self.specificDungeonDrop) .. ":" .. p2_dropdown_text(self.specificDungeonDrop)
+        .. "|dd=" .. tostring(self.diffDrop) .. ":" .. p2_dropdown_text(self.diffDrop)
+        .. "|kd=" .. p2_text(self.keyBox)
+        .. "|roles=" .. p2_checked(self.needTank) .. p2_checked(self.needHealer) .. p2_checked(self.needDPS)
+        .. "|voice=" .. p2_dropdown_text(self.voiceDrop) .. "|loot=" .. p2_dropdown_text(self.lootDrop)
+        .. "|min=" .. p2_text(self.minIlvlBox) .. "|max=" .. p2_text(self.maxBox)
+        .. "|note=" .. p2_text(self.noteBox)
+        .. "|preview=" .. tostring(self.sfamCreatePreview) .. ":" .. tostring(self.sf1429Preview)
+    end
+
+    local function p2_options_signature(self)
+      self = self or B
+      local options = BronzeLFG_DB and BronzeLFG_DB.options or nil
+      local profile = p2_profile_id(self)
+      return "options|g=" .. tostring(L.uiGeneration) .. "|p=" .. profile
+        .. "|m=" .. p2_module_signature(profile) .. "|panel=" .. tostring(self.optionsPanel)
+        .. "|server=" .. p2_dropdown_text(self.serverProfileDD)
+        .. "|key=" .. tostring(options and options.notifyKeyFilter or "")
+        .. "|raid=" .. tostring(options and options.notifyRaidFilter or "")
+        .. "|dungeon=" .. tostring(options and options.notifyDungeonFilter or "")
+    end
+
+    local function p2_identity_signature(self)
+      self = self or B
+      return "identity|g=" .. tostring(L.uiGeneration) .. "|p=" .. p2_profile_id(self)
+        .. "|frame=" .. tostring(self.frame) .. "|options=" .. tostring(self.optionsPanel)
+        .. "|modules=" .. tostring(self.sfmmOpenButton) .. ":" .. tostring(self.sfcpOpenButton)
+        .. ":" .. tostring(self.sfn138FavoriteAlertButton) .. ":" .. tostring(self.sfamPolishButton)
+        .. ":" .. tostring(self.sfe141EventAlertButton)
+    end
+
+    local function p2_core_complete(self)
+      return self and self.frame and self.content and self.side and self.browse
+        and self.create and self.typeDrop and self.activityDrop and self.diffDrop
+        and self.profile and self.profileRole and self.apps and self.publicPanel
+        and self.onlinePanel and self.guildPanel and self.optionsPanel and self.myPanel
+    end
+
+    L.originalFixDropdown = L.originalFixDropdown or _G.BLFG_FixDropdownButton
+
+    function L:RegisterDropdown(dropdown)
+      if not dropdown then return false end
+      if not dropdown._signalFireDropdownRegistered then
+        dropdown._signalFireDropdownRegistered = true
+        p2_note("dropdownsRegistered", 1)
+      end
+      local mode = dropdown.SFDisableNativeMenu and "suppressed" or "native"
+      if dropdown._signalFireDropdownPatched == mode then
+        p2_note("dropdownPatchSkips", 1)
+        return true
+      end
+      local fixer = self.originalFixDropdown
+      if type(fixer) == "function" then
+        local ok, err = pcall(fixer, dropdown)
+        if not ok then error(err, 0) end
+      elseif dropdown.SFDisableNativeMenu and _G.BLFG_SF1430H_SuppressNativeDropdown then
+        _G.BLFG_SF1430H_SuppressNativeDropdown(dropdown)
+      end
+      dropdown._signalFireDropdownPatched = mode
+      p2_note("dropdownsPatched", 1)
+      return true
+    end
+
+    L.knownDropdownFields = L.knownDropdownFields or {
+      "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
+      "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
+      "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "focusDropdown",
+      "keystoneAlertDropdown",
+    }
+
+    function L:RegisterKnownDropdowns(owner)
+      owner = owner or B
+      for _, field in ipairs(self.knownDropdownFields) do
+        if owner[field] then self:RegisterDropdown(owner[field]) end
+      end
+      if owner.sfcpPanel and owner.sfcpPanel.scopeDropdown then
+        self:RegisterDropdown(owner.sfcpPanel.scopeDropdown)
+      end
+    end
+
+    _G.BLFG_FixDropdownButton = function(dropdown)
+      return L:RegisterDropdown(dropdown)
+    end
+
+    -- Compatibility names remain callable, but no longer recurse through any
+    -- parent tree. Existing wrappers therefore become bounded registration calls.
+    _G.BLFG_SF135J_FixAllDropdowns = function(dropdown)
+      if dropdown and dropdown.GetName then
+        local name = dropdown:GetName()
+        if dropdown.SFDisableNativeMenu or (name and _G[name .. "Button"]) then
+          return L:RegisterDropdown(dropdown)
+        end
+      end
+      return false
+    end
+
+    _G.BLFG_SF135J_FixVisibleDropdowns = function()
+      L:RegisterKnownDropdowns(B)
+      return true
+    end
+
+    function L:BeginTransaction()
+      self.transactionDepth = (tonumber(self.transactionDepth or 0) or 0) + 1
+    end
+
+    function L:EndTransaction(owner, successful)
+      self.transactionDepth = math.max(0, (tonumber(self.transactionDepth or 1) or 1) - 1)
+      if self.transactionDepth == 0 and self.previewPending then
+        self.previewPending = nil
+        if successful then
+          local ok, err = pcall(self.FlushPreviews, self, owner or B)
+          if not ok then return false, err end
+        end
+      end
+      return true
+    end
+
+    function L:InvokeTransactional(fn, owner, ...)
+      self:BeginTransaction()
+      local results = p2_pack(pcall(fn, owner, ...))
+      local ended, endError = self:EndTransaction(owner, results[1])
+      if results[1] and not ended then return {n=2, false, endError} end
+      return results
+    end
+
+    local function p2_install_preview_owner(target, methodName, key)
+      local old = target and target[methodName]
+      if type(old) ~= "function" then return end
+      target[methodName] = function(self, ...)
+        p2_note("previewUpdatesRequested", 1)
+        if L.transactionDepth > 0 then
+          L.previewPending = true
+          p2_note("previewUpdatesDeferred", 1)
+          return
+        end
+        local signature = p2_create_signature(self, key)
+        if L.previewSignatures[key] == signature then
+          p2_note("previewUpdatesSkipped", 1)
+          return
+        end
+        if L.previewActive then
+          L.previewPending = true
+          p2_note("previewUpdatesDeferred", 1)
+          return
+        end
+        L.previewActive = true
+        local results = p2_pack(pcall(old, self, ...))
+        L.previewActive = nil
+        if results[1] then
+          L.previewSignatures[key] = p2_create_signature(self, key)
+          p2_note("previewUpdatesExecuted", 1)
+        end
+        return p2_return(results)
+      end
+    end
+
+    p2_install_preview_owner(B, "SFAM_UpdateCreatePreview", "posting")
+    local SFALP = _G.SignalFireAscensionListingPolish
+    if SFALP then p2_install_preview_owner(SFALP, "UpdatePreview", "compact") end
+
+    function L:FlushPreviews(owner)
+      owner = owner or B
+      if owner.SFAM_UpdateCreatePreview then owner:SFAM_UpdateCreatePreview() end
+      local polish = _G.SignalFireAscensionListingPolish
+      if polish and polish.UpdatePreview then polish.UpdatePreview(owner) end
+    end
+
+    local function p2_install_signature_owner(target, methodName, signatureFn, stateKey, requestedField, executedField, skippedField, registerDropdowns)
+      local old = target and target[methodName]
+      if type(old) ~= "function" then return end
+      target[methodName] = function(self, ...)
+        p2_note(requestedField, 1)
+        local signature = signatureFn(self)
+        if L[stateKey] == signature or L[stateKey .. "Active"] then
+          p2_note(skippedField, 1)
+          return
+        end
+        L[stateKey .. "Active"] = true
+        local results = L:InvokeTransactional(old, self, ...)
+        L[stateKey .. "Active"] = nil
+        if results[1] then
+          L[stateKey] = signatureFn(self)
+          p2_note(executedField, 1)
+          if registerDropdowns then L:RegisterKnownDropdowns(self) end
+        end
+        return p2_return(results)
+      end
+    end
+
+    p2_install_signature_owner(B, "SF143_ApplyProfileToCreate",
+      function(self) return p2_create_signature(self, "profile-create") end,
+      "lastCreateProfileSignature", "profileApplicationsRequested", "profileApplicationsExecuted", "profileApplicationsSkipped", true)
+
+    p2_install_signature_owner(B, "SF143_ApplyProfileToOptions", p2_options_signature,
+      "lastOptionsProfileSignature", "profileApplicationsRequested", "profileApplicationsExecuted", "profileApplicationsSkipped", true)
+
+    if SFALP then
+      p2_install_signature_owner(SFALP, "ApplyUI",
+        function(self) return p2_create_signature(self, "apply-ui") end,
+        "lastApplyUISignature", "applyUIRequests", "applyUIExecutions", "applyUISkips", true)
+    end
+
+    p2_install_signature_owner(B, "UpdateCreateControls",
+      function(self) return p2_create_signature(self, "controls") end,
+      "lastControlsSignature", "createControlRequests", "createControlExecutions", "createControlSkips", true)
+
+    p2_install_signature_owner(B, "SFUI1434_Apply", p2_identity_signature,
+      "lastIdentitySignature", "identityRequests", "identityExecutions", "identitySkips", false)
+
+    local oldShowCreate = B.ShowCreate
+    if type(oldShowCreate) == "function" then
+      B.ShowCreate = function(self, ...)
+        local results = L:InvokeTransactional(oldShowCreate, self, ...)
+        return p2_return(results)
+      end
+    end
+
+    local oldCreateUI = B.CreateUI
+    if type(oldCreateUI) == "function" then
+      B.CreateUI = function(self, ...)
+        p2_note("createUIRequests", 1)
+        if L.initialized and p2_core_complete(self) then
+          p2_note("createUIFastPath", 1)
+          return
+        end
+        if L.createUIActive then
+          p2_note("createUIFastPath", 1)
+          return
+        end
+        p2_note("createUIFullExecutions", 1)
+        L.createUIActive = true
+        L.uiGeneration = (tonumber(L.uiGeneration or 0) or 0) + 1
+        local results = L:InvokeTransactional(oldCreateUI, self, ...)
+        L.createUIActive = nil
+        if results[1] then
+          L.initialized = p2_core_complete(self) and true or false
+          L:RegisterKnownDropdowns(self)
+        end
+        return p2_return(results)
+      end
+    end
+
+    function B:SF151_GetUILifecycleDiagnostics()
+      local perf = _G.SignalFirePerf151
+      local ui = perf and perf.stats and perf.stats.ui or {}
+      return {
+        generation=L.generation,
+        initialized=L.initialized == true,
+        createUIRequests=ui.createUIRequests or 0,
+        createUIFullExecutions=ui.createUIFullExecutions or 0,
+        createUIFastPath=ui.createUIFastPath or 0,
+        dropdownsRegistered=ui.dropdownsRegistered or 0,
+        dropdownsPatched=ui.dropdownsPatched or 0,
+        dropdownPatchSkips=ui.dropdownPatchSkips or 0,
+        profileApplicationsRequested=ui.profileApplicationsRequested or 0,
+        profileApplicationsExecuted=ui.profileApplicationsExecuted or 0,
+        profileApplicationsSkipped=ui.profileApplicationsSkipped or 0,
+        previewUpdatesRequested=ui.previewUpdatesRequested or 0,
+        previewUpdatesExecuted=ui.previewUpdatesExecuted or 0,
+        previewUpdatesSkipped=ui.previewUpdatesSkipped or 0,
+      }
+    end
+
+    if B.frame then
+      L.initialized = p2_core_complete(B) and true or false
+      L:RegisterKnownDropdowns(B)
+    end
+  end
+end
+-- SIGNALFIRE_PHASE2_UI_LIFECYCLE_END
