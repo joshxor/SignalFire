@@ -2144,21 +2144,12 @@ do
 
     local startup = CreateFrame and CreateFrame("Frame") or nil
     if startup then
-      startup.elapsed = 0
-      startup.ticks = 0
-      local function settle(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-        if self.elapsed < 0.5 then return end
-        self.elapsed = 0
-        self.ticks = (self.ticks or 0) + 1
-        P3.Apply()
-        if self.ticks >= 8 then self:SetScript("OnUpdate", nil) end
-      end
       local function schedule()
         P3.Apply()
-        startup.elapsed = 0
-        startup.ticks = 0
-        startup:SetScript("OnUpdate", settle)
+        startup:SetScript("OnUpdate", nil)
+        if B.SF151_ScheduleDelayed then
+          B:SF151_ScheduleDelayed("startup.chat-owner", 1.0, P3.Apply)
+        end
       end
       P3.ScheduleReconcile = schedule
 
@@ -2197,6 +2188,10 @@ end
 do
   local B = _G.BronzeLFG
   if B and CreateFrame then
+    -- Phase 4 timer owner. Delayed tasks are session-only, keyed by caller,
+    -- capped at 128, and removed on execution, cancellation, or replacement.
+    -- The owner wakes on the first task, sleeps on an empty queue, runs at no
+    -- more than 30 Hz, and isolates callback failures so later tasks continue.
     local T = _G.SignalFireTimer151 or {}
     _G.SignalFireTimer151 = T
     T.generation = "1.5.1-phase5"
@@ -3476,3 +3471,629 @@ do
   end
 end
 -- SIGNALFIRE_PHASE3_NETWORK_ROSTER_END
+
+-- SIGNALFIRE_PHASE4_EVENT_TIMERS_BEGIN
+do
+  local B = _G.BronzeLFG
+  if B and CreateFrame then
+    local T = _G.SignalFireTimer151 or {}
+    _G.SignalFireTimer151 = T
+    T.generation = "1.5.1-perf-phase4"
+    T.maximumTasks = 128
+    T.maximumErrors = 20
+    T.tasks = {}
+    T.taskByKey = {}
+    T.taskSequence = 0
+    T.errors = {}
+    T.stats = {}
+
+    local function p4_now()
+      return (GetTime and GetTime()) or 0
+    end
+
+    local function p4_epoch()
+      return (time and time()) or math.floor(p4_now())
+    end
+
+    local function p4_perf_enabled()
+      local perf = _G.SignalFirePerf151
+      return perf and perf.enabled == true
+    end
+
+    local function p4_note(field, amount)
+      if not p4_perf_enabled() then return end
+      T.stats[field] = (T.stats[field] or 0) + (amount or 1)
+    end
+
+    local function p4_max(field, value)
+      if not p4_perf_enabled() then return end
+      value = tonumber(value or 0) or 0
+      if value > (T.stats[field] or 0) then T.stats[field] = value end
+    end
+
+    local function p4_note_owner(field, owner)
+      if not p4_perf_enabled() then return end
+      local rows = T.stats[field]
+      if type(rows) ~= "table" then rows = {}; T.stats[field] = rows end
+      owner = tostring(owner or "unknown")
+      rows[owner] = (rows[owner] or 0) + 1
+    end
+
+    local function p4_visible(frame)
+      if not frame then return false end
+      if frame.IsVisible then return frame:IsVisible() and true or false end
+      if frame.IsShown then return frame:IsShown() and true or false end
+      return false
+    end
+
+    local function p4_sleep(frame, stat)
+      if frame and frame.IsShown and frame:IsShown() then
+        frame:Hide()
+        p4_note(stat, 1)
+      end
+    end
+
+    local function p4_wake(frame, stat)
+      if frame and frame.IsShown and not frame:IsShown() then
+        frame.elapsed = 0
+        frame:Show()
+        p4_note(stat, 1)
+      end
+    end
+
+    local function p4_record_error(key, err)
+      table.insert(T.errors, {
+        key=tostring(key or "task"),
+        message=tostring(err or "unknown callback error"),
+        at=p4_now(),
+      })
+      while #T.errors > T.maximumErrors do table.remove(T.errors, 1) end
+      p4_note("callbackErrors", 1)
+    end
+
+    local function p4_remove_task_at(index, cancelled)
+      local task = table.remove(T.tasks, index)
+      if not task then return nil end
+      if task.key and T.taskByKey[task.key] == task then T.taskByKey[task.key] = nil end
+      if cancelled then p4_note("tasksCancelled", 1) end
+      return task
+    end
+
+    function B:SF151_CancelDelayed(key)
+      key = tostring(key or "")
+      if key == "" then return false end
+      local task = T.taskByKey[key]
+      if not task then return false end
+      for index = #T.tasks, 1, -1 do
+        if T.tasks[index] == task then p4_remove_task_at(index, true); break end
+      end
+      if #T.tasks == 0 then p4_sleep(T.delayFrame, "delayedSleeps") end
+      return true
+    end
+
+    function B:SF151_ScheduleDelayed(key, delay, callback)
+      if type(callback) ~= "function" then return false end
+      key = tostring(key or "")
+      if key == "" then
+        T.taskSequence = T.taskSequence + 1
+        key = "task." .. tostring(T.taskSequence)
+      else
+        if T.taskByKey[key] and string.sub(key, 1, 8) == "startup." then
+          p4_note_owner("startupRedundantPassesSkipped", key)
+        end
+        self:SF151_CancelDelayed(key)
+        T.taskSequence = T.taskSequence + 1
+      end
+      if #T.tasks >= T.maximumTasks then
+        p4_note("tasksDropped", 1)
+        return false
+      end
+
+      local task = {
+        key=key,
+        deadline=p4_now() + math.max(0, tonumber(delay or 0) or 0),
+        sequence=T.taskSequence,
+        callback=callback,
+      }
+      local insertAt = #T.tasks + 1
+      for index, current in ipairs(T.tasks) do
+        if task.deadline < current.deadline
+          or (task.deadline == current.deadline and task.sequence < current.sequence) then
+          insertAt = index
+          break
+        end
+      end
+      table.insert(T.tasks, insertAt, task)
+      T.taskByKey[key] = task
+      p4_note("tasksScheduled", 1)
+      if string.sub(key, 1, 8) == "startup." then
+        p4_note("startupPassesScheduled", 1)
+        p4_note_owner("startupPassesByOwner", key)
+      end
+      p4_max("maximumQueueDepth", #T.tasks)
+      p4_wake(T.delayFrame, "delayedWakes")
+      return key
+    end
+
+    T.delayFrame = T.delayFrame or CreateFrame("Frame")
+    T.delayFrame:Hide()
+    T.delayFrame.elapsed = 0
+    T.delayFrame:SetScript("OnUpdate", function(self, elapsed)
+      self.elapsed = (self.elapsed or 0) + (tonumber(elapsed) or 0)
+      if self.elapsed < (1 / 30) then return end
+      self.elapsed = 0
+      p4_note("delayedTicks", 1)
+
+      local now = p4_now()
+      while T.tasks[1] and now >= (T.tasks[1].deadline or 0) do
+        local task = p4_remove_task_at(1, false)
+        if task then
+          local lateness = math.max(0, now - (task.deadline or now))
+          if lateness > (1 / 30) then p4_note("lateExecutions", 1) end
+          p4_max("maximumDeadlineLateness", lateness)
+          T.executingTask = task.key
+          local ok, err = pcall(task.callback)
+          T.executingTask = nil
+          p4_note("tasksExecuted", 1)
+          if string.sub(task.key or "", 1, 8) == "startup." then
+            p4_note("startupVerificationPasses", 1)
+            p4_note_owner("startupVerificationByOwner", task.key)
+          end
+          if not ok then p4_record_error(task.key, err) end
+        end
+        now = p4_now()
+      end
+      if #T.tasks == 0 then p4_sleep(self, "delayedSleeps") end
+    end)
+
+    local function p4_network_interval()
+      local n = BronzeLFG_DB and BronzeLFG_DB.signalFireNetwork or nil
+      local interval = tonumber(n and n.autoRefreshSeconds or 30) or 30
+      if interval ~= 0 and interval ~= 15 and interval ~= 30 and interval ~= 60 then interval = 30 end
+      return interval
+    end
+
+    local function p4_any_network_visible()
+      return p4_visible(B.sfnPanel) or p4_visible(B.onlinePanel)
+    end
+
+    local function p4_update_response_text(now)
+      if not p4_visible(B.sfnPanel) or not B.sfnUpdated then return false end
+      local pending = tonumber(B._sfnPresenceRefreshPending or 0) or 0
+      local response = tonumber(B._sfnLastPresenceResponse or 0) or 0
+      local text, r, g, b
+      if pending > 0 and (now - pending) <= 5 then
+        text, r, g, b = "Refreshing network...", 1, .82, .25
+      elseif response > 0 then
+        text, r, g, b = "Last response: " .. tostring(math.max(0, now - response)) .. "s ago", .4, 1, .4
+      else
+        text, r, g, b = "No responses received yet", .8, .8, .8
+      end
+      if B.sfnUpdated.GetText and B.sfnUpdated:GetText() == text then return false end
+      B.sfnUpdated:SetText(text)
+      B.sfnUpdated:SetTextColor(r, g, b)
+      return true
+    end
+
+    local function p4_refresh_visible_ages(now)
+      T.lastVisibleAgeRefresh = tonumber(T.lastVisibleAgeRefresh or 0) or 0
+      if (now - T.lastVisibleAgeRefresh) < 15 then return end
+      T.lastVisibleAgeRefresh = now
+      if p4_visible(B.sfnPanel) then
+        if B.SF151_RequestPanelRefresh then B:SF151_RequestPanelRefresh("network")
+        elseif B.RefreshSFNetwork then B:RefreshSFNetwork() end
+      end
+      if p4_visible(B.onlinePanel) then
+        if B.SF151_RequestPanelRefresh then B:SF151_RequestPanelRefresh("roster")
+        elseif B.RefreshOnlinePanel then B:RefreshOnlinePanel() end
+      end
+      p4_note("visibleAgeRefreshes", 1)
+    end
+
+    local function p4_network_tick()
+      if not p4_any_network_visible() then
+        B._sfnNextAutoRefresh = nil
+        p4_sleep(T.networkFrame, "networkSleeps")
+        return
+      end
+
+      local now = p4_epoch()
+      p4_note("networkTicks", 1)
+      p4_note("autoRefreshChecks", 1)
+      if p4_update_response_text(now) then p4_note("ageLabelUpdates", 1) end
+
+      local interval = p4_network_interval()
+      if interval <= 0 then
+        B._sfnNextAutoRefresh = nil
+      else
+        B._sfnNextAutoRefresh = tonumber(B._sfnNextAutoRefresh or (now + interval)) or (now + interval)
+        if now >= B._sfnNextAutoRefresh then
+          B._sfnNextAutoRefresh = now + interval
+          local presence = _G.SignalFirePresenceAdminFix
+          if presence and presence.RequestPresence then
+            presence.RequestPresence("auto-refresh")
+            p4_note("autoRefreshRequests", 1)
+          end
+        end
+      end
+      p4_refresh_visible_ages(now)
+    end
+
+    T.networkFrame = T.networkFrame or CreateFrame("Frame")
+    T.networkFrame:Hide()
+    T.networkFrame.elapsed = 0
+    T.networkFrame:SetScript("OnUpdate", function(self, elapsed)
+      self.elapsed = (self.elapsed or 0) + (tonumber(elapsed) or 0)
+      if self.elapsed < 1 then return end
+      self.elapsed = 0
+      p4_network_tick()
+    end)
+
+    function T.UpdateNetworkOwner()
+      if p4_any_network_visible() then
+        p4_wake(T.networkFrame, "networkWakes")
+      else
+        B._sfnNextAutoRefresh = nil
+        p4_sleep(T.networkFrame, "networkSleeps")
+      end
+    end
+
+    local function p4_attach_panel(frame)
+      if not frame or frame._sfP4TimerAttached then return end
+      frame._sfP4TimerAttached = true
+      local oldShow = frame:GetScript("OnShow")
+      local oldHide = frame:GetScript("OnHide")
+      frame:SetScript("OnShow", function(self, ...)
+        if oldShow then oldShow(self, ...) end
+        T.UpdateNetworkOwner()
+      end)
+      frame:SetScript("OnHide", function(self, ...)
+        if oldHide then oldHide(self, ...) end
+        T.UpdateNetworkOwner()
+      end)
+    end
+
+    local oldBuildNetwork = B.BuildSFNetworkPanel
+    if type(oldBuildNetwork) == "function" then
+      B.BuildSFNetworkPanel = function(self, ...)
+        local results = {pcall(oldBuildNetwork, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_attach_panel(self.sfnPanel)
+        T.UpdateNetworkOwner()
+        return unpack(results, 2)
+      end
+    end
+
+    local oldBuildRoster = B.BuildOnlinePanel
+    if type(oldBuildRoster) == "function" then
+      B.BuildOnlinePanel = function(self, ...)
+        local results = {pcall(oldBuildRoster, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_attach_panel(self.onlinePanel)
+        T.UpdateNetworkOwner()
+        return unpack(results, 2)
+      end
+    end
+
+    local function p4_reset_auto_deadline()
+      local interval = p4_network_interval()
+      B._sfnNextAutoRefresh = interval > 0 and (p4_epoch() + interval) or nil
+      T.UpdateNetworkOwner()
+    end
+
+    local oldShowNetwork = B.ShowSFNetwork
+    if type(oldShowNetwork) == "function" then
+      B.ShowSFNetwork = function(self, ...)
+        local results = {pcall(oldShowNetwork, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_attach_panel(self.sfnPanel)
+        p4_reset_auto_deadline()
+        return unpack(results, 2)
+      end
+    end
+
+    local oldShowRoster = B.ShowFullRoster
+    if type(oldShowRoster) == "function" then
+      B.ShowFullRoster = function(self, ...)
+        local results = {pcall(oldShowRoster, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_attach_panel(self.onlinePanel)
+        p4_reset_auto_deadline()
+        return unpack(results, 2)
+      end
+    end
+
+    local function p4_reset_applicant_visuals()
+      if B.applicantsButton then
+        B.applicantsButton:SetBackdropColor(0, 0, 0, .82)
+        B.applicantsButton:SetBackdropBorderColor(.85, .62, .12, .95)
+      end
+      if B.applicantsButtonTitle then B.applicantsButtonTitle:SetTextColor(1, .92, .68) end
+      if B.badge then B.badge:Hide() end
+      if B.mm then B.mm:SetAlpha(1) end
+      if B.mm and B.mm.icon then B.mm.icon:SetVertexColor(1, 1, 1, 1) end
+      if B.mm and B.mm.border then B.mm.border:SetVertexColor(1, 1, 1, 1) end
+    end
+
+    local function p4_animate_applicant()
+      local a = (math.sin(p4_now() * 6) + 1) / 2
+      if B.applicantsButton then
+        B.applicantsButton:SetBackdropColor(.35 + (.35 * a), .12 + (.20 * a), .02, .98)
+        B.applicantsButton:SetBackdropBorderColor(1, .82, .18, 1)
+      end
+      if B.applicantsButtonTitle then B.applicantsButtonTitle:SetTextColor(1, .35 + (.65 * a), .15) end
+      if B.badge then
+        B.badge:Show()
+        B.badge:SetBackdropColor(.55 + (.35 * a), .05, .05, .98)
+        B.badge:SetBackdropBorderColor(1, .9, .25, 1)
+      end
+      if B.mm then B.mm:SetAlpha(.65 + (.35 * a)) end
+      if B.mm and B.mm.icon then B.mm.icon:SetVertexColor(1, .35 + (.65 * a), .15, 1) end
+      if B.mm and B.mm.border then B.mm.border:SetVertexColor(1, .75 + (.25 * a), .15, 1) end
+    end
+
+    T.applicantFrame = T.applicantFrame or CreateFrame("Frame")
+    T.applicantFrame:Hide()
+    T.applicantFrame.elapsed = 0
+    T.applicantFrame:SetScript("OnUpdate", function(self, elapsed)
+      self.elapsed = (self.elapsed or 0) + (tonumber(elapsed) or 0)
+      if self.elapsed < (1 / 30) then return end
+      self.elapsed = 0
+      if not B.newApplicantAlert then
+        p4_reset_applicant_visuals()
+        p4_sleep(self, "applicantSleeps")
+        return
+      end
+      p4_animate_applicant()
+      p4_note("applicantTicks", 1)
+    end)
+
+    local function p4_wake_applicant()
+      if B.newApplicantAlert then p4_wake(T.applicantFrame, "applicantWakes") end
+    end
+
+    local function p4_stop_applicant()
+      p4_reset_applicant_visuals()
+      p4_sleep(T.applicantFrame, "applicantSleeps")
+    end
+
+    local function p4_position_minimap()
+      local mm = B.mm
+      if not mm or not mm.dragging or not Minimap or not GetCursorPosition or not UIParent then return false end
+      local mx, my = Minimap:GetCenter()
+      local px, py = GetCursorPosition()
+      local scale = UIParent:GetEffectiveScale()
+      if not mx or not my or not px or not py or not scale or scale == 0 then return false end
+      px, py = px / scale, py / scale
+      B.minimapAngle = ((math.deg(math.atan2(py - my, px - mx)) % 360) + 360) % 360
+      mm:ClearAllPoints()
+      mm:SetParent(Minimap)
+      local angle = math.rad(B.minimapAngle)
+      mm:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * 80, math.sin(angle) * 80)
+      return true
+    end
+
+    T.dragFrame = T.dragFrame or CreateFrame("Frame")
+    T.dragFrame:Hide()
+    T.dragFrame.elapsed = 0
+    T.dragFrame:SetScript("OnUpdate", function(self, elapsed)
+      self.elapsed = (self.elapsed or 0) + (tonumber(elapsed) or 0)
+      if self.elapsed < (1 / 60) then return end
+      self.elapsed = 0
+      if not (B.mm and B.mm.dragging) then
+        p4_sleep(self, "dragSleeps")
+        return
+      end
+      if p4_position_minimap() then p4_note("dragTicks", 1) end
+    end)
+
+    local function p4_wake_drag()
+      if B.mm and B.mm.dragging then p4_wake(T.dragFrame, "dragWakes") end
+    end
+
+    local function p4_stop_drag()
+      p4_sleep(T.dragFrame, "dragSleeps")
+    end
+
+    T.WakePulse = function()
+      p4_wake_applicant()
+      p4_wake_drag()
+    end
+    T.ApplyApplicantOwner = function()
+      if B.applicantsButton then B.applicantsButton:SetScript("OnUpdate", nil) end
+      if B.newApplicantAlert then p4_wake_applicant() else p4_stop_applicant() end
+    end
+    T.ApplyMinimapOwner = function()
+      local mm = B.mm
+      if not mm then return end
+      mm:SetScript("OnUpdate", nil)
+      if mm._sfP4DragOwner then return end
+      mm._sfP4DragOwner = true
+      local oldStart = mm:GetScript("OnDragStart")
+      local oldStop = mm:GetScript("OnDragStop")
+      mm:SetScript("OnDragStart", function(self, ...)
+        local results = oldStart and {pcall(oldStart, self, ...)} or {true}
+        p4_wake_drag()
+        if not results[1] then error(results[2], 0) end
+      end)
+      mm:SetScript("OnDragStop", function(self, ...)
+        local wasActive = self.dragging or (BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.freeLauncher)
+        local results = oldStop and {pcall(oldStop, self, ...)} or {true}
+        p4_stop_drag()
+        if wasActive then p4_note("finalDragSaves", 1) end
+        if not results[1] then error(results[2], 0) end
+      end)
+    end
+
+    local oldSetApplicantAlert = B.SetApplicantAlert
+    if type(oldSetApplicantAlert) == "function" then
+      B.SetApplicantAlert = function(self, active, ...)
+        local results = {pcall(oldSetApplicantAlert, self, active, ...)}
+        self.newApplicantAlert = active and true or false
+        if self.newApplicantAlert then p4_wake_applicant() else p4_stop_applicant() end
+        if not results[1] then error(results[2], 0) end
+        return unpack(results, 2)
+      end
+    end
+
+    local function p4_listing_tick()
+      if not B.myListing then return end
+      local ok, err = pcall(function()
+        if B.CheckAutoCloseListing then B:CheckAutoCloseListing() end
+        if B.myListing and B.Broadcast then B:Broadcast() end
+      end)
+      if B.myListing then B:SF151_ScheduleDelayed("listing.maintenance", 10, p4_listing_tick) end
+      if not ok then error(err, 0) end
+    end
+
+    local function p4_update_listing_owner()
+      if B.myListing then
+        B:SF151_ScheduleDelayed("listing.maintenance", 10, p4_listing_tick)
+      else
+        B:SF151_CancelDelayed("listing.maintenance")
+      end
+    end
+
+    local oldCreateListing = B.CreateListing
+    if type(oldCreateListing) == "function" then
+      B.CreateListing = function(self, ...)
+        local results = {pcall(oldCreateListing, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_update_listing_owner()
+        return unpack(results, 2)
+      end
+    end
+
+    local oldRestoreListing = B.RestoreMyListingState
+    if type(oldRestoreListing) == "function" then
+      B.RestoreMyListingState = function(self, ...)
+        local results = {pcall(oldRestoreListing, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_update_listing_owner()
+        return unpack(results, 2)
+      end
+    end
+
+    local oldCancelListing = B.CancelMyListing
+    if type(oldCancelListing) == "function" then
+      B.CancelMyListing = function(self, ...)
+        local results = {pcall(oldCancelListing, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p4_update_listing_owner()
+        return unpack(results, 2)
+      end
+    end
+
+    local function p4_has_maintenance_work()
+      if type(B.sfamSeenPublic) == "table" and next(B.sfamSeenPublic) then return true end
+      if type(B.sfamSeenApplicants) == "table" and next(B.sfamSeenApplicants) then return true end
+      local network = BronzeLFG_DB and BronzeLFG_DB.network or nil
+      if network then
+        for _, name in ipairs({"favoriteAlertCooldowns", "favoriteAlertSeenListings", "favoriteOnlineSeen"}) do
+          if type(network[name]) == "table" and next(network[name]) then return true end
+        end
+      end
+      local signal = BronzeLFG_DB and BronzeLFG_DB.signalFireNetwork or nil
+      return signal and type(signal.events) == "table" and next(signal.events) ~= nil
+    end
+
+    local function p4_maintenance_tick()
+      local ok, err = pcall(function()
+        if B.SF151_RunSlowMaintenance then B:SF151_RunSlowMaintenance() end
+      end)
+      if p4_has_maintenance_work() then
+        B:SF151_ScheduleDelayed("maintenance.slow", 30, p4_maintenance_tick)
+      end
+      if not ok then error(err, 0) end
+    end
+
+    function T.WakeMaintenance()
+      if p4_has_maintenance_work() and not T.taskByKey["maintenance.slow"] then
+        B:SF151_ScheduleDelayed("maintenance.slow", 30, p4_maintenance_tick)
+      end
+    end
+
+    local oldSendEvent = B.SFE_SendEvent
+    if type(oldSendEvent) == "function" then
+      B.SFE_SendEvent = function(self, ...)
+        local results = {pcall(oldSendEvent, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        T.WakeMaintenance()
+        return unpack(results, 2)
+      end
+    end
+
+    if B._sfPerfCorePulseFrame then B._sfPerfCorePulseFrame:SetScript("OnUpdate", nil) end
+    if B._sfPerfNetworkPulseFrame then B._sfPerfNetworkPulseFrame:SetScript("OnUpdate", nil) end
+    if B._sfPerfPresencePulseFrame then B._sfPerfPresencePulseFrame:SetScript("OnUpdate", nil) end
+    if T.pulseFrame then T.pulseFrame:SetScript("OnUpdate", nil); T.pulseFrame:Hide() end
+    if B.applicantsButton then B.applicantsButton:SetScript("OnUpdate", nil) end
+    if B.mm then B.mm:SetScript("OnUpdate", nil) end
+
+    p4_attach_panel(B.sfnPanel)
+    p4_attach_panel(B.onlinePanel)
+    T.ApplyApplicantOwner()
+    T.ApplyMinimapOwner()
+    p4_update_listing_owner()
+    T.WakeMaintenance()
+
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("PLAYER_LOGIN")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:SetScript("OnEvent", function()
+      p4_attach_panel(B.sfnPanel)
+      p4_attach_panel(B.onlinePanel)
+      T.ApplyApplicantOwner()
+      T.ApplyMinimapOwner()
+      p4_update_listing_owner()
+      T.WakeMaintenance()
+      T.UpdateNetworkOwner()
+    end)
+    T.eventFrame = eventFrame
+
+    function B:SF151_ResetTimerStats()
+      T.stats = {}
+      T.errors = {}
+      return true
+    end
+
+    function B:SF151_GetTimerDiagnostics()
+      local result = {
+        generation=T.generation,
+        delayedActive=T.delayFrame:IsShown() and true or false,
+        delayedTasks=#T.tasks,
+        networkActive=T.networkFrame:IsShown() and true or false,
+        applicantActive=T.applicantFrame:IsShown() and true or false,
+        dragActive=T.dragFrame:IsShown() and true or false,
+        oldCoreActive=B._sfPerfCorePulseFrame and B._sfPerfCorePulseFrame:GetScript("OnUpdate") and true or false,
+        oldNetworkActive=B._sfPerfNetworkPulseFrame and B._sfPerfNetworkPulseFrame:GetScript("OnUpdate") and true or false,
+        oldPresenceActive=B._sfPerfPresencePulseFrame and B._sfPerfPresencePulseFrame:GetScript("OnUpdate") and true or false,
+        callbackErrorCount=#T.errors,
+        errors=T.errors,
+      }
+      for key, value in pairs(T.stats or {}) do result[key] = value end
+      return result
+    end
+
+    function B:SF151_PrintTimerDiagnostics()
+      local d = self:SF151_GetTimerDiagnostics()
+      local function out(text)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("SignalFire> " .. text) end
+      end
+      out("timer owner " .. tostring(d.generation) .. ", delayed=" .. tostring(d.delayedActive) .. "/" .. tostring(d.delayedTasks)
+        .. ", network=" .. tostring(d.networkActive) .. ", applicant=" .. tostring(d.applicantActive) .. ", drag=" .. tostring(d.dragActive))
+      out("legacy pulses: core=" .. tostring(d.oldCoreActive) .. ", network=" .. tostring(d.oldNetworkActive)
+        .. ", presence=" .. tostring(d.oldPresenceActive) .. ", callbackErrors=" .. tostring(d.callbackErrorCount))
+      out("delayed: wakes=" .. tostring(d.delayedWakes or 0) .. ", sleeps=" .. tostring(d.delayedSleeps or 0)
+        .. ", scheduled=" .. tostring(d.tasksScheduled or 0) .. ", executed=" .. tostring(d.tasksExecuted or 0)
+        .. ", cancelled=" .. tostring(d.tasksCancelled or 0) .. ", maxDepth=" .. tostring(d.maximumQueueDepth or 0))
+      out("visible ticker: wakes=" .. tostring(d.networkWakes or 0) .. ", sleeps=" .. tostring(d.networkSleeps or 0)
+        .. ", ticks=" .. tostring(d.networkTicks or 0) .. ", hiddenTicks=" .. tostring(d.networkHiddenTicks or 0)
+        .. ", autoRequests=" .. tostring(d.autoRefreshRequests or 0))
+      out("interaction: applicantTicks=" .. tostring(d.applicantTicks or 0) .. ", dragTicks=" .. tostring(d.dragTicks or 0)
+        .. ", dragWrites=0, finalDragSaves=" .. tostring(d.finalDragSaves or 0))
+      return d
+    end
+  end
+end
+-- SIGNALFIRE_PHASE4_EVENT_TIMERS_END

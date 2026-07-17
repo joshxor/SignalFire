@@ -325,14 +325,10 @@ do
       sfsff_frame:SetScript("OnEvent", function(self, event, addon)
         if event == "ADDON_LOADED" and addon and addon ~= "SignalFire" and addon ~= "BronzeLFG" then return end
         SignalFireSlashFreezeFix.Apply()
-      end)
-      sfsff_frame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-        if self.elapsed < 0.75 then return end
-        self.elapsed = 0
-        self.ticks = (self.ticks or 0) + 1
-        SignalFireSlashFreezeFix.Apply()
-        if self.ticks >= 8 then self:SetScript("OnUpdate", nil) end
+        local B = _G.BronzeLFG
+        if B and B.SF151_ScheduleDelayed then
+          B:SF151_ScheduleDelayed("startup.slash-freeze", 1.0, SignalFireSlashFreezeFix.Apply)
+        end
       end)
     end
   until true

@@ -2786,10 +2786,7 @@ do
     sfamLogin:RegisterEvent("PLAYER_LOGIN")
     sfamLogin:SetScript("OnEvent", function()
       sfam_ensure_options()
-      sfamLogin.waitUntil = sfam_now() + 8
-      sfamLogin:SetScript("OnUpdate", function(self)
-        if not self.waitUntil or sfam_now() < self.waitUntil then return end
-        self:SetScript("OnUpdate", nil)
+      local function show_summary()
         if not sfam_enabled("loginSummaryToast") then return end
         if BLFG.SFN_SendStatus then BLFG:SFN_SendStatus() end
         if BLFG.SendPresence then BLFG:SendPresence() end
@@ -2797,7 +2794,12 @@ do
         if BLFG.SFN_GetNoticeRows then notices = #(BLFG:SFN_GetNoticeRows() or {}) end
         local noticeText = tostring(notices) .. " notice(s)"
         BLFG:SFAM_ShowToast("SignalFire ready", "Network roster compiling  |  " .. noticeText, "Interface\\Icons\\Spell_Fire_FlameBolt", 5)
-      end)
+      end
+      if BLFG and BLFG.SF151_ScheduleDelayed then
+        BLFG:SF151_ScheduleDelayed("startup.login-summary", 8.0, show_summary)
+      else
+        show_summary()
+      end
     end)
 
     sfam_ensure_options()

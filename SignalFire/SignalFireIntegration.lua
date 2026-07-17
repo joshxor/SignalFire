@@ -360,20 +360,16 @@ do
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame.elapsed = 0
     frame.reinstalls = 0
-    frame:SetScript("OnEvent", function(self, event, addon)
-      if event == "ADDON_LOADED" and addon and addon ~= "SignalFire" and addon ~= "BronzeLFG" then return end
+    local function sfsf_verify()
       if SFSF.Install then SFSF.Install() end
       sfsf_apply_modules()
-    end)
-    frame:SetScript("OnUpdate", function(self, elapsed)
-      self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-      if self.elapsed < 1 then return end
-      self.elapsed = 0
-      self.reinstalls = (self.reinstalls or 0) + 1
-      if self.reinstalls <= 10 then
-        if SFSF.Install then SFSF.Install() end
-      else
-        self:SetScript("OnUpdate", nil)
+    end
+    frame:SetScript("OnEvent", function(self, event, addon)
+      if event == "ADDON_LOADED" and addon and addon ~= "SignalFire" and addon ~= "BronzeLFG" then return end
+      sfsf_verify()
+      local B = sfsf_B()
+      if B and B.SF151_ScheduleDelayed then
+        B:SF151_ScheduleDelayed("startup.slash-final", 1.0, sfsf_verify)
       end
     end)
   until true
@@ -962,8 +958,18 @@ do
     end
 
     local scheduled = {}
+    local scheduledSequence = 0
+    local function sfpa_clock()
+      if GetTime then return GetTime() end
+      return (time and time()) or 0
+    end
     local function sfpa_after(delay, fn)
-      table.insert(scheduled, {t = sfpa_now() + (tonumber(delay) or 0), fn = fn})
+      scheduledSequence = scheduledSequence + 1
+      if BLFG and BLFG.SF151_ScheduleDelayed then
+        return BLFG:SF151_ScheduleDelayed("presence." .. tostring(scheduledSequence), delay, fn)
+      end
+      table.insert(scheduled, {t = sfpa_clock() + (tonumber(delay) or 0), fn = fn, sequence=scheduledSequence})
+      return scheduledSequence
     end
 
     function SFPA.IsAdminName(name)
@@ -1388,10 +1394,10 @@ do
     end)
     local sfpa_tick = 0
     frame:SetScript("OnUpdate", function(self, elapsed)
-      local now = sfpa_now()
+      local clockNow = sfpa_clock()
       for i = #scheduled, 1, -1 do
         local item = scheduled[i]
-        if item and now >= (item.t or 0) then
+        if item and clockNow >= (item.t or 0) then
           table.remove(scheduled, i)
           if item.fn then item.fn() end
         end
@@ -1400,6 +1406,7 @@ do
       sfpa_tick = sfpa_tick + (tonumber(elapsed) or 0)
       if sfpa_tick < 1 then return end
       sfpa_tick = 0
+      local now = sfpa_now()
 
       local networkVisible = BLFG and BLFG.sfnPanel and BLFG.sfnPanel:IsVisible()
       local rosterVisible = BLFG and BLFG.onlinePanel and BLFG.onlinePanel:IsVisible()

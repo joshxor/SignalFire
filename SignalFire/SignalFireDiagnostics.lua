@@ -318,7 +318,13 @@ do
     if p4 then P:RegisterOnUpdate("refresh.scheduler", p4.frame, function() return p4.pending == true end) end
     P:RegisterOnUpdate("chat.queue", B._sfP3Frame, function() return #(B._sfP3Queue or {}) > 0 end)
     local timer = _G.SignalFireTimer151
-    if timer then P:RegisterOnUpdate("ui.temporaryPulse", timer.pulseFrame, function(frame) return frame:IsShown() end) end
+    if timer then
+      P:RegisterOnUpdate("timer.delayed", timer.delayFrame, function() return #(timer.tasks or {}) > 0 end)
+      P:RegisterOnUpdate("timer.network-visible", timer.networkFrame,
+        function() return (B.sfnPanel and B.sfnPanel:IsVisible()) or (B.onlinePanel and B.onlinePanel:IsVisible()) end)
+      P:RegisterOnUpdate("timer.applicant", timer.applicantFrame, function() return B.newApplicantAlert == true end)
+      P:RegisterOnUpdate("timer.minimap-drag", timer.dragFrame, function() return B.mm and B.mm.dragging == true end)
+    end
     P:RegisterOnUpdate("ui.publicRefresh", B._publicRefreshFrame, function(frame) return frame:IsShown() end)
     P:RegisterOnUpdate("ui.invasionPlayers", B.invasionPlayerPanel, function(frame) return frame:IsShown() end)
     P:RegisterOnUpdate("ui.toast", B.sfamToast, function(frame) return frame:IsShown() end)
@@ -469,6 +475,10 @@ do
     end
     perf_emit("memory: pruned=" .. tostring((memory.entriesPruned or 0) + (timer.cacheEntriesRemoved or 0))
       .. ", cacheSamples=" .. tostring(perf_count(self.cacheMaximums)))
+    perf_emit("timers: delayed=" .. tostring(timer.delayedTicks or 0) .. "/" .. tostring(timer.tasksExecuted or 0)
+      .. ", network=" .. tostring(timer.networkTicks or 0) .. ", hidden=" .. tostring(timer.networkHiddenTicks or 0)
+      .. ", applicant=" .. tostring(timer.applicantTicks or 0) .. ", drag=" .. tostring(timer.dragTicks or 0)
+      .. ", dragWrites=0, callbackErrors=" .. tostring(timer.callbackErrors or 0))
     local names = {}
     for name in pairs(stats.onUpdate or {}) do table.insert(names, name) end
     table.sort(names)
