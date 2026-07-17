@@ -245,12 +245,16 @@ do
       {"session.invasionBeacons", B.invasionBeacons, false},
       {"session.knownClassNames", B._sf151KnownClassNames, false},
       {"session.chatSeen", B._sfP3Seen, false},
+      {"session.chatSeenSlots", B._sfP3SeenSlots, false},
       {"session.chatRecords", B._sfP3Records, false},
+      {"session.chatRecordSlots", B._sfP3RecordSlots, false},
+      {"session.chatActiveRecords", B._sfP3ActiveRecords, false},
       {"session.chatQueue", B._sfP3Queue, false},
       {"session.chatParseSeen", B._sfChatParseSeen, false},
       {"session.chatParseQueue", B._sfChatParseQueue, false},
       {"session.inlineChatCache", B._inlinePublicChatCache, false},
       {"session.inlineChatSeen", B._inlinePublicChatEventSeen, false},
+      {"session.inlineChatSeenSlots", B._sfP3InlineSeenSlots, false},
       {"session.directLinkCache", B._sfDirectLinkCache, false},
       {"session.fastLinkSeen", B._sffclSeen, false},
       {"session.fastLinkFilterCache", B._sffclFilterCache, false},
@@ -260,6 +264,12 @@ do
       {"session.alertSeen", B._sf151AlertSeen, false},
       {"session.chatDecisionCache", p3._decisionCache, false},
       {"session.chatDecisionSlots", p3._decisionSlots, false},
+      {"session.chatRenderDecisions", p3._renderDecisionCache, false},
+      {"session.chatRenderDecisionSlots", p3._renderDecisionSlots, false},
+      {"session.chatPendingLinkTargets", p3._pendingByStableId, false},
+      {"session.publicCanonicalIndex", p3._publicIndex, false},
+      {"session.publicCanonicalIds", p3._publicIndexById, false},
+      {"session.publicCanonicalSlots", p3._publicIndexSlots, false},
       {"session.rosterSnapshot", roster.snapshot, false},
       {"session.rosterViews", roster.viewCache, false},
       {"session.rosterClassCache", roster.classCache, false},
@@ -435,6 +445,25 @@ do
     perf_emit("chat frames: messages=" .. tostring(chatStats.messagesObserved or 0)
       .. ", receipts=" .. tostring(chatStats.receivingFrameObservations or 0)
       .. ", maxPerMessage=" .. tostring(chatStats.maximumReceivingFrames or 0))
+    perf_emit("chat decisions: source=" .. tostring(chat.sourceEvents or 0)
+      .. ", sourceHits=" .. tostring(chat.sourceDecisionHits or 0)
+      .. ", sourceMisses=" .. tostring(chat.sourceDecisionMisses or 0)
+      .. ", render=" .. tostring(chat.renderDecisionHits or 0) .. "/" .. tostring(chat.renderDecisionMisses or 0)
+      .. ", addMessageParses=" .. tostring(chat.addMessageParseCalls or 0)
+      .. ", protocols=" .. tostring(chat.protocolRejected or 0))
+    perf_emit("public index: lookup=" .. tostring(chat.indexLookups or 0)
+      .. ", hit=" .. tostring(chat.indexHits or 0) .. ", miss=" .. tostring(chat.indexMisses or 0)
+      .. ", insert=" .. tostring(chat.indexInserts or 0) .. ", update=" .. tostring(chat.indexUpdates or 0)
+      .. ", remove=" .. tostring(chat.indexRemovals or 0) .. ", rebuild=" .. tostring(chat.indexRebuilds or 0)
+      .. ", collisions=" .. tostring(chat.indexCollisions or 0)
+      .. ", stale=" .. tostring(chat.indexStaleRepairs or 0)
+      .. ", fullScans=" .. tostring(chat.indexFullScans or 0)
+      .. ", rows=" .. tostring(chat.indexRowsScanned or 0))
+    perf_emit("public mutations: dirty=" .. tostring(chat.refreshDirtyRequests or 0)
+      .. ", alerts=" .. tostring(chat.alertsEmitted or 0)
+      .. ", linksBuilt=" .. tostring(chat.linksBuilt or 0)
+      .. ", wrapperDuplicates=" .. tostring(chat.wrapperDuplicateSkips or 0)
+      .. ", errors=" .. tostring(chat.processingErrors or 0))
     perf_emit("network: presence=" .. tostring(network.presencePackets or refresh.incomingPresence or 0)
       .. ", requests=" .. tostring(refresh.requests or 0) .. ", merged=" .. tostring(refresh.merged or 0)
       .. ", rebuilds=" .. tostring(network.actualPanelRebuilds or 0) .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)
