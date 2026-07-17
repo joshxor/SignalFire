@@ -27,6 +27,7 @@ assert(not (B._sfPerfNetworkPulseFrame and B._sfPerfNetworkPulseFrame:GetScript(
   "legacy Network pulse is still active")
 assert(not (B._sfPerfPresencePulseFrame and B._sfPerfPresencePulseFrame:GetScript("OnUpdate")),
   "legacy presence scheduler is still active")
+assert(not T.taskByKey["maintenance.slow"], "slow maintenance left a permanent delayed task")
 
 T.tasks = {}
 T.taskByKey = {}

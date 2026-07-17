@@ -3984,33 +3984,18 @@ do
       end
     end
 
-    local function p4_has_maintenance_work()
-      if type(B.sfamSeenPublic) == "table" and next(B.sfamSeenPublic) then return true end
-      if type(B.sfamSeenApplicants) == "table" and next(B.sfamSeenApplicants) then return true end
-      local network = BronzeLFG_DB and BronzeLFG_DB.network or nil
-      if network then
-        for _, name in ipairs({"favoriteAlertCooldowns", "favoriteAlertSeenListings", "favoriteOnlineSeen"}) do
-          if type(network[name]) == "table" and next(network[name]) then return true end
-        end
+    -- Cache cleanup is opportunistic in Phase 4: run on real lifecycle/data
+    -- events, then rely on the existing 30-second guard in the maintenance
+    -- function. Event reads already remove expired rows, so no background
+    -- maintenance deadline needs to keep the delayed scheduler awake.
+    function T.RunMaintenance(reason)
+      if not B.SF151_RunSlowMaintenance then return false end
+      local ok, result = pcall(B.SF151_RunSlowMaintenance, B)
+      if not ok then
+        p4_record_error("maintenance." .. tostring(reason or "event"), result)
+        return false
       end
-      local signal = BronzeLFG_DB and BronzeLFG_DB.signalFireNetwork or nil
-      return signal and type(signal.events) == "table" and next(signal.events) ~= nil
-    end
-
-    local function p4_maintenance_tick()
-      local ok, err = pcall(function()
-        if B.SF151_RunSlowMaintenance then B:SF151_RunSlowMaintenance() end
-      end)
-      if p4_has_maintenance_work() then
-        B:SF151_ScheduleDelayed("maintenance.slow", 30, p4_maintenance_tick)
-      end
-      if not ok then error(err, 0) end
-    end
-
-    function T.WakeMaintenance()
-      if p4_has_maintenance_work() and not T.taskByKey["maintenance.slow"] then
-        B:SF151_ScheduleDelayed("maintenance.slow", 30, p4_maintenance_tick)
-      end
+      return result
     end
 
     local oldSendEvent = B.SFE_SendEvent
@@ -4018,7 +4003,7 @@ do
       B.SFE_SendEvent = function(self, ...)
         local results = {pcall(oldSendEvent, self, ...)}
         if not results[1] then error(results[2], 0) end
-        T.WakeMaintenance()
+        T.RunMaintenance("event-created")
         return unpack(results, 2)
       end
     end
@@ -4035,7 +4020,7 @@ do
     T.ApplyApplicantOwner()
     T.ApplyMinimapOwner()
     p4_update_listing_owner()
-    T.WakeMaintenance()
+    T.RunMaintenance("addon-load")
 
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_LOGIN")
@@ -4046,7 +4031,7 @@ do
       T.ApplyApplicantOwner()
       T.ApplyMinimapOwner()
       p4_update_listing_owner()
-      T.WakeMaintenance()
+      T.RunMaintenance("world-entry")
       T.UpdateNetworkOwner()
     end)
     T.eventFrame = eventFrame
