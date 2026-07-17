@@ -764,6 +764,7 @@ do
         zone = zone,
         seen = stamp,
       }
+      if self.SF151_InvalidateRosterData then self:SF151_InvalidateRosterData("status", name) end
 
       return sfn_send(table.concat({SFN_PREFIX, "SFNSTATUS", name, classFile or className or "", looking, flags, zone, tostring(stamp), className or classFile or ""}, "~"))
     end
@@ -797,6 +798,10 @@ do
           zone = zone ~= "" and zone or oldStatus.zone,
           seen = seen,
         }
+        if BLFG.SF151_InvalidateRosterData then BLFG:SF151_InvalidateRosterData("status", name) end
+        if BLFG.SF151_CheckFavoriteTransition then
+          BLFG:SF151_CheckFavoriteTransition(BLFG.sfnStatuses[name], "status")
+        end
         BLFG._sfnLastPresenceResponse = sfn_now()
         BLFG._sfnPresenceRefreshPending = nil
         if BLFG.SF151_NotePresencePacket then BLFG:SF151_NotePresencePacket("SFNSTATUS") end
@@ -1236,42 +1241,6 @@ do
       local rows = {}
       if self.GetOnlineUserRows then rows = self:GetOnlineUserRows() or {} end
       local nowStamp = sfn_now()
-      local byName = {}
-      for _, u in ipairs(rows) do
-        local key = sfn_name_key(u and u.name or "")
-        if key ~= "" then byName[key] = u end
-      end
-      for name, su in pairs(self.sfnStatuses or {}) do
-        local seen = tonumber(su and su.seen or 0) or 0
-        if seen <= 0 or (nowStamp - seen) > 180 then
-          self.sfnStatuses[name] = nil
-        else
-          local key = sfn_name_key((su and su.name) or name)
-          local existing = key ~= "" and byName[key] or nil
-          if existing then
-            existing.looking = su.looking
-            existing.sfnRoleFlags = su.flags
-            if tostring(existing.zone or "") == "" then existing.zone = su.zone end
-            if tostring(existing.className or "") == "" or tostring(existing.className or "") == "Unknown" then existing.className = su.className end
-            if tostring(existing.classFile or "") == "" or tostring(existing.classFile or "") == "UNKNOWN" then existing.classFile = su.classFile end
-            if self.SF151_ResolveClassDisplay then self:SF151_ResolveClassDisplay(existing) end
-            if seen > (tonumber(existing.seen or 0) or 0) then existing.seen = seen end
-          else
-            local row = {name=(su and su.name) or name, className=su.className, classFile=su.classFile, role=su.role, looking=su.looking, zone=su.zone, seen=seen}
-            if self.SF151_ResolveClassDisplay then self:SF151_ResolveClassDisplay(row) end
-            table.insert(rows, row)
-            if key ~= "" then byName[key] = row end
-          end
-        end
-      end
-      if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
-      table.sort(rows, function(a,b)
-        if a.self and not b.self then return true end
-        if b.self and not a.self then return false end
-        if a.favorite and not b.favorite then return true end
-        if b.favorite and not a.favorite then return false end
-        return tostring(a.name or "") < tostring(b.name or "")
-      end)
 
       self.sfnUserPage = tonumber(self.sfnUserPage or 1) or 1
       local per = tonumber(self.sfnRowsPerPage or #(self.sfnUserRows or {})) or 6
@@ -2257,55 +2226,7 @@ do
     end
 
     local function sfam_compiled_online_rows(self)
-      local rows = {}
-      local seen = {}
-      if self and self.GetOnlineUserRows then
-        for _, u in ipairs(self:GetOnlineUserRows() or {}) do
-          if u then
-            table.insert(rows, u)
-            local n = string.lower(tostring(u.name or ""))
-            if n ~= "" then seen[n] = u end
-          end
-        end
-      end
-      if self and self.sfnStatuses then
-        for name, su in pairs(self.sfnStatuses or {}) do
-          local low = string.lower(tostring(name or ""))
-          if low ~= "" and seen[low] then
-            local u = seen[low]
-            u.looking = su.looking or u.looking
-            u.status = su.looking or u.status
-            u.sfnRoleFlags = su.flags or u.sfnRoleFlags
-            u.flags = su.flags or u.flags
-            u.zone = (u.zone and u.zone ~= "") and u.zone or su.zone
-            u.className = (u.className and u.className ~= "") and u.className or su.className
-            u.classFile = (u.classFile and u.classFile ~= "") and u.classFile or su.classFile
-            u.role = (u.role and u.role ~= "") and u.role or su.role
-          elseif low ~= "" then
-            table.insert(rows, {
-              name = name,
-              className = su.className,
-              classFile = su.classFile,
-              role = su.role,
-              looking = su.looking or "Online",
-              status = su.looking or "Online",
-              zone = su.zone,
-              seen = su.seen,
-              sfnRoleFlags = su.flags,
-              flags = su.flags,
-              favorite = self.IsFavorite and self:IsFavorite(name) or false,
-            })
-          end
-        end
-      end
-      if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
-      table.sort(rows, function(a,b)
-        if a.self and not b.self then return true end
-        if b.self and not a.self then return false end
-        if a.favorite and not b.favorite then return true end
-        if b.favorite and not a.favorite then return false end
-        return tostring(a.name or "") < tostring(b.name or "")
-      end)
+      local rows = self and self.GetOnlineUserRows and self:GetOnlineUserRows() or {}
       if self then self.sfamCompiledOnlineRows = rows end
       return rows
     end

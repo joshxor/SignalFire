@@ -181,6 +181,8 @@ assert(hash_SlashCmdList["/sf"]("perf off") == true and perf.enabled == false, "
 
 local lifecycle = assert(SignalFireUILifecycle151, "UI lifecycle owner was not loaded")
 assert(lifecycle.generation == "1.5.1-perf-phase2", "wrong final UI lifecycle owner")
+local rosterSnapshot = assert(SignalFireRosterSnapshot151, "Network/roster snapshot owner was not loaded")
+assert(rosterSnapshot.owner == "1.5.1-perf-phase3", "wrong final Network/roster owner")
 
 print("parser regression harness: PASS (" .. tostring(result.passed) .. " passed, "
   .. tostring(result.skipped) .. " skipped, 0 failed)")

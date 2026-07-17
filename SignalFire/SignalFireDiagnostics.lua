@@ -73,6 +73,7 @@ do
     if B.SF151_ResetRefreshStats then B:SF151_ResetRefreshStats() end
     if B.SF151_ResetTimerStats then B:SF151_ResetTimerStats() end
     if B.SF151_ResetHotPathStats then B:SF151_ResetHotPathStats() end
+    if B.SF151_ResetRosterSnapshotStats then B:SF151_ResetRosterSnapshotStats() end
     return true
   end
 
@@ -231,6 +232,7 @@ do
     local network = db.network or {}
     local shared = db.signalFireNetwork or {}
     local p3 = _G.SignalFireChatRuntime151 or {}
+    local roster = _G.SignalFireRosterSnapshot151 or {}
     return {
       {"session.publicGroups", B.publicGroups, false},
       {"session.onlineUsers", B.onlineUsers, false},
@@ -258,6 +260,11 @@ do
       {"session.alertSeen", B._sf151AlertSeen, false},
       {"session.chatDecisionCache", p3._decisionCache, false},
       {"session.chatDecisionSlots", p3._decisionSlots, false},
+      {"session.rosterSnapshot", roster.snapshot, false},
+      {"session.rosterViews", roster.viewCache, false},
+      {"session.rosterClassCache", roster.classCache, false},
+      {"session.rosterStatusMap", roster.statusByNameKey, false},
+      {"session.rosterUnitMap", roster.unitByNameKey, false},
       {"session.seenPublic", B.sfamSeenPublic, false},
       {"session.seenApplicants", B.sfamSeenApplicants, false},
       {"db.chatGuildListings", db.chatGuildListings, true},
@@ -410,6 +417,7 @@ do
     local calls = stats.calls or {}
     local memory = stats.memory or {}
     local timer = report.timer or {}
+    local roster = B.SF151_GetRosterSnapshotDiagnostics and B:SF151_GetRosterSnapshotDiagnostics() or {}
     perf_emit("perf owner " .. tostring(report.generation) .. ", enabled=" .. tostring(report.enabled))
     if self.installError then perf_emit("instrumentation error: " .. tostring(self.installError)) end
     perf_emit("chat: filters=" .. tostring(chat.filterCalls or 0) .. ", wrappers=" .. tostring(chat.wrapperCalls or 0)
@@ -426,6 +434,22 @@ do
       .. ", rebuilds=" .. tostring(network.actualPanelRebuilds or 0) .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)
       .. ", rows=" .. tostring(network.rosterRowsScanned or 0) .. ", statuses=" .. tostring(network.statusesScanned or 0)
       .. ", units=" .. tostring(network.unitTokensScanned or 0) .. ", sorts=" .. tostring(network.sorts or 0))
+    perf_emit("roster snapshot: gen=" .. tostring(roster.generation or 0)
+      .. ", requests=" .. tostring(roster.canonicalSnapshotRequests or 0)
+      .. ", built=" .. tostring(roster.canonicalSnapshotsBuilt or 0)
+      .. ", hits=" .. tostring(roster.snapshotCacheHits or 0)
+      .. ", statusMaps=" .. tostring(roster.statusMapBuilds or 0)
+      .. ", statusChecks=" .. tostring(roster.statusComparisons or 0)
+      .. ", unitMaps=" .. tostring(roster.unitMapBuilds or 0)
+      .. ", unitTokens=" .. tostring(roster.unitTokensInspected or 0)
+      .. ", canonicalSorts=" .. tostring(roster.canonicalSorts or 0))
+    perf_emit("roster views: built=" .. tostring(roster.filteredViewsBuilt or 0)
+      .. ", hits=" .. tostring(roster.filteredViewCacheHits or 0)
+      .. ", scansAvoided=" .. tostring(roster.fullRosterScansAvoided or 0)
+      .. ", favoriteChecks=" .. tostring(roster.favoriteTransitionChecks or 0)
+      .. ", hoverRefresh=" .. tostring(roster.hoverTriggeredRefreshRequests or 0)
+      .. ", hiddenBuilds=" .. tostring(roster.hiddenPanelUIBuilds or 0)
+      .. ", networkEvents=" .. tostring(roster.networkEventRefreshes or 0))
     perf_emit("ui: create=" .. tostring(((stats.calls or {})["ui.CreateUI"] or {}).calls or 0)
       .. ", full=" .. tostring(ui.createUIFullExecutions or 0) .. ", fast=" .. tostring(ui.createUIFastPath or 0)
       .. ", builds=" .. tostring(ui.panelBuildRequests or ui.panelBuilds or 0) .. "/" .. tostring(ui.actualPanelBuilds or 0)

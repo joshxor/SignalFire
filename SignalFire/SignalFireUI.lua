@@ -328,13 +328,14 @@ function SignalFire_InstallPhase6()
         local rows = p6_dataset_size(panel)
         if rows > (stats.maxRows or 0) then stats.maxRows = rows end
         local started = p6_clock_ms()
-        local result = old(self, ...)
+        local results = {pcall(old, self, ...)}
         local elapsed = math.max(0, p6_clock_ms() - started)
         P6.active[panel] = nil
         stats.calls = (stats.calls or 0) + 1
         stats.totalMs = (stats.totalMs or 0) + elapsed
         if elapsed > (stats.maxMs or 0) then stats.maxMs = elapsed end
-        return result
+        if not results[1] then error(results[2], 0) end
+        return unpack(results, 2)
       end
     end
 
@@ -534,8 +535,9 @@ do
       if not fn then return end
       local s = stats()
       P4.executing = panel
-      fn(B)
+      local ok, err = pcall(fn, B)
       P4.executing = nil
+      if not ok then error(err, 0) end
       s.executed = (s.executed or 0) + 1
       s.executedByPanel[panel] = (s.executedByPanel[panel] or 0) + 1
     end
@@ -2819,3 +2821,658 @@ do
   end
 end
 -- SIGNALFIRE_PHASE2_UI_LIFECYCLE_END
+
+-- Phase 3 generation-cached Network and Full Roster ownership.
+-- SIGNALFIRE_PHASE3_NETWORK_ROSTER_BEGIN
+do
+  local B = _G.BronzeLFG
+  if B then
+    local R = _G.SignalFireRosterSnapshot151 or {}
+    _G.SignalFireRosterSnapshot151 = R
+    R.owner = "1.5.1-perf-phase3"
+    R.generation = tonumber(R.generation or 1) or 1
+    R.stats = R.stats or {}
+    R.viewCache = R.viewCache or {}
+    R.viewOrder = R.viewOrder or {}
+    R.classCache = R.classCache or {}
+    R.sourceSignatures = R.sourceSignatures or {}
+    R.maximumRows = 512
+    R.maximumViews = 16
+    R.maximumClassEntries = 128
+    R.classTTL = 1800
+
+    -- Session caches owned by SignalFireRosterSnapshot151:
+    -- canonical snapshot: key=roster generation, max=1, TTL=until source
+    -- invalidation or earliest 180/300-second source expiry, cleared on invalidation.
+    -- filtered views: key=generation/filter/search/guild, max=16, TTL=generation
+    -- lifetime, FIFO eviction on insertion and full cleanup on invalidation.
+    -- class cache: key=normalized player name, max=128, TTL=1800 seconds,
+    -- oldest-entry eviction during snapshot construction. Presence/status/friend/
+    -- guild lookup maps use normalized-name keys, max=512, TTL=one generation;
+    -- the unit map uses the fixed 48-token set. All are cleared by invalidation.
+    -- None of these caches are persisted.
+
+    R.unitTokens = R.unitTokens or (function()
+      local values = {"player", "target", "focus", "mouseover"}
+      for i = 1, 4 do table.insert(values, "party" .. tostring(i)) end
+      for i = 1, 40 do table.insert(values, "raid" .. tostring(i)) end
+      return values
+    end)()
+
+    local function p3_now()
+      return (time and time()) or 0
+    end
+
+    local function p3_clock_ms()
+      if debugprofilestop then return debugprofilestop() end
+      return ((GetTime and GetTime()) or 0) * 1000
+    end
+
+    local function p3_trim(value)
+      local s = tostring(value or "")
+      s = string.gsub(s, "^%s+", "")
+      s = string.gsub(s, "%s+$", "")
+      return s
+    end
+
+    local function p3_key(value)
+      local s = string.lower(p3_trim(value))
+      s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+      s = string.gsub(s, "|r", "")
+      s = string.gsub(s, "%-.*$", "")
+      s = string.gsub(s, "%s+", "")
+      return s
+    end
+
+    local function p3_nonempty(value)
+      local s = p3_trim(value)
+      if s == "" or s == "Unknown" or s == "UNKNOWN" then return nil end
+      return s
+    end
+
+    local function p3_perf_enabled()
+      local perf = _G.SignalFirePerf151
+      return perf and perf.enabled == true
+    end
+
+    local function p3_note(field, amount)
+      if not p3_perf_enabled() then return end
+      R.stats[field] = (R.stats[field] or 0) + (amount or 1)
+    end
+
+    local function p3_max(field, value)
+      if not p3_perf_enabled() then return end
+      value = tonumber(value or 0) or 0
+      if value > (R.stats[field] or 0) then R.stats[field] = value end
+    end
+
+    local function p3_profile()
+      if B.SF143_GetProfileId then
+        local ok, value = pcall(B.SF143_GetProfileId, B)
+        if ok and p3_nonempty(value) then return tostring(value) end
+      end
+      return tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "Triumvirate")
+    end
+
+    local function p3_is_ascension()
+      local value = string.lower(p3_profile())
+      return string.find(value, "ascension", 1, true) ~= nil or value == "coa"
+    end
+
+    local function p3_localized_class(token)
+      local value = p3_nonempty(token)
+      if not value then return nil end
+      local upper = string.upper(value)
+      if LOCALIZED_CLASS_NAMES_MALE and p3_nonempty(LOCALIZED_CLASS_NAMES_MALE[upper]) then return LOCALIZED_CLASS_NAMES_MALE[upper] end
+      if LOCALIZED_CLASS_NAMES_FEMALE and p3_nonempty(LOCALIZED_CLASS_NAMES_FEMALE[upper]) then return LOCALIZED_CLASS_NAMES_FEMALE[upper] end
+      return nil
+    end
+
+    local function p3_display_candidate(value)
+      local s = p3_nonempty(value)
+      if not s then return nil end
+      if string.find(s, "^[A-Z_]+$") then return p3_localized_class(s) end
+      return s
+    end
+
+    local function p3_request_panels(mode)
+      if B.SF151_RequestPanelRefresh then
+        B:SF151_RequestPanelRefresh("network", mode)
+        B:SF151_RequestPanelRefresh("roster", mode)
+      end
+    end
+
+    local function p3_clear_views()
+      R.viewCache = {}
+      R.viewOrder = {}
+    end
+
+    function B:SF151_InvalidateRosterData(reason, name)
+      R.generation = (tonumber(R.generation or 0) or 0) + 1
+      R.snapshot = nil
+      R.snapshotGeneration = nil
+      R.nextExpiry = nil
+      R.presenceByNameKey = nil
+      R.statusByNameKey = nil
+      R.unitByNameKey = nil
+      R.guildByNameKey = nil
+      R.friendByNameKey = nil
+      R.rowByNameKey = nil
+      p3_clear_views()
+      p3_note("generationIncrements", 1)
+      R.lastInvalidationReason = tostring(reason or "unknown")
+      R.lastInvalidationName = tostring(name or "")
+      return R.generation
+    end
+
+    function B:SF151_NoteRosterSnapshotStat(field, amount)
+      p3_note(tostring(field or "unknown"), amount or 1)
+    end
+
+    local function p3_prune_class_cache(nowStamp)
+      local count, order = 0, {}
+      for key, record in pairs(R.classCache) do
+        local seen = tonumber(record and record.seen or 0) or 0
+        if seen <= 0 or (nowStamp - seen) > R.classTTL then
+          R.classCache[key] = nil
+          p3_note("classEntriesPruned", 1)
+        else
+          count = count + 1
+          table.insert(order, {key=key, seen=seen})
+        end
+      end
+      if count > R.maximumClassEntries then
+        table.sort(order, function(a, b) return a.seen < b.seen end)
+        for i = 1, count - R.maximumClassEntries do
+          if order[i] and R.classCache[order[i].key] then
+            R.classCache[order[i].key] = nil
+            p3_note("classEntriesPruned", 1)
+          end
+        end
+      end
+    end
+
+    local function p3_build_unit_map()
+      local map = {}
+      p3_note("unitMapBuilds", 1)
+      if UnitName then
+        for _, token in ipairs(R.unitTokens) do
+          p3_note("unitTokensInspected", 1)
+          if not UnitExists or UnitExists(token) then
+            local name = UnitName(token)
+            local key = p3_key(name)
+            if key ~= "" then
+              local className, classFile = nil, nil
+              if UnitClass then className, classFile = UnitClass(token) end
+              map[key] = {token=token, name=name, className=className, classFile=classFile}
+            end
+          end
+        end
+      end
+      R.unitByNameKey = map
+      return map
+    end
+
+    local function p3_build_friend_map()
+      local map = {}
+      if GetNumFriends and GetFriendInfo then
+        local count = math.min(512, tonumber(GetNumFriends() or 0) or 0)
+        for i = 1, count do
+          local name = GetFriendInfo(i)
+          local key = p3_key(name)
+          if key ~= "" then map[key] = true end
+        end
+      end
+      R.friendByNameKey = map
+      return map
+    end
+
+    local function p3_build_guild_map()
+      local map = {}
+      if GetNumGuildMembers and GetGuildRosterInfo then
+        local count = math.min(512, tonumber(GetNumGuildMembers() or 0) or 0)
+        for i = 1, count do
+          local name, _, _, level, className, zone, _, _, online, _, classFile = GetGuildRosterInfo(i)
+          local key = p3_key(name)
+          if key ~= "" then
+            map[key] = {name=name, level=level, className=className, classFile=classFile, zone=zone, online=online}
+          end
+        end
+      end
+      R.guildByNameKey = map
+      return map
+    end
+
+    local function p3_cache_class(key, value, nowStamp)
+      if key ~= "" and value and value ~= "Unknown" then
+        R.classCache[key] = {value=value, seen=nowStamp}
+      end
+    end
+
+    function B:SF151_ResolveClassDisplay(row)
+      row = row or {}
+      local nowStamp = p3_now()
+      local key = p3_key(row.name)
+      local value = p3_display_candidate(row.className) or p3_display_candidate(row.class)
+      local unit = key ~= "" and R.unitByNameKey and R.unitByNameKey[key] or nil
+      if not value and unit then
+        value = p3_display_candidate(unit.className)
+        if not p3_nonempty(row.classFile) then row.classFile = p3_nonempty(unit.classFile) or row.classFile end
+      end
+      if not value and key ~= "" then
+        local cached = R.classCache[key]
+        if cached and (nowStamp - (tonumber(cached.seen or 0) or 0)) <= R.classTTL then value = p3_nonempty(cached.value) end
+      end
+      if not value then value = p3_localized_class(row.classFile) end
+      if not value then value = "Unknown" end
+      row.className = value
+      p3_cache_class(key, value, nowStamp)
+      return value
+    end
+
+    local function p3_copy_fields(target, source, overwrite)
+      for _, field in ipairs({"version", "level", "className", "class", "classFile", "role", "spec", "zone", "guild", "looking", "status", "sfnRoleFlags", "flags"}) do
+        local value = source and source[field]
+        if p3_nonempty(value) and (overwrite or not p3_nonempty(target[field])) then target[field] = value end
+      end
+      local seen = tonumber(source and source.seen or 0) or 0
+      if seen > (tonumber(target.seen or 0) or 0) then target.seen = seen end
+    end
+
+    local function p3_new_row(name)
+      return {name=tostring(name or ""), seen=0, self=false, friend=false, groupmate=false, favorite=false, whoOnly=false}
+    end
+
+    local function p3_snapshot_build()
+      local started = p3_clock_ms()
+      local nowStamp = p3_now()
+      local byKey, rows = {}, {}
+      local presenceMap, statusMap = {}, {}
+      local unitMap = p3_build_unit_map()
+      local friendMap = p3_build_friend_map()
+      local guildMap = p3_build_guild_map()
+      local nextExpiry = nil
+
+      p3_prune_class_cache(nowStamp)
+      p3_note("statusMapBuilds", 1)
+
+      local function ensure(name)
+        local key = p3_key(name)
+        if key == "" then return nil, key end
+        local row = byKey[key]
+        if not row then
+          row = p3_new_row(name)
+          byKey[key] = row
+          table.insert(rows, row)
+        end
+        return row, key
+      end
+
+      for tableKey, source in pairs(B.onlineUsers or {}) do
+        local seen = tonumber(source and source.seen or 0) or 0
+        if not source or seen <= 0 or (nowStamp - seen) > 180 then
+          B.onlineUsers[tableKey] = nil
+          p3_note("staleUsersRemoved", 1)
+        else
+          local row, key = ensure(source.name or tableKey)
+          if row then
+            p3_copy_fields(row, source, seen >= (tonumber(row.seen or 0) or 0))
+            presenceMap[key] = source
+            local expiry = seen + 180
+            if not nextExpiry or expiry < nextExpiry then nextExpiry = expiry end
+          end
+        end
+      end
+
+      for tableKey, source in pairs(B.sfnStatuses or {}) do
+        p3_note("statusComparisons", 1)
+        local seen = tonumber(source and source.seen or 0) or 0
+        if not source or seen <= 0 or (nowStamp - seen) > 180 then
+          B.sfnStatuses[tableKey] = nil
+          p3_note("staleStatusesRemoved", 1)
+        else
+          local row, key = ensure(source.name or tableKey)
+          if row then
+            p3_copy_fields(row, source, false)
+            statusMap[key] = source
+            local expiry = seen + 180
+            if not nextExpiry or expiry < nextExpiry then nextExpiry = expiry end
+          end
+        end
+      end
+
+      if not p3_is_ascension() then
+        local who = BronzeLFG_DB and BronzeLFG_DB.whoPlayers or B.whoPlayers or {}
+        for tableKey, source in pairs(who or {}) do
+          local seen = tonumber(source and source.seen or 0) or 0
+          if source and seen > 0 and (nowStamp - seen) <= 300 then
+            local row = ensure(source.name or tableKey)
+            if row and not presenceMap[p3_key(source.name or tableKey)] and not statusMap[p3_key(source.name or tableKey)] then
+              p3_copy_fields(row, source, false)
+              row.whoOnly = true
+              row.version = "/who"
+            end
+            local expiry = seen + 300
+            if not nextExpiry or expiry < nextExpiry then nextExpiry = expiry end
+          end
+        end
+      end
+
+      local selfName = UnitName and UnitName("player") or "Unknown"
+      local selfRow, selfKey = ensure(selfName)
+      if selfRow then
+        local className, classFile = nil, nil
+        if UnitClass then className, classFile = UnitClass("player") end
+        selfRow.name = selfName
+        selfRow.version = tostring(_G.SignalFire_VERSION or "1.5.1")
+        selfRow.level = tostring(UnitLevel and UnitLevel("player") or "")
+        selfRow.className = className or selfRow.className
+        selfRow.classFile = classFile or selfRow.classFile
+        selfRow.role = BronzeLFG_DB and BronzeLFG_DB.profile and BronzeLFG_DB.profile.role or selfRow.role
+        selfRow.spec = BronzeLFG_DB and BronzeLFG_DB.profile and BronzeLFG_DB.profile.roleType or selfRow.spec
+        selfRow.zone = GetZoneText and GetZoneText() or selfRow.zone
+        selfRow.guild = GetGuildInfo and GetGuildInfo("player") or selfRow.guild
+        selfRow.seen = nowStamp
+        selfRow.self = true
+        selfRow.whoOnly = false
+        presenceMap[selfKey] = selfRow
+      end
+
+      local myGuild = tostring(GetGuildInfo and GetGuildInfo("player") or "")
+      for _, row in ipairs(rows) do
+        local key = p3_key(row.name)
+        local unit = unitMap[key]
+        local guild = guildMap[key]
+        row.friend = friendMap[key] == true
+        row.groupmate = unit ~= nil and not row.self
+          and (string.find(tostring(unit.token or ""), "^party") ~= nil or string.find(tostring(unit.token or ""), "^raid") ~= nil)
+        if unit then
+          if not p3_nonempty(row.className) then row.className = unit.className end
+          if not p3_nonempty(row.classFile) then row.classFile = unit.classFile end
+        end
+        if guild then
+          if not p3_nonempty(row.level) then row.level = guild.level end
+          if not p3_nonempty(row.className) then row.className = guild.className end
+          if not p3_nonempty(row.classFile) then row.classFile = guild.classFile end
+          if not p3_nonempty(row.zone) then row.zone = guild.zone end
+          if not p3_nonempty(row.guild) then row.guild = myGuild end
+        end
+        row.favorite = B.IsFavorite and B:IsFavorite(row.name) or false
+        B:SF151_ResolveClassDisplay(row)
+        row.status = row.status or row.looking
+        p3_note("rowsProcessedPerCanonicalBuild", 1)
+      end
+
+      p3_note("canonicalSorts", 1)
+      table.sort(rows, function(a, b)
+        if a.self and not b.self then return true end
+        if b.self and not a.self then return false end
+        if a.favorite and not b.favorite then return true end
+        if b.favorite and not a.favorite then return false end
+        if a.friend and not b.friend then return true end
+        if b.friend and not a.friend then return false end
+        if a.groupmate and not b.groupmate then return true end
+        if b.groupmate and not a.groupmate then return false end
+        if a.whoOnly and not b.whoOnly then return false end
+        if b.whoOnly and not a.whoOnly then return true end
+        local as = tonumber(a.seen or 0) or 0
+        local bs = tonumber(b.seen or 0) or 0
+        if as ~= bs then return as > bs end
+        return tostring(a.name or "") < tostring(b.name or "")
+      end)
+
+      while #rows > R.maximumRows do
+        local removed = table.remove(rows)
+        if removed then byKey[p3_key(removed.name)] = nil end
+        p3_note("snapshotEntriesEvicted", 1)
+      end
+
+      for key in pairs(presenceMap) do if not byKey[key] then presenceMap[key] = nil end end
+      for key in pairs(statusMap) do if not byKey[key] then statusMap[key] = nil end end
+
+      R.presenceByNameKey = presenceMap
+      R.statusByNameKey = statusMap
+      R.rowByNameKey = byKey
+      R.nextExpiry = nextExpiry
+      R.snapshot = rows
+      R.snapshotGeneration = R.generation
+      p3_note("canonicalSnapshotsBuilt", 1)
+      p3_max("maximumSnapshotRows", #rows)
+      p3_max("maximumSnapshotBuildMs", math.max(0, p3_clock_ms() - started))
+      return rows
+    end
+
+    function B:GetOnlineUserRows()
+      p3_note("canonicalSnapshotRequests", 1)
+      local nowStamp = p3_now()
+      if R.snapshot and R.snapshotGeneration == R.generation and R.nextExpiry and nowStamp >= R.nextExpiry then
+        self:SF151_InvalidateRosterData("stale-expiry")
+      end
+      if R.snapshot and R.snapshotGeneration == R.generation then
+        p3_note("snapshotCacheHits", 1)
+        p3_note("fullRosterScansAvoided", 1)
+        return R.snapshot
+      end
+      if R.building then return R.snapshot or {} end
+      R.building = true
+      local results = {pcall(p3_snapshot_build)}
+      R.building = nil
+      if not results[1] then error(results[2], 0) end
+      return results[2]
+    end
+
+    local function p3_copy_row(source)
+      local target = {}
+      for key, value in pairs(source or {}) do target[key] = value end
+      return target
+    end
+
+    local function p3_matches(row, needle)
+      if needle == "" then return true end
+      local blob = string.lower(table.concat({
+        tostring(row.name or ""), tostring(row.guild or ""), tostring(row.zone or ""),
+        tostring(row.role or ""), tostring(row.spec or ""), tostring(row.className or row.class or ""),
+        tostring(row.classFile or "")
+      }, " "))
+      return string.find(blob, needle, 1, true) ~= nil
+    end
+
+    function B:SFRP_GetRosterRows()
+      local snapshot = self:GetOnlineUserRows() or {}
+      local filter = tostring(self.onlineFilter or "All")
+      if p3_is_ascension() and filter == "Who" then filter = "All"; self.onlineFilter = "All"; self.onlinePage = 1 end
+      local search = ""
+      if self.fullRosterSearch and self.fullRosterSearch.GetText then search = string.lower(p3_trim(self.fullRosterSearch:GetText() or "")) end
+      local myGuild = tostring(GetGuildInfo and GetGuildInfo("player") or "")
+      local signature = table.concat({tostring(R.generation), filter, search, myGuild}, "\31")
+      local cached = R.viewCache[signature]
+      if cached then
+        p3_note("filteredViewCacheHits", 1)
+        return cached.rows, snapshot
+      end
+
+      local started = p3_clock_ms()
+      local rows = {}
+      for _, source in ipairs(snapshot) do
+        local keep = true
+        if filter == "SignalFire" then keep = not source.whoOnly
+        elseif filter == "Who" then keep = source.whoOnly == true
+        elseif filter == "Favorites" then keep = source.favorite == true
+        elseif filter == "Guild" then keep = myGuild ~= "" and tostring(source.guild or "") == myGuild end
+        if keep and p3_matches(source, search) then table.insert(rows, p3_copy_row(source)) end
+      end
+
+      R.viewCache[signature] = {rows=rows, created=p3_now()}
+      table.insert(R.viewOrder, signature)
+      while #R.viewOrder > R.maximumViews do
+        local oldest = table.remove(R.viewOrder, 1)
+        if oldest then R.viewCache[oldest] = nil end
+      end
+      p3_note("filteredViewsBuilt", 1)
+      p3_max("maximumFilteredViewBuildMs", math.max(0, p3_clock_ms() - started))
+      return rows, snapshot
+    end
+
+    local oldDetail = B.RefreshFullRosterDetail
+    if type(oldDetail) == "function" then
+      B.RefreshFullRosterDetail = function(self, ...)
+        if self.fullRosterSelectedName and R.rowByNameKey then
+          self.fullRosterSelectedUser = R.rowByNameKey[p3_key(self.fullRosterSelectedName)]
+        end
+        return oldDetail(self, ...)
+      end
+    end
+
+    local oldPresence = B.HandlePresence
+    if type(oldPresence) == "function" then
+      B.HandlePresence = function(self, packet, ...)
+        local name = type(packet) == "table" and packet[3] or nil
+        local nameKey = p3_key(name)
+        local oldRow = nameKey ~= "" and self.onlineUsers and self.onlineUsers[name] or nil
+        local oldGuild = tostring(oldRow and oldRow.guild or "")
+        local refreshGuild = self.RefreshGuildBrowser
+        local refreshPublic = self.RefreshPublicGroups
+        self.RefreshGuildBrowser = function() end
+        self.RefreshPublicGroups = function() end
+        local results = {pcall(oldPresence, self, packet, ...)}
+        self.RefreshGuildBrowser = refreshGuild
+        self.RefreshPublicGroups = refreshPublic
+        if not results[1] then error(results[2], 0) end
+        if nameKey ~= "" and nameKey ~= p3_key(UnitName and UnitName("player") or "") then
+          self:SF151_InvalidateRosterData("presence", name)
+          local current = self.onlineUsers and (self.onlineUsers[name] or self.onlineUsers[nameKey]) or nil
+          local newGuild = tostring(current and current.guild or "")
+          if newGuild ~= oldGuild and refreshGuild and self.guildPanel and self.guildPanel.IsVisible and self.guildPanel:IsVisible() then
+            refreshGuild(self)
+          end
+        end
+        return unpack(results, 2)
+      end
+    end
+
+    local oldFavoriteTransition = B.SF151_CheckFavoriteTransition
+    if type(oldFavoriteTransition) == "function" then
+      B.SF151_CheckFavoriteTransition = function(self, row, source)
+        p3_note("favoriteTransitionChecks", 1)
+        return oldFavoriteTransition(self, row, source)
+      end
+    end
+
+    local oldToggleFavorite = B.ToggleFavorite
+    if type(oldToggleFavorite) == "function" then
+      B.ToggleFavorite = function(self, name, ...)
+        local results = {pcall(oldToggleFavorite, self, name, ...)}
+        if not results[1] then error(results[2], 0) end
+        self:SF151_InvalidateRosterData("favorite", name)
+        p3_request_panels("favorite")
+        return unpack(results, 2)
+      end
+    end
+
+    local oldRecordWho = B.RecordWhoGuildMember
+    if type(oldRecordWho) == "function" then
+      B.RecordWhoGuildMember = function(self, name, ...)
+        local results = {pcall(oldRecordWho, self, name, ...)}
+        if not results[1] then error(results[2], 0) end
+        if not p3_is_ascension() then
+          self:SF151_InvalidateRosterData("who", name)
+          p3_request_panels("who")
+        end
+        return unpack(results, 2)
+      end
+    end
+
+    local oldSetProfile = B.SF143_SetServerProfile
+    if type(oldSetProfile) == "function" then
+      B.SF143_SetServerProfile = function(self, ...)
+        local before = p3_profile()
+        local results = {pcall(oldSetProfile, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        local after = p3_profile()
+        if before ~= after then
+          self:SF151_InvalidateRosterData("profile", after)
+          p3_request_panels("profile")
+        end
+        return unpack(results, 2)
+      end
+    end
+
+    local function p3_friend_signature()
+      local values = {}
+      if GetNumFriends and GetFriendInfo then
+        for i = 1, tonumber(GetNumFriends() or 0) or 0 do table.insert(values, p3_key(GetFriendInfo(i))) end
+      end
+      table.sort(values)
+      return table.concat(values, "|")
+    end
+
+    local function p3_group_signature()
+      local values = {}
+      if UnitName then
+        for _, token in ipairs(R.unitTokens) do
+          if token == "player" or string.find(token, "^party") or string.find(token, "^raid") then
+            if not UnitExists or UnitExists(token) then table.insert(values, token .. "=" .. p3_key(UnitName(token))) end
+          end
+        end
+      end
+      return table.concat(values, "|")
+    end
+
+    local function p3_guild_signature()
+      local values = {}
+      if GetNumGuildMembers and GetGuildRosterInfo then
+        for i = 1, tonumber(GetNumGuildMembers() or 0) or 0 do
+          local name, _, _, level, className, zone, _, _, online, _, classFile = GetGuildRosterInfo(i)
+          table.insert(values, table.concat({p3_key(name), tostring(level or ""), tostring(className or ""), tostring(zone or ""), tostring(online and 1 or 0), tostring(classFile or "")}, ":"))
+        end
+      end
+      table.sort(values)
+      return table.concat(values, "|")
+    end
+
+    local eventFrame = CreateFrame and CreateFrame("Frame") or nil
+    if eventFrame then
+      for _, event in ipairs({"PLAYER_ENTERING_WORLD", "FRIENDLIST_UPDATE", "PARTY_MEMBERS_CHANGED", "RAID_ROSTER_UPDATE", "GUILD_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE"}) do
+        eventFrame:RegisterEvent(event)
+      end
+      eventFrame:SetScript("OnEvent", function(_, event)
+        local key, signature = nil, nil
+        if event == "FRIENDLIST_UPDATE" then key, signature = "friends", p3_friend_signature()
+        elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then key, signature = "group", p3_group_signature()
+        elseif event == "GUILD_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then key, signature = "guild", p3_guild_signature()
+        elseif event == "PLAYER_ENTERING_WORLD" then
+          R.sourceSignatures.friends = p3_friend_signature()
+          R.sourceSignatures.group = p3_group_signature()
+          R.sourceSignatures.guild = p3_guild_signature()
+          B:SF151_InvalidateRosterData("enter-world")
+          p3_request_panels("world")
+          return
+        end
+        if key and R.sourceSignatures[key] ~= signature then
+          R.sourceSignatures[key] = signature
+          B:SF151_InvalidateRosterData(key)
+          p3_request_panels(key)
+        end
+      end)
+      R.eventFrame = eventFrame
+    end
+
+    function B:SF151_ResetRosterSnapshotStats()
+      R.stats = {}
+      return true
+    end
+
+    function B:SF151_GetRosterSnapshotDiagnostics()
+      local result = {
+        owner=R.owner,
+        generation=R.generation,
+        snapshotGeneration=R.snapshotGeneration,
+        snapshotRows=R.snapshot and #R.snapshot or 0,
+        nextExpiry=R.nextExpiry,
+      }
+      for key, value in pairs(R.stats or {}) do result[key] = value end
+      return result
+    end
+  end
+end
+-- SIGNALFIRE_PHASE3_NETWORK_ROSTER_END

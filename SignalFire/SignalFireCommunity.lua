@@ -1885,7 +1885,8 @@ do
     local SFE_OldRefreshSFNetwork = BLFG.RefreshSFNetwork
     function BLFG:RefreshSFNetwork(...)
       local r = SFE_OldRefreshSFNetwork and SFE_OldRefreshSFNetwork(self, ...)
-      if self.sfnPanel and self.sfnPanel:IsVisible() then
+      if self.sfeEventPanel and self.sfeEventPanel:IsVisible() then
+        if self.SF151_NoteRosterSnapshotStat then self:SF151_NoteRosterSnapshotStat("networkEventRefreshes", 1) end
         self:SFE_BuildEventBoard()
         self:SFE_RefreshEventBoard()
       end
