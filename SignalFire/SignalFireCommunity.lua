@@ -586,6 +586,15 @@ do
       n.eventBoardTab = n.eventBoardTab or "Events"
       return n
     end
+    local function sfe_refresh_active_event_view()
+      local f = BLFG and BLFG.sfeEventPanel or nil
+      local n = sfe_db()
+      if not f or not f.IsVisible or not f:IsVisible() then return false end
+      if tostring(n.eventBoardTab or "Events") ~= "Events" then return false end
+      if not BLFG.SFE_RefreshEventBoard then return false end
+      BLFG:SFE_RefreshEventBoard()
+      return true
+    end
     local function sfe_backdrop(frame, alpha)
       if not frame or not frame.SetBackdrop then return end
       frame:SetBackdrop({
@@ -1030,6 +1039,7 @@ do
       if id == "" then return false end
       sfe_remove_event_local(id)
       sfe_send(table.concat({SFE_PREFIX, "EVENTCLEAR", sfe_player(), tostring(sfe_now()), id}, "~"))
+      sfe_refresh_active_event_view()
       if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
       sfe_msg("Cancelled your event for SignalFire users.", .4, 1, .4)
       return true
@@ -1040,6 +1050,7 @@ do
       if id == "" then id = "ALL" end
       sfe_remove_event_local(id)
       sfe_send(table.concat({SFE_PREFIX, "EVENTCLEAR", sfe_player(), tostring(sfe_now()), id}, "~"))
+      sfe_refresh_active_event_view()
       if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
       sfe_msg(sfe_low(id) == "all" and "Master cleared all SignalFire events." or "Master cleared SignalFire event.", .4, 1, .4)
       return true
@@ -1081,6 +1092,7 @@ do
       if not row then return false end
       local ok = sfe_send(table.concat({SFE_PREFIX, "EVENT", row.id, row.sender, tostring(row.created), tostring(row.expires), row.type, row.name, row.timeText, row.host, row.contact, row.description}, "~"))
       if ok then sfe_msg("Community event posted.", .4, 1, .4) end
+      sfe_refresh_active_event_view()
       if self.RefreshSFNetwork then self:RefreshSFNetwork() end
       return ok
     end
@@ -1845,6 +1857,7 @@ do
           n.eventBoardPage = 1
         end
         if row and BLFG and BLFG.SFE141_NotifyEventRow then BLFG:SFE141_NotifyEventRow(row) end
+        if row then sfe_refresh_active_event_view() end
         if BLFG and BLFG.sfnPanel and BLFG.sfnPanel:IsVisible() and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
         return true
       end
@@ -1858,6 +1871,7 @@ do
 
         if sfe_is_admin_name(authorKey) or sfe_is_admin_name(payloadAuthor) then
           sfe_remove_event_local(target)
+          sfe_refresh_active_event_view()
           if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
           return true
         end
@@ -1868,6 +1882,7 @@ do
           local row = sfe_find_event_by_id(target)
           if row and (sfe_is_event_owner(row, authorKey) or sfe_is_event_owner(row, payloadAuthor)) then
             sfe_remove_event_local(target)
+            sfe_refresh_active_event_view()
             if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
           end
         end
@@ -1880,16 +1895,6 @@ do
       local r = SFE_OldBuildSFNetworkPanel and SFE_OldBuildSFNetworkPanel(self, ...)
       self:SFE_BuildEventBoard()
       self:SFE_RefreshEventBoard()
-      return r
-    end
-    local SFE_OldRefreshSFNetwork = BLFG.RefreshSFNetwork
-    function BLFG:RefreshSFNetwork(...)
-      local r = SFE_OldRefreshSFNetwork and SFE_OldRefreshSFNetwork(self, ...)
-      if self.sfeEventPanel and self.sfeEventPanel:IsVisible() then
-        if self.SF151_NoteRosterSnapshotStat then self:SF151_NoteRosterSnapshotStat("networkEventRefreshes", 1) end
-        self:SFE_BuildEventBoard()
-        self:SFE_RefreshEventBoard()
-      end
       return r
     end
     local SFE_OldShowSFNetwork = BLFG.ShowSFNetwork

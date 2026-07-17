@@ -19,8 +19,12 @@ if (/local byName = \{\}\s+for _, u in ipairs\(rows\)/.test(network)) {
 if (/local function sfam_compiled_online_rows\(self\)[\s\S]*?table\.sort\(rows/.test(network)) {
   throw new Error("Beacon compiler still sorts a second roster");
 }
-if (!/self\.sfeEventPanel and self\.sfeEventPanel:IsVisible\(\)/.test(community)) {
-  throw new Error("Network refresh is still coupled to an inactive Event Board");
+if (/local SFE_OldRefreshSFNetwork[\s\S]*?function BLFG:RefreshSFNetwork[\s\S]*?SFE_RefreshEventBoard/.test(community)) {
+  throw new Error("Network refresh still rebuilds the Event Board");
+}
+if (!/local function sfe_refresh_active_event_view\(\)/.test(community)
+    || !/if row then sfe_refresh_active_event_view\(\) end/.test(community)) {
+  throw new Error("Event packets do not refresh their active view directly");
 }
 
 console.log("network roster source checks: PASS");
