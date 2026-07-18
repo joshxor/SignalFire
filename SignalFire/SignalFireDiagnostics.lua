@@ -76,6 +76,7 @@ do
     if B.SF151_ResetRosterSnapshotStats then B:SF151_ResetRosterSnapshotStats() end
     if B.SF151_ResetPublicGroupsViewStats then B:SF151_ResetPublicGroupsViewStats() end
     if B.SF151_ResetLazyPanelStats then B:SF151_ResetLazyPanelStats() end
+    if B.SF151_ResetBrowseViewStats then B:SF151_ResetBrowseViewStats() end
     return true
   end
 
@@ -236,6 +237,7 @@ do
     local p3 = _G.SignalFireChatRuntime151 or {}
     local roster = _G.SignalFireRosterSnapshot151 or {}
     local publicView = _G.SignalFirePublicGroupsView151 or {}
+    local browseView = _G.SignalFireBrowseView151 or {}
     return {
       {"session.publicGroups", B.publicGroups, false},
       {"session.onlineUsers", B.onlineUsers, false},
@@ -280,6 +282,8 @@ do
       {"session.rosterUnitMap", roster.unitByNameKey, false},
       {"session.publicDisplaySnapshot", publicView.snapshot and publicView.snapshot.rows, false},
       {"session.publicDisplayViews", publicView.viewCache, false},
+      {"session.browseDisplaySnapshot", browseView.snapshot and browseView.snapshot.rows, false},
+      {"session.browseDisplayViews", browseView.viewCache, false},
       {"session.seenPublic", B.sfamSeenPublic, false},
       {"session.seenApplicants", B.sfamSeenApplicants, false},
       {"db.chatGuildListings", db.chatGuildListings, true},
@@ -425,6 +429,7 @@ do
       timer=p5 and p5.stats or {},
       publicGroupsView=B.SF151_GetPublicGroupsViewDiagnostics and B:SF151_GetPublicGroupsViewDiagnostics() or {},
       lazyPanels=B.SF151_GetLazyPanelDiagnostics and B:SF151_GetLazyPanelDiagnostics() or {},
+      browseView=B.SF151_GetBrowseViewDiagnostics and B:SF151_GetBrowseViewDiagnostics() or {},
       caches=self:SnapshotCaches(),
     }
   end
@@ -443,6 +448,7 @@ do
     local roster = B.SF151_GetRosterSnapshotDiagnostics and B:SF151_GetRosterSnapshotDiagnostics() or {}
     local publicView = report.publicGroupsView or {}
     local lazy = report.lazyPanels or {}
+    local browse = report.browseView or {}
     perf_emit("perf owner " .. tostring(report.generation) .. ", enabled=" .. tostring(report.enabled))
     if self.installError then perf_emit("instrumentation error: " .. tostring(self.installError)) end
     perf_emit("chat: filters=" .. tostring(chat.filterCalls or 0) .. ", wrappers=" .. tostring(chat.wrapperCalls or 0)
@@ -496,6 +502,30 @@ do
       .. ", view=" .. string.format("%.3f/%.3fms", viewAverage, publicView.viewBuildMsMax or 0)
       .. ", rows=" .. string.format("%.3f/%.3fms", renderAverage, publicView.rowRenderMsMax or 0)
       .. ", total=" .. string.format("%.3f/%.3fms", totalAverage, publicView.totalRefreshMsMax or 0))
+    perf_emit("browse view: gen=" .. tostring(browse.dataGeneration or 0)
+      .. ", snapshot=" .. tostring(browse.snapshotRequests or 0) .. "/" .. tostring(browse.snapshotsBuilt or 0)
+      .. ", snapshotHits=" .. tostring(browse.snapshotCacheHits or 0)
+      .. ", views=" .. tostring(browse.viewRequests or 0) .. "/" .. tostring(browse.viewsBuilt or 0)
+      .. ", viewHits=" .. tostring(browse.viewCacheHits or 0)
+      .. ", sorts=" .. tostring(browse.canonicalSorts or 0) .. "/" .. tostring(browse.viewSorts or 0))
+    perf_emit("browse renderer: requests=" .. tostring(browse.refreshWrapperCalls or 0)
+      .. ", executed=" .. tostring(browse.authoritativeRefreshes or 0)
+      .. ", visible=" .. tostring(browse.visibleRenders or 0)
+      .. ", hidden=" .. tostring(browse.hiddenRendersSkipped or 0)
+      .. ", considered=" .. tostring(browse.rowsConsidered or 0)
+      .. ", written=" .. tostring(browse.rowsMateriallyWritten or 0)
+      .. ", signatureHits=" .. tostring(browse.rowSignatureHits or 0)
+      .. ", offPage=" .. tostring(browse.offPageRowsFormatted or 0))
+    local browseSnapshotAverage = (browse.snapshotsBuilt or 0) > 0 and (browse.snapshotBuildMsTotal or 0) / browse.snapshotsBuilt or 0
+    local browseViewAverage = (browse.viewsBuilt or 0) > 0 and (browse.viewBuildMsTotal or 0) / browse.viewsBuilt or 0
+    local browseRowsAverage = (browse.visibleRenders or 0) > 0 and (browse.rowRenderMsTotal or 0) / browse.visibleRenders or 0
+    local browseDetailAverage = (browse.detailRenders or 0) > 0 and (browse.detailRenderMsTotal or 0) / browse.detailRenders or 0
+    local browseTotalAverage = (browse.visibleRenders or 0) > 0 and (browse.totalRefreshMsTotal or 0) / browse.visibleRenders or 0
+    perf_emit("browse timing: snapshot=" .. string.format("%.3f/%.3fms", browseSnapshotAverage, browse.snapshotBuildMsMax or 0)
+      .. ", view=" .. string.format("%.3f/%.3fms", browseViewAverage, browse.viewBuildMsMax or 0)
+      .. ", rows=" .. string.format("%.3f/%.3fms", browseRowsAverage, browse.rowRenderMsMax or 0)
+      .. ", detail=" .. string.format("%.3f/%.3fms", browseDetailAverage, browse.detailRenderMsMax or 0)
+      .. ", total=" .. string.format("%.3f/%.3fms", browseTotalAverage, browse.totalRefreshMsMax or 0))
     perf_emit("network: presence=" .. tostring(network.presencePackets or refresh.incomingPresence or 0)
       .. ", requests=" .. tostring(refresh.requests or 0) .. ", merged=" .. tostring(refresh.merged or 0)
       .. ", rebuilds=" .. tostring(network.actualPanelRebuilds or 0) .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)

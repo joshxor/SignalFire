@@ -5750,3 +5750,867 @@ do
   end
 end
 -- SIGNALFIRE_PHASE7_LAZY_PANELS_END
+
+-- Phase 8 Browse snapshot, view, and incremental renderer ownership.
+-- SIGNALFIRE_PHASE8_BROWSE_VIEW_BEGIN
+do
+  local B = _G.BronzeLFG
+  local P4 = _G.SignalFireRefresh151
+  local LP = _G.SignalFireLazyPanels151
+  if B and P4 and P4.original and LP and LP.panels and LP.panels.browse then
+    local BV = _G.SignalFireBrowseView151 or {}
+    _G.SignalFireBrowseView151 = BV
+    BV.generation = "1.5.1-perf-phase8"
+    BV.dataGeneration = tonumber(BV.dataGeneration or 1) or 1
+    BV.maximumViews = 16
+    BV.viewCache = BV.viewCache or {}
+    BV.viewOrder = BV.viewOrder or {}
+    BV.rowStates = BV.rowStates or {}
+    BV.detailState = BV.detailState or {fields={}}
+    BV.stats = BV.stats or {}
+    BV.dirty = BV.dirty ~= false
+    BV.rendering = false
+    BV.maximumErrors = 12
+    BV.errors = BV.errors or {}
+
+    -- Snapshot owner: SignalFireBrowseView151. Key: dataGeneration. Maximum:
+    -- one snapshot. TTL: current generation. Eviction: material Browse data
+    -- invalidation. Cleanup: mutation, profile change, or UI reload. Session-only.
+    -- View owner: SignalFireBrowseView151. Key: generation/filter/search/sort/
+    -- profile. Maximum: 16. TTL: current generation. Eviction: FIFO or data
+    -- invalidation. Cleanup: view insertion, mutation, or UI reload. Session-only.
+
+    local function p8_perf_enabled()
+      local perf = _G.SignalFirePerf151
+      return perf and perf.enabled == true
+    end
+
+    local function p8_note(field, amount)
+      if not p8_perf_enabled() then return end
+      BV.stats[field] = (tonumber(BV.stats[field] or 0) or 0) + (amount or 1)
+    end
+
+    local function p8_max(field, value)
+      if not p8_perf_enabled() then return end
+      value = tonumber(value or 0) or 0
+      if value > (tonumber(BV.stats[field] or 0) or 0) then BV.stats[field] = value end
+    end
+
+    local function p8_now_ms()
+      if debugprofilestop then return debugprofilestop() end
+      return ((GetTime and GetTime()) or 0) * 1000
+    end
+
+    local function p8_now()
+      return (time and time()) or 0
+    end
+
+    local function p8_pack(...)
+      return {n=select("#", ...), ...}
+    end
+
+    local function p8_return(results)
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2, results.n)
+    end
+
+    local function p8_visible()
+      local frame = B.browse
+      if not frame then return false end
+      if frame.IsVisible then return frame:IsVisible() and true or false end
+      return frame.IsShown and frame:IsShown() and true or false
+    end
+
+    local function p8_lower(value)
+      return string.lower(tostring(value or ""))
+    end
+
+    local function p8_short(value, maximum)
+      local text = tostring(value or "")
+      maximum = tonumber(maximum or 34) or 34
+      if string.len(text) <= maximum then return text end
+      return string.sub(text, 1, math.max(1, maximum - 3)) .. "..."
+    end
+
+    local function p8_type_color(kind)
+      local colors = {
+        Dungeon="|cff3fa7ff", Raid="|cff4dff7a", Key="|cffb866ff",
+        Event="|cffff9a33", Guild="|cff00e6cc", LFG="|cffffff66",
+        Social="|cffff66cc", Other="|cffaaaaaa",
+      }
+      return colors[tostring(kind or "")] or colors.Other
+    end
+
+    local function p8_icon(kind)
+      kind = tostring(kind or "")
+      if kind == "Raid" then return "Interface\\Icons\\Achievement_Boss_Ragnaros" end
+      if kind == "World Boss" then return "Interface\\Icons\\Achievement_Boss_CThun" end
+      if kind == "Ascended" then return "Interface\\Icons\\Spell_Holy_SealOfWrath" end
+      return "Interface\\Icons\\INV_Misc_Map07"
+    end
+
+    local function p8_role_letter(role)
+      if role == "Tank" then return "|cff4aa3ffT|r" end
+      if role == "Healer" then return "|cff44ff66H|r" end
+      if role == "DPS" then return "|cffff5555D|r" end
+      return "|cffffff66F|r"
+    end
+
+    local function p8_role_text(role)
+      if role == "Tank" then return "|TInterface\\Icons\\Ability_Defend:14:14:0:0|t |cff4aa3ffTank|r" end
+      if role == "Healer" then return "|TInterface\\Icons\\Spell_Holy_FlashHeal:14:14:0:0|t |cff44ff66Healer|r" end
+      if role == "DPS" then return "|TInterface\\Icons\\Ability_DualWield:14:14:0:0|t |cffff5555DPS|r" end
+      return "|TInterface\\Icons\\INV_Misc_GroupNeedMore:14:14:0:0|t |cffffff66Flexible|r"
+    end
+
+    local function p8_roles_short(listing)
+      local out = {}
+      if listing.needTank == "1" or listing.needTank == 1 then table.insert(out, p8_role_letter("Tank")) end
+      if listing.needHealer == "1" or listing.needHealer == 1 then table.insert(out, p8_role_letter("Healer")) end
+      if listing.needDPS == "1" or listing.needDPS == 1 then table.insert(out, p8_role_letter("DPS")) end
+      if #out == 0 then return p8_role_letter("Flexible") end
+      return table.concat(out, "/")
+    end
+
+    local function p8_roles_long(listing)
+      local out = {}
+      if listing.needTank == "1" or listing.needTank == 1 then table.insert(out, p8_role_text("Tank")) end
+      if listing.needHealer == "1" or listing.needHealer == 1 then table.insert(out, p8_role_text("Healer")) end
+      if listing.needDPS == "1" or listing.needDPS == 1 then table.insert(out, p8_role_text("DPS")) end
+      if #out == 0 then return p8_role_text("Flexible") end
+      return table.concat(out, "  ")
+    end
+
+    local function p8_age(timestamp)
+      local seconds = p8_now() - (tonumber(timestamp) or p8_now())
+      if seconds < 0 then seconds = 0 end
+      if seconds < 60 then return tostring(seconds) .. " sec ago" end
+      if seconds < 3600 then return tostring(math.floor(seconds / 60)) .. " min ago" end
+      return tostring(math.floor(seconds / 3600)) .. " hr ago"
+    end
+
+    local function p8_listing_signature(listing)
+      if type(listing) ~= "table" then return "" end
+      return table.concat({
+        tostring(listing.id or ""), tostring(listing.leader or ""), tostring(listing.class or ""),
+        tostring(listing.classFile or ""), tostring(listing.type or ""), tostring(listing.activity or ""),
+        tostring(listing.difficulty or ""), tostring(listing.key or ""), tostring(listing.minItemLevel or ""),
+        tostring(listing.members or ""), tostring(listing.maxMembers or ""), tostring(listing.needTank or ""),
+        tostring(listing.needHealer or ""), tostring(listing.needDPS or ""), tostring(listing.voice or ""),
+        tostring(listing.loot or ""), tostring(listing.note or ""), tostring(listing.created or ""),
+        tostring(listing.seen or ""),
+      }, "\31")
+    end
+
+    local function p8_applicant_signature(applicant)
+      if type(applicant) ~= "table" then return "" end
+      return table.concat({
+        tostring(applicant.listingId or ""), tostring(applicant.name or ""), tostring(applicant.class or ""),
+        tostring(applicant.role or ""), tostring(applicant.itemLevel or ""), tostring(applicant.roleType or ""),
+        tostring(applicant.discord or ""), tostring(applicant.note or ""), tostring(applicant.applied or ""),
+      }, "\31")
+    end
+
+    local function p8_profile()
+      return tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "Triumvirate")
+    end
+
+    local function p8_clear_views()
+      BV.viewCache = {}
+      BV.viewOrder = {}
+    end
+
+    function BV:CommitInvalidation(reason)
+      self.dataGeneration = (tonumber(self.dataGeneration or 0) or 0) + 1
+      self.snapshot = nil
+      p8_clear_views()
+      self.dirty = true
+      self.lastDirtyReason = tostring(reason or "data")
+      p8_note("generationIncrements", 1)
+      local record = LP.panels and LP.panels.browse
+      if record then
+        record.dirty = true
+        record.lastDirtyReason = self.lastDirtyReason
+      end
+      return self.dataGeneration
+    end
+
+    function BV:Invalidate(reason)
+      if (tonumber(self.mutationDepth or 0) or 0) > 0 then
+        self.pendingInvalidation = true
+        self.pendingInvalidationReason = tostring(reason or self.pendingInvalidationReason or "data")
+        self.dirty = true
+        local record = LP.panels and LP.panels.browse
+        if record then record.dirty = true end
+        return self.dataGeneration
+      end
+      return self:CommitInvalidation(reason)
+    end
+
+    function BV:BeginMutation()
+      self.mutationDepth = (tonumber(self.mutationDepth or 0) or 0) + 1
+    end
+
+    function BV:EndMutation()
+      self.mutationDepth = math.max(0, (tonumber(self.mutationDepth or 1) or 1) - 1)
+      if self.mutationDepth == 0 and self.pendingInvalidation then
+        local reason = self.pendingInvalidationReason
+        self.pendingInvalidation = nil
+        self.pendingInvalidationReason = nil
+        return self:CommitInvalidation(reason)
+      end
+      return self.dataGeneration
+    end
+
+    local function p8_record_error(scope, err)
+      table.insert(BV.errors, {scope=tostring(scope or "browse"), error=tostring(err or "unknown"), at=p8_now()})
+      while #BV.errors > BV.maximumErrors do table.remove(BV.errors, 1) end
+    end
+
+    local function p8_build_applicant_counts()
+      local counts = {}
+      for _, applicant in pairs(B.applicants or {}) do
+        local id = tostring(applicant and applicant.listingId or "")
+        if id ~= "" then counts[id] = (counts[id] or 0) + 1 end
+      end
+      return counts
+    end
+
+    local function p8_build_snapshot()
+      p8_note("snapshotRequests", 1)
+      if BV.snapshot and BV.snapshot.generation == BV.dataGeneration then
+        p8_note("snapshotCacheHits", 1)
+        return BV.snapshot
+      end
+      if BV.injectSnapshotFailure then error("injected Browse snapshot failure") end
+      local started = p8_perf_enabled() and p8_now_ms() or nil
+      local rows = {}
+      local expired = {}
+      local nearestExpiry = nil
+      local applicantCounts = p8_build_applicant_counts()
+      local nowValue = p8_now()
+      for id, listing in pairs(B.listings or {}) do
+        local seen = tonumber(listing and listing.seen or 0) or 0
+        if seen > 0 and nowValue - seen > 900 then
+          table.insert(expired, id)
+        elseif type(listing) == "table" then
+          local kind = tostring(listing.type or "Group")
+          local activity = tostring(listing.activity or "Unknown")
+          local difficulty = tostring(listing.difficulty or "")
+          if difficulty == "Mythic+" and tostring(listing.key or "") ~= "" then
+            difficulty = difficulty .. " " .. tostring(listing.key)
+          end
+          local meta = kind
+          if difficulty ~= "" then meta = meta .. " - " .. difficulty end
+          if tostring(listing.note or "") ~= "" then meta = meta .. " - " .. tostring(listing.note) end
+          local record = {
+            id=tostring(listing.id or id), listing=listing, kind=kind, activity=activity,
+            difficulty=difficulty, leader=tostring(listing.leader or ""), note=tostring(listing.note or ""),
+            seen=seen, created=tonumber(listing.created or seen) or seen,
+            sortSeen=seen, icon=p8_icon(kind), title=p8_type_color(kind) .. activity .. "|r",
+            rowNote=p8_short(meta, 34), rolesShort=p8_roles_short(listing), rolesLong=p8_roles_long(listing),
+            itemLevel=(tostring(listing.minItemLevel or "") ~= "") and (tostring(listing.minItemLevel) .. "+") or "--",
+            detailItemLevel=(tostring(listing.minItemLevel or "") ~= "") and (tostring(listing.minItemLevel) .. "+") or "Not provided",
+            members=tostring(listing.members or 1) .. " / " .. tostring(listing.maxMembers or 5),
+            applicantCount=applicantCounts[tostring(listing.id or id)] or 0,
+          }
+          record.searchText = p8_lower(table.concat({activity, record.leader, record.note, kind, difficulty}, " "))
+          record.materialSignature = p8_listing_signature(listing) .. "\31" .. tostring(record.applicantCount)
+          record.rowSignature = table.concat({
+            record.id, record.icon, record.title, record.rowNote, record.leader,
+            record.rolesShort, record.itemLevel, record.members,
+          }, "\31")
+          table.insert(rows, record)
+          p8_note("listingsProcessed", 1)
+          p8_note("normalizedStringsGenerated", 1)
+          if seen > 0 then
+            local deadline = seen + 900
+            if not nearestExpiry or deadline < nearestExpiry then nearestExpiry = deadline end
+          end
+        end
+      end
+      if #expired > 0 then
+        for _, id in ipairs(expired) do B.listings[id] = nil end
+        if B.selectedListing and not B.listings[B.selectedListing] then B.selectedListing = nil end
+        BV:Invalidate("expiration")
+        p8_note("expiredListings", #expired)
+      end
+      table.sort(rows, function(left, right)
+        if left.sortSeen ~= right.sortSeen then return left.sortSeen > right.sortSeen end
+        return left.id < right.id
+      end)
+      p8_note("canonicalSorts", 1)
+      local snapshot = {
+        generation=BV.dataGeneration, rows=rows, byId={}, nearestExpiry=nearestExpiry,
+        applicantCounts=applicantCounts,
+      }
+      for _, record in ipairs(rows) do snapshot.byId[record.id] = record end
+      BV.snapshot = snapshot
+      p8_note("snapshotsBuilt", 1)
+      if started then
+        local elapsed = math.max(0, p8_now_ms() - started)
+        p8_note("snapshotBuildMsTotal", elapsed)
+        p8_max("snapshotBuildMsMax", elapsed)
+      end
+      return snapshot
+    end
+
+    local function p8_filter_matches(record, filter)
+      if filter == "Dungeons" then return record.kind == "Dungeon" end
+      if filter == "Raids" then return record.kind == "Raid" or record.kind == "Ascended" end
+      if filter == "World Bosses" then return record.kind == "World Boss" end
+      if filter == "Custom" then return record.kind == "Custom Event" end
+      return true
+    end
+
+    local function p8_view_inputs()
+      local filter = tostring(B.filter or "All")
+      local search = ""
+      if B.search and B.search.GetText then
+        local value = B.search:GetText()
+        if type(value) == "string" or type(value) == "number" then search = p8_lower(value) end
+      end
+      search = string.gsub(search, "^%s+", "")
+      search = string.gsub(search, "%s+$", "")
+      local sortMode = tostring(B.browseSort or "Recent")
+      local profile = p8_profile()
+      return filter, search, sortMode, profile
+    end
+
+    local function p8_get_view(snapshot)
+      p8_note("viewRequests", 1)
+      local filter, search, sortMode, profile = p8_view_inputs()
+      local signature = table.concat({tostring(snapshot.generation), filter, search, sortMode, profile}, "\31")
+      local cached = BV.viewCache[signature]
+      if cached then
+        p8_note("viewCacheHits", 1)
+        return cached, signature
+      end
+      if BV.injectViewFailure then error("injected Browse view failure") end
+      local started = p8_perf_enabled() and p8_now_ms() or nil
+      local rows = {}
+      for _, record in ipairs(snapshot.rows) do
+        p8_note("filterScans", 1)
+        local keep = p8_filter_matches(record, filter)
+        if keep and search ~= "" then
+          p8_note("searchScans", 1)
+          keep = string.find(record.searchText, search, 1, true) ~= nil
+        end
+        if keep then table.insert(rows, record) end
+      end
+      local view = {signature=signature, rows=rows, filter=filter, search=search, sortMode=sortMode, profile=profile}
+      BV.viewCache[signature] = view
+      table.insert(BV.viewOrder, signature)
+      while #BV.viewOrder > BV.maximumViews do
+        local old = table.remove(BV.viewOrder, 1)
+        BV.viewCache[old] = nil
+        p8_note("viewEvictions", 1)
+      end
+      p8_note("viewsBuilt", 1)
+      if started then
+        local elapsed = math.max(0, p8_now_ms() - started)
+        p8_note("viewBuildMsTotal", elapsed)
+        p8_max("viewBuildMsMax", elapsed)
+      end
+      return view, signature
+    end
+
+    local function p8_set_text(cache, key, target, value)
+      value = tostring(value or "")
+      if cache[key] == value then return false end
+      cache[key] = value
+      if target and target.SetText then target:SetText(value) end
+      p8_note("setTextCalls", 1)
+      return true
+    end
+
+    local function p8_set_texture(cache, key, target, value)
+      value = tostring(value or "")
+      if cache[key] == value then return false end
+      cache[key] = value
+      if target and target.SetTexture then target:SetTexture(value) end
+      p8_note("textureWrites", 1)
+      return true
+    end
+
+    local function p8_set_shown(cache, key, target, shown)
+      shown = shown and true or false
+      if cache[key] == shown then return false end
+      cache[key] = shown
+      if target then
+        if shown and target.Show then target:Show() elseif not shown and target.Hide then target:Hide() end
+      end
+      return true
+    end
+
+    local function p8_render_rows(view, page, pageSize)
+      if BV.injectRowFailure then error("injected Browse row-render failure") end
+      local started = p8_perf_enabled() and p8_now_ms() or nil
+      local first = ((page - 1) * pageSize) + 1
+      p8_note("pageSliceRequests", 1)
+      for index, row in ipairs(B.rows or {}) do
+        p8_note("rowsConsidered", 1)
+        local record = view.rows[first + index - 1]
+        local state = BV.rowStates[index]
+        if type(state) ~= "table" then state = {fields={}}; BV.rowStates[index] = state end
+        if type(state.fields) ~= "table" then state.fields = {} end
+        local cache = state.fields
+        if record then
+          local selected = record.id == B.selectedListing
+          local signature = record.rowSignature .. "\31" .. tostring(selected)
+          if state.signature == signature then
+            p8_note("rowSignatureHits", 1)
+          else
+            state.signature = signature
+            row.key = record.id
+            p8_set_shown(cache, "shown", row, true)
+            p8_set_texture(cache, "icon", row.icon, record.icon)
+            p8_set_text(cache, "title", row.title, record.title)
+            p8_set_text(cache, "note", row.note, record.rowNote)
+            p8_set_text(cache, "leader", row.leader, record.leader)
+            p8_set_text(cache, "roles", row.roles, record.rolesShort)
+            p8_set_text(cache, "ilvl", row.ilvl, record.itemLevel)
+            p8_set_text(cache, "members", row.members, record.members)
+            if cache.selected ~= selected then
+              cache.selected = selected
+              if row.SetBackdropColor then
+                if selected then row:SetBackdropColor(.45, .28, .02, .95) else row:SetBackdropColor(0, 0, 0, .85) end
+              end
+              p8_note("backdropWrites", 1)
+            end
+            p8_note("rowsMateriallyWritten", 1)
+          end
+        else
+          if cache.shown ~= false or row.key ~= nil then
+            row.key = nil
+            state.signature = nil
+            p8_set_shown(cache, "shown", row, false)
+            p8_note("rowsMateriallyWritten", 1)
+          end
+        end
+      end
+      if started then
+        local elapsed = math.max(0, p8_now_ms() - started)
+        p8_note("rowRenderMsTotal", elapsed)
+        p8_max("rowRenderMsMax", elapsed)
+      end
+    end
+
+    local function p8_render_detail(snapshot)
+      p8_note("detailRequests", 1)
+      local detail = B.detail
+      if not detail then return end
+      if type(BV.detailState) ~= "table" then BV.detailState = {fields={}} end
+      if type(BV.detailState.fields) ~= "table" then BV.detailState.fields = {} end
+      local cache = BV.detailState.fields
+      local record = snapshot.byId[tostring(B.selectedListing or "")]
+      if B.selectedListing and not record then B.selectedListing = nil end
+      local age = record and p8_age(record.created) or ""
+      local signature = record and (record.id .. "\31" .. record.materialSignature .. "\31" .. age) or "none"
+      if BV.detailState.signature == signature then
+        p8_note("detailSignatureHits", 1)
+        return
+      end
+      local started = p8_perf_enabled() and p8_now_ms() or nil
+      BV.detailState.signature = signature
+      if not record then
+        p8_set_text(cache, "title", detail.title, "No group selected")
+        p8_set_text(cache, "sub", detail.sub, "")
+        p8_set_text(cache, "note", detail.note, "Select a listing to view details.")
+        p8_set_text(cache, "body", detail.body, "")
+        p8_set_text(cache, "apps", detail.apps, "View Applicants")
+      else
+        local listing = record.listing
+        local sub = record.difficulty .. " " .. record.kind
+        local body = "|cffffcc00Leader:|r " .. record.leader
+          .. "\n|cffffcc00Created:|r " .. age
+          .. "\n|cffffcc00Level Req:|r 60"
+          .. "\n|cffffcc00Item Level:|r " .. record.detailItemLevel
+          .. "\n|cffffcc00SignalFire Network:|r " .. record.members
+          .. "\n|cffffcc00Applicants:|r " .. tostring(record.applicantCount)
+          .. "\n|cffffcc00Roles Needed:|r " .. record.rolesLong
+          .. "\n|cffffcc00Voice Chat:|r " .. tostring(listing.voice or "None")
+          .. "\n|cffffcc00Loot Method:|r " .. tostring(listing.loot or "Group Loot")
+        p8_set_text(cache, "title", detail.title, "|cffb84dff" .. record.activity .. "|r")
+        p8_set_text(cache, "sub", detail.sub, sub)
+        p8_set_text(cache, "note", detail.note, record.note)
+        p8_set_text(cache, "body", detail.body, body)
+        p8_set_text(cache, "apps", detail.apps, "View Applicants (" .. tostring(record.applicantCount) .. ")")
+      end
+      p8_note("detailRenders", 1)
+      if started then
+        local elapsed = math.max(0, p8_now_ms() - started)
+        p8_note("detailRenderMsTotal", elapsed)
+        p8_max("detailRenderMsMax", elapsed)
+      end
+    end
+
+    local function p8_render_badge(snapshot)
+      local count = 0
+      if B.myListing and B.myListing.id then count = snapshot.applicantCounts[tostring(B.myListing.id)] or 0 end
+      if BV.lastBadgeCount == count then return end
+      BV.lastBadgeCount = count
+      if B.badge then
+        if count > 0 then
+          if B.badge.Show then B.badge:Show() end
+          if B.badge.text and B.badge.text.SetText then B.badge.text:SetText(tostring(count)); p8_note("setTextCalls", 1) end
+        elseif B.badge.Hide then B.badge:Hide() end
+      end
+    end
+
+    local function p8_schedule_expiration(snapshot)
+      if not B.SF151_ScheduleDelayed or not B.SF151_CancelDelayed then return end
+      if not p8_visible() or not snapshot.nearestExpiry then
+        B:SF151_CancelDelayed("browse.expiration")
+        BV.expiryDeadline = nil
+        return
+      end
+      local remaining = math.max(0.05, snapshot.nearestExpiry - p8_now() + 0.05)
+      local deadline = ((GetTime and GetTime()) or 0) + remaining
+      if BV.expiryDeadline and math.abs(BV.expiryDeadline - deadline) < 0.05 then return end
+      BV.expiryDeadline = deadline
+      B:SF151_ScheduleDelayed("browse.expiration", remaining, function()
+        BV.expiryDeadline = nil
+        if p8_visible() and B.RefreshBrowse then B:RefreshBrowse("expiration") end
+      end)
+    end
+
+    function BV:AuthoritativeRefresh()
+      p8_note("authoritativeRefreshes", 1)
+      if not B.rows or not B.browse then
+        self.dirty = true
+        p8_note("refreshWhileUnbuilt", 1)
+        return false
+      end
+      if not p8_visible() then
+        self.dirty = true
+        p8_note("hiddenRendersSkipped", 1)
+        return false
+      end
+      if self.rendering then
+        self.dirty = true
+        p8_note("duplicateRefreshAvoided", 1)
+        return false
+      end
+      self.rendering = true
+      local started = p8_perf_enabled() and p8_now_ms() or nil
+      local previousGeneration = self.lastRenderedGeneration
+      local previousView = self.lastRenderedView
+      local previousSelection = self.lastRenderedSelection
+      local results = p8_pack(pcall(function()
+        local snapshot = p8_build_snapshot()
+        local view, viewSignature = p8_get_view(snapshot)
+        local pageSize = math.max(1, #(B.rows or {}))
+        local pages = math.max(1, math.ceil(#view.rows / pageSize))
+        local page = tonumber(B.browsePage or 1) or 1
+        if page < 1 then page = 1 end
+        if page > pages then page = pages end
+        B.browsePage = page
+        if previousGeneration == snapshot.generation and previousView == viewSignature
+          and previousSelection ~= B.selectedListing then
+          p8_note("selectionOnlyUpdates", 1)
+        end
+        BV.controlCache = BV.controlCache or {}
+        p8_set_text(BV.controlCache, "count", B.browseCountText, "Active Listings: " .. tostring(#view.rows))
+        local empty = #view.rows == 0
+        p8_set_shown(BV.controlCache, "emptyText", B.emptyBrowseText, empty)
+        p8_set_shown(BV.controlCache, "emptyIcon", B.emptyBrowseIcon, empty)
+        p8_render_rows(view, page, pageSize)
+        p8_render_detail(snapshot)
+        p8_render_badge(snapshot)
+        p8_schedule_expiration(snapshot)
+        self.lastRenderedGeneration = snapshot.generation
+        self.lastRenderedView = viewSignature
+        self.lastRenderedSelection = B.selectedListing
+        self.lastRenderedPage = page
+        self.dirty = false
+        local lazyRecord = LP.panels and LP.panels.browse
+        if lazyRecord then lazyRecord.dirty = false end
+        p8_note("visibleRenders", 1)
+        return true
+      end))
+      self.rendering = false
+      if started then
+        local elapsed = math.max(0, p8_now_ms() - started)
+        p8_note("totalRefreshMsTotal", elapsed)
+        p8_max("totalRefreshMsMax", elapsed)
+        local hot = _G.SignalFireHotPath151
+        if hot then
+          hot.stats = hot.stats or {}
+          hot.stats.panels = hot.stats.panels or {}
+          local panel = hot.stats.panels.browse or {calls=0, nestedSuppressed=0, totalMs=0, maxMs=0, maxRows=0}
+          hot.stats.panels.browse = panel
+          panel.calls = (panel.calls or 0) + 1
+          panel.totalMs = (panel.totalMs or 0) + elapsed
+          panel.maxMs = math.max(panel.maxMs or 0, elapsed)
+          local count = 0
+          for _ in pairs(B.listings or {}) do count = count + 1 end
+          panel.maxRows = math.max(panel.maxRows or 0, count)
+        end
+      end
+      if not results[1] then
+        self.dirty = true
+        local lazyRecord = LP.panels and LP.panels.browse
+        if lazyRecord then lazyRecord.dirty = true end
+        p8_record_error("refresh", results[2])
+        error(results[2], 0)
+      end
+      return results[2]
+    end
+
+    -- The Phase 4 scheduler remains the burst owner; only its Browse execution
+    -- slot changes from the historical renderer to this authoritative workflow.
+    P4.original.browse = function()
+      local ok, result = pcall(BV.AuthoritativeRefresh, BV)
+      if not ok then
+        -- The Browse owner already retained the error and dirty state. Returning
+        -- lets the shared scheduler finish its flush and sleep normally.
+        return false, result
+      end
+      return result
+    end
+
+    B.RefreshBrowse = function(self, reason)
+      p8_note("refreshWrapperCalls", 1)
+      local record = LP.panels and LP.panels.browse
+      if not self.rows or not self.browse then
+        BV.dirty = true
+        if record then LP:MarkDirty("browse", reason or "RefreshBrowse") end
+        p8_note("refreshWhileUnbuilt", 1)
+        p8_note("refreshConvertedToDirty", 1)
+        return false
+      end
+      if not p8_visible() then
+        BV.dirty = true
+        if record then LP:MarkDirty("browse", reason or "RefreshBrowse") end
+        p8_note("refreshConvertedToDirty", 1)
+        return false
+      end
+      p8_note("dirtyRequests", 1)
+      if P4.dirty and P4.dirty.browse then p8_note("dirtyRequestsMerged", 1) end
+      if self.SF151_RequestPanelRefresh then return self:SF151_RequestPanelRefresh("browse", reason == "show" and "show" or nil) end
+      return BV:AuthoritativeRefresh()
+    end
+
+    function B:SF151_SetBrowsePage(page)
+      local nextPage = math.max(1, tonumber(page or 1) or 1)
+      if self.browsePage == nextPage then return false end
+      self.browsePage = nextPage
+      return self:RefreshBrowse("page")
+    end
+
+    function B:SF151_InvalidateBrowseData(reason, requestRefresh)
+      BV:Invalidate(reason)
+      if requestRefresh and self.RefreshBrowse then self:RefreshBrowse(reason) end
+      return BV.dataGeneration
+    end
+
+    local function p8_wrap_mutation(methodName, beforeFn, changedFn, requestRefresh)
+      local old = B[methodName]
+      if type(old) ~= "function" then return end
+      BV.original = BV.original or {}
+      if BV.original[methodName] then return end
+      BV.original[methodName] = old
+      B[methodName] = function(self, ...)
+        local before = beforeFn and beforeFn(self, ...) or nil
+        BV:BeginMutation()
+        local results = p8_pack(pcall(old, self, ...))
+        local changed, reason = false, methodName
+        local afterResults = {true}
+        if results[1] and changedFn then
+          afterResults = p8_pack(pcall(changedFn, self, before, ...))
+          if afterResults[1] then changed, reason = afterResults[2], afterResults[3] end
+        end
+        if changed then
+          BV:Invalidate(reason or methodName)
+          if requestRefresh and self.RefreshBrowse then
+            local refreshOK, refreshError = pcall(self.RefreshBrowse, self, reason or methodName)
+            if not refreshOK then afterResults = {false, refreshError} end
+          end
+        end
+        BV:EndMutation()
+        if not results[1] then error(results[2], 0) end
+        if not afterResults[1] then error(afterResults[2], 0) end
+        return unpack(results, 2, results.n)
+      end
+    end
+
+    local function p8_my_listing_before(self)
+      return self.myListing and p8_listing_signature(self.myListing) or ""
+    end
+
+    local function p8_my_listing_changed(self, before)
+      local after = self.myListing and p8_listing_signature(self.myListing) or ""
+      return before ~= after, "my-listing"
+    end
+
+    p8_wrap_mutation("CreateListing", p8_my_listing_before, p8_my_listing_changed, false)
+    p8_wrap_mutation("Broadcast", p8_my_listing_before, p8_my_listing_changed, true)
+    p8_wrap_mutation("CancelMyListing", p8_my_listing_before, p8_my_listing_changed, false)
+    p8_wrap_mutation("RestoreMyListingState", p8_my_listing_before, p8_my_listing_changed, true)
+
+    local function p8_selected_app_count(self)
+      local id = self.myListing and tostring(self.myListing.id or "") or ""
+      local count = 0
+      local signatures = {}
+      for name, applicant in pairs(self.applicants or {}) do
+        if id ~= "" and tostring(applicant and applicant.listingId or "") == id then
+          count = count + 1
+          table.insert(signatures, tostring(name) .. "=" .. p8_applicant_signature(applicant))
+        end
+      end
+      table.sort(signatures)
+      return tostring(count) .. "\31" .. table.concat(signatures, "\30")
+    end
+
+    local function p8_applicants_changed(self, before)
+      return before ~= p8_selected_app_count(self), "applicants"
+    end
+
+    p8_wrap_mutation("Apply", p8_selected_app_count, p8_applicants_changed, true)
+    p8_wrap_mutation("AcceptSelected", p8_selected_app_count, p8_applicants_changed, true)
+    p8_wrap_mutation("DeclineSelected", p8_selected_app_count, p8_applicants_changed, true)
+
+    local oldHandleMessage = B.HandleMessage
+    if type(oldHandleMessage) == "function" and not BV.originalHandleMessage then
+      BV.originalHandleMessage = oldHandleMessage
+      B.HandleMessage = function(self, text, ...)
+        local raw = tostring(text or "")
+        local operation, id, name = string.match(raw, "^BLFG312~([^~]+)~([^~]*)~?([^~]*)")
+        local before
+        if operation == "LIST" or operation == "REMOVE" then
+          before = p8_listing_signature(self.listings and self.listings[id])
+        elseif operation == "APP" then
+          before = p8_applicant_signature(self.applicants and self.applicants[name])
+        end
+        BV:BeginMutation()
+        local results = p8_pack(pcall(oldHandleMessage, self, text, ...))
+        local changed = false
+        local afterResults = {true}
+        if results[1] then
+          afterResults = p8_pack(pcall(function()
+            if operation == "LIST" or operation == "REMOVE" then
+              changed = before ~= p8_listing_signature(self.listings and self.listings[id])
+            elseif operation == "APP" then
+              changed = before ~= p8_applicant_signature(self.applicants and self.applicants[name])
+            end
+            if changed then BV:Invalidate("protocol-" .. string.lower(operation)) end
+          end))
+        end
+        BV:EndMutation()
+        if not results[1] then error(results[2], 0) end
+        if not afterResults[1] then error(afterResults[2], 0) end
+        return unpack(results, 2, results.n)
+      end
+    end
+
+    local oldSetProfile = B.SF143_SetServerProfile
+    if type(oldSetProfile) == "function" and not BV.originalSetProfile then
+      BV.originalSetProfile = oldSetProfile
+      B.SF143_SetServerProfile = function(self, ...)
+        local before = p8_profile()
+        local results = p8_pack(pcall(oldSetProfile, self, ...))
+        if not results[1] then error(results[2], 0) end
+        if before ~= p8_profile() then BV:Invalidate("profile") end
+        return unpack(results, 2, results.n)
+      end
+    end
+
+    local browsePanel = LP.panels.browse
+    if browsePanel and type(browsePanel.builder) == "function" and not BV.originalBrowseBuilder then
+      BV.originalBrowseBuilder = browsePanel.builder
+      browsePanel.builder = function(self, ...)
+        local results = p8_pack(pcall(BV.originalBrowseBuilder, self, ...))
+        if not results[1] then error(results[2], 0) end
+        local frame = self.browse
+        if frame and frame._sfP8HideHook ~= true then
+          frame._sfP8HideHook = true
+          local function onHide()
+            BV.expiryDeadline = nil
+            if B.SF151_CancelDelayed then B:SF151_CancelDelayed("browse.expiration") end
+          end
+          if frame.GetScript and frame.SetScript then
+            local oldHide = frame:GetScript("OnHide")
+            frame:SetScript("OnHide", function(owner, ...)
+              if oldHide then oldHide(owner, ...) end
+              onHide()
+            end)
+          elseif frame.HookScript then
+            frame:HookScript("OnHide", onHide)
+          end
+        end
+        return unpack(results, 2, results.n)
+      end
+    end
+
+    function B:SF151_ResetBrowseViewStats()
+      BV.stats = {}
+      BV.errors = {}
+      return true
+    end
+
+    function B:SF151_GetBrowseViewDiagnostics()
+      local result = {
+        generation=BV.generation, dataGeneration=BV.dataGeneration,
+        dirty=BV.dirty == true, rendering=BV.rendering == true,
+        snapshotGeneration=BV.snapshot and BV.snapshot.generation or 0,
+        snapshotRows=BV.snapshot and #BV.snapshot.rows or 0,
+        viewCacheEntries=0, maximumViews=BV.maximumViews,
+        errors=BV.errors,
+      }
+      for _ in pairs(BV.viewCache or {}) do result.viewCacheEntries = result.viewCacheEntries + 1 end
+      local fields = {
+        "generationIncrements", "snapshotRequests", "snapshotsBuilt", "snapshotCacheHits",
+        "listingsProcessed", "normalizedStringsGenerated", "canonicalSorts", "viewRequests",
+        "viewsBuilt", "viewCacheHits", "filterScans", "searchScans", "viewSorts",
+        "pageSliceRequests", "offPageRowsFormatted", "visibleRenders", "hiddenRendersSkipped",
+        "rowsConsidered", "rowsMateriallyWritten", "rowSignatureHits", "setTextCalls",
+        "textureWrites", "backdropWrites", "tooltipDataBuilds", "selectionOnlyUpdates",
+        "detailRequests", "detailRenders", "detailSignatureHits", "buttonStateWrites",
+        "actionRewrites", "refreshWrapperCalls", "authoritativeRefreshes", "duplicateRefreshAvoided",
+        "dirtyRequests", "dirtyRequestsMerged", "refreshWhileUnbuilt", "refreshConvertedToDirty",
+        "expiredListings", "snapshotBuildMsTotal", "snapshotBuildMsMax", "viewBuildMsTotal",
+        "viewBuildMsMax", "rowRenderMsTotal", "rowRenderMsMax", "detailRenderMsTotal",
+        "detailRenderMsMax", "totalRefreshMsTotal", "totalRefreshMsMax", "viewEvictions",
+      }
+      for _, field in ipairs(fields) do result[field] = tonumber(BV.stats[field] or 0) or 0 end
+      return result
+    end
+
+    function B:SF151_PrintBrowseViewDiagnostics()
+      local d = self:SF151_GetBrowseViewDiagnostics()
+      local function emit(text)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("SignalFire> " .. tostring(text)) end
+      end
+      emit("browse owner " .. tostring(d.generation) .. ", gen=" .. tostring(d.dataGeneration)
+        .. ", dirty=" .. tostring(d.dirty) .. ", snapshotRows=" .. tostring(d.snapshotRows)
+        .. ", views=" .. tostring(d.viewCacheEntries) .. "/" .. tostring(d.maximumViews))
+      emit("browse data: increments=" .. tostring(d.generationIncrements) .. ", snapshot="
+        .. tostring(d.snapshotRequests) .. "/" .. tostring(d.snapshotsBuilt) .. ", hits="
+        .. tostring(d.snapshotCacheHits) .. ", listings=" .. tostring(d.listingsProcessed)
+        .. ", normalized=" .. tostring(d.normalizedStringsGenerated) .. ", sorts=" .. tostring(d.canonicalSorts))
+      emit("browse view: requests=" .. tostring(d.viewRequests) .. ", built=" .. tostring(d.viewsBuilt)
+        .. ", hits=" .. tostring(d.viewCacheHits) .. ", filters=" .. tostring(d.filterScans)
+        .. ", searches=" .. tostring(d.searchScans) .. ", sorts=" .. tostring(d.viewSorts)
+        .. ", slices=" .. tostring(d.pageSliceRequests) .. ", offPage=" .. tostring(d.offPageRowsFormatted))
+      emit("browse renderer: requests=" .. tostring(d.refreshWrapperCalls) .. ", executed="
+        .. tostring(d.authoritativeRefreshes) .. ", visible=" .. tostring(d.visibleRenders)
+        .. ", hidden=" .. tostring(d.hiddenRendersSkipped) .. ", rows=" .. tostring(d.rowsConsidered)
+        .. ", written=" .. tostring(d.rowsMateriallyWritten) .. ", signatureHits=" .. tostring(d.rowSignatureHits)
+        .. ", setText=" .. tostring(d.setTextCalls) .. ", texture=" .. tostring(d.textureWrites)
+        .. ", backdrop=" .. tostring(d.backdropWrites))
+      local snapshotAverage = d.snapshotsBuilt > 0 and d.snapshotBuildMsTotal / d.snapshotsBuilt or 0
+      local viewAverage = d.viewsBuilt > 0 and d.viewBuildMsTotal / d.viewsBuilt or 0
+      local rowAverage = d.visibleRenders > 0 and d.rowRenderMsTotal / d.visibleRenders or 0
+      local detailAverage = d.detailRenders > 0 and d.detailRenderMsTotal / d.detailRenders or 0
+      local totalAverage = d.visibleRenders > 0 and d.totalRefreshMsTotal / d.visibleRenders or 0
+      emit("browse timing: snapshot=" .. string.format("%.3f/%.3fms", snapshotAverage, d.snapshotBuildMsMax)
+        .. ", view=" .. string.format("%.3f/%.3fms", viewAverage, d.viewBuildMsMax)
+        .. ", rows=" .. string.format("%.3f/%.3fms", rowAverage, d.rowRenderMsMax)
+        .. ", detail=" .. string.format("%.3f/%.3fms", detailAverage, d.detailRenderMsMax)
+        .. ", total=" .. string.format("%.3f/%.3fms", totalAverage, d.totalRefreshMsMax))
+      return d
+    end
+  end
+end
+-- SIGNALFIRE_PHASE8_BROWSE_VIEW_END
