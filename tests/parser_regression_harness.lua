@@ -25,7 +25,8 @@ local objectMeta = {
 }
 
 local function newObject(name)
-  return setmetatable({name=name, shown=false, scripts={}, events={}, width=1024, height=768}, objectMeta)
+  return setmetatable({name=name, shown=false, scripts={}, events={}, width=1024, height=768,
+    sf135jClickCatcher=false, sf135jArrow=false, _sf1430jSelector=false}, objectMeta)
 end
 
 function objectMethods:GetName() return self.name end
@@ -44,10 +45,12 @@ function objectMethods:SetHeight(value) self.height = value end
 function objectMethods:SetSize(width, height) self.width, self.height = width, height end
 function objectMethods:GetWidth() return self.width end
 function objectMethods:GetHeight() return self.height end
-function objectMethods:GetFrameLevel() return self.frameLevel or 1 end
+function objectMethods:GetFrameLevel() return rawget(self, "frameLevel") or 1 end
 function objectMethods:SetFrameLevel(value) self.frameLevel = value end
-function objectMethods:GetFrameStrata() return self.frameStrata or "MEDIUM" end
+function objectMethods:GetFrameStrata() return rawget(self, "frameStrata") or "MEDIUM" end
 function objectMethods:SetFrameStrata(value) self.frameStrata = value end
+function objectMethods:SetScale(value) self.scale = value end
+function objectMethods:GetScale() return rawget(self, "scale") or 1 end
 function objectMethods:GetChildren() return nil end
 function objectMethods:GetRegions() return nil end
 function objectMethods:CreateFontString() return newObject("font") end
@@ -69,7 +72,15 @@ DEFAULT_CHAT_FRAME = newObject("ChatFrame1")
 NUM_CHAT_WINDOWS = 10
 for i = 1, NUM_CHAT_WINDOWS do _G["ChatFrame" .. i] = i == 1 and DEFAULT_CHAT_FRAME or newObject("ChatFrame" .. i) end
 
-function CreateFrame(_, name) return newObject(name or "anonymous") end
+function CreateFrame(_, name)
+  local frame = newObject(name or "anonymous")
+  if name then
+    _G[name] = frame
+    _G[name .. "Text"] = _G[name .. "Text"] or newObject(name .. "Text")
+    _G[name .. "Button"] = _G[name .. "Button"] or newObject(name .. "Button")
+  end
+  return frame
+end
 function UnitName(unit) return unit == "player" and "Harness" or nil end
 function UnitClass() return "Templar", "TEMPLAR" end
 function UnitGUID(unit) return unit == "player" and "Player-1" or nil end
@@ -108,6 +119,10 @@ local noops = {
   "StaticPopup_Show", "ReloadUI", "SetWhoToUI", "FriendsFrame_SendWho", "SendWho",
 }
 for _, name in ipairs(noops) do _G[name] = noop end
+function UIDropDownMenu_SetText(frame, text) if frame then frame.text = tostring(text or "") end end
+function UIDropDownMenu_GetText(frame) return frame and rawget(frame, "text") or "" end
+function UIDropDownMenu_CreateInfo() return {} end
+function FauxScrollFrame_GetOffset() return 0 end
 
 RAID_CLASS_COLORS = {}
 CUSTOM_CLASS_COLORS = {}

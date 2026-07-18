@@ -75,6 +75,7 @@ do
     if B.SF151_ResetHotPathStats then B:SF151_ResetHotPathStats() end
     if B.SF151_ResetRosterSnapshotStats then B:SF151_ResetRosterSnapshotStats() end
     if B.SF151_ResetPublicGroupsViewStats then B:SF151_ResetPublicGroupsViewStats() end
+    if B.SF151_ResetLazyPanelStats then B:SF151_ResetLazyPanelStats() end
     return true
   end
 
@@ -423,6 +424,7 @@ do
       refresh=p4stats,
       timer=p5 and p5.stats or {},
       publicGroupsView=B.SF151_GetPublicGroupsViewDiagnostics and B:SF151_GetPublicGroupsViewDiagnostics() or {},
+      lazyPanels=B.SF151_GetLazyPanelDiagnostics and B:SF151_GetLazyPanelDiagnostics() or {},
       caches=self:SnapshotCaches(),
     }
   end
@@ -440,6 +442,7 @@ do
     local timer = report.timer or {}
     local roster = B.SF151_GetRosterSnapshotDiagnostics and B:SF151_GetRosterSnapshotDiagnostics() or {}
     local publicView = report.publicGroupsView or {}
+    local lazy = report.lazyPanels or {}
     perf_emit("perf owner " .. tostring(report.generation) .. ", enabled=" .. tostring(report.enabled))
     if self.installError then perf_emit("instrumentation error: " .. tostring(self.installError)) end
     perf_emit("chat: filters=" .. tostring(chat.filterCalls or 0) .. ", wrappers=" .. tostring(chat.wrapperCalls or 0)
@@ -524,6 +527,12 @@ do
       .. ", profileSkips=" .. tostring(ui.profileApplicationsSkipped or 0)
       .. ", previews=" .. tostring(ui.previewUpdatesRequested or 0) .. "/" .. tostring(ui.previewUpdatesExecuted or 0)
       .. ", previewSkips=" .. tostring(ui.previewUpdatesSkipped or 0))
+    perf_emit("lazy panels: owner=" .. tostring(lazy.generation or "unavailable")
+      .. ", shell=" .. tostring(lazy.shellBuilt) .. ", shellBuilds=" .. tostring(lazy.shellBuildCount or 0)
+      .. ", prevented=" .. tostring(lazy.backgroundBuildsPrevented or 0)
+      .. ", deferred=" .. tostring(lazy.refreshesConvertedToDirty or 0)
+      .. ", beforeOpen=" .. tostring(lazy.panelsBuiltBeforeFirstOpen or 0)
+      .. ", failures=" .. tostring(lazy.errors and #lazy.errors or 0))
     for _, owner in ipairs({"refresh.network", "refresh.roster", "refresh.publicGroups", "ui.CreateUI"}) do
       local row = calls[owner]
       if row and (row.calls or 0) > 0 then

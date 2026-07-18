@@ -5236,3 +5236,517 @@ do
   end
 end
 -- SIGNALFIRE_PHASE4_EVENT_TIMERS_END
+
+-- Phase 7 true lazy panel construction. Runtime data continues to load at
+-- startup, while the main shell and feature frames are created on first use.
+-- SIGNALFIRE_PHASE7_LAZY_PANELS_BEGIN
+do
+  local B = _G.BronzeLFG
+  if B then
+    local LP = _G.SignalFireLazyPanels151 or {}
+    _G.SignalFireLazyPanels151 = LP
+    LP.generation = "1.5.1-perf-phase7"
+    LP.maximumErrors = 20
+    -- Session-only lazy build error history. Owner: SignalFireLazyPanels151;
+    -- key: FIFO insertion order with panel scope; max: 20; TTL: UI session;
+    -- eviction: oldest on insert; cleanup: /sf perf reset or UI reload; never persisted.
+    LP.errors = LP.errors or {}
+    LP.stats = LP.stats or {}
+    LP.panels = LP.panels or {}
+    LP.order = LP.order or {
+      "browse", "create", "profile", "applicants", "publicGroups",
+      "guildBrowser", "myListing", "options", "network", "fullRoster", "invasions",
+    }
+
+    local function p7_now_ms()
+      if debugprofilestop then return debugprofilestop() end
+      return (GetTime and GetTime() or 0) * 1000
+    end
+
+    local function p7_pack(...)
+      return {n=select("#", ...), ...}
+    end
+
+    local function p7_return(results)
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2, results.n)
+    end
+
+    local function p7_note(field, amount)
+      LP.stats[field] = (tonumber(LP.stats[field] or 0) or 0) + (amount or 1)
+      local perf = _G.SignalFirePerf151
+      if perf and perf.enabled and perf.Note then perf:Note("ui", "lazy" .. string.upper(string.sub(field, 1, 1)) .. string.sub(field, 2), amount or 1) end
+    end
+
+    local function p7_emit(text)
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("SignalFire> " .. tostring(text or ""))
+      end
+    end
+
+    local function p7_frame_ready(field, required)
+      return function(owner)
+        if not owner or not owner[field] then return false end
+        if required and not owner[required] then return false end
+        return true
+      end
+    end
+
+    local function p7_frame_visible(field)
+      return function(owner)
+        local frame = owner and owner[field]
+        return frame and frame.IsShown and frame:IsShown() and true or false
+      end
+    end
+
+    local original = LP.original or {}
+    LP.original = original
+    original.CreateUI = original.CreateUI or B.CreateUI
+    original.HidePanels = original.HidePanels or B.HidePanels
+    original.Show = original.Show or B.Show
+    original.Toggle = original.Toggle or B.Toggle
+    original.EnsureCoreUI = original.EnsureCoreUI or B.SF135N_EnsureCoreUI
+    original.BuildMinimap = original.BuildMinimap or B.BuildMinimap
+    original.UpdateMinimap = original.UpdateMinimap or B.UpdateMinimap
+    original.RestoreMyListingState = original.RestoreMyListingState or B.RestoreMyListingState
+
+    local definitions = {
+      browse={builder="BuildBrowse", show="ShowBrowse", refresh="RefreshBrowse", ready=p7_frame_ready("browse"), visible=p7_frame_visible("browse"), shell=true},
+      create={builder="BuildCreate", show="ShowCreate", refresh="UpdateCreateControls", ready=p7_frame_ready("create", "typeDrop"), visible=p7_frame_visible("create"), shell=true},
+      profile={builder="BuildProfile", show="ShowProfile", refresh="UpdateWhisperPreview569", ready=p7_frame_ready("profile", "profileRole"), visible=p7_frame_visible("profile"), shell=true},
+      applicants={builder="BuildApplicants", show="ShowApplicants", refresh="RefreshApplicants", ready=p7_frame_ready("apps", "appRows"), visible=p7_frame_visible("apps"), shell=true},
+      publicGroups={builder="BuildPublicGroups", show="ShowPublicGroups", refresh="RefreshPublicGroups", ready=p7_frame_ready("publicPanel", "publicRows"), visible=p7_frame_visible("publicPanel"), shell=true},
+      guildBrowser={builder="BuildGuildBrowser", show="ShowGuildBrowser", refresh="RefreshGuildBrowser", ready=p7_frame_ready("guildPanel"), visible=p7_frame_visible("guildPanel"), shell=true},
+      myListing={builder="BuildMyListing", show="ShowMyListing", refresh="RefreshMyListing", ready=p7_frame_ready("myPanel"), visible=p7_frame_visible("myPanel"), shell=true},
+      options={builder="BuildOptions", show="ShowOptions", ready=p7_frame_ready("optionsPanel"), shell=true},
+      network={builder="BuildSFNetworkPanel", show="ShowSFNetwork", refresh="RefreshSFNetwork", ready=p7_frame_ready("sfnPanel"), visible=p7_frame_visible("sfnPanel"), shell=true, embedded={"events", "notices"}},
+      fullRoster={builder="BuildOnlinePanel", show="ShowFullRoster", refresh="RefreshOnlinePanel",
+        ready=function(owner) return owner and owner.onlinePanel and owner.onlinePanel._sfrpFullRoster and true or false end,
+        visible=p7_frame_visible("onlinePanel"), shell=false},
+      invasions={builder="BuildInvasions", show="ShowInvasions", refresh="RefreshInvasions", ready=p7_frame_ready("invasionPanel"), visible=p7_frame_visible("invasionPanel"), shell=true},
+    }
+
+    for key, def in pairs(definitions) do
+      local record = LP.panels[key] or {}
+      LP.panels[key] = record
+      record.key = key
+      record.builderName = def.builder
+      record.showName = def.show
+      record.refreshName = def.refresh
+      record.ready = def.ready
+      record.visible = def.visible
+      record.requiresShell = def.shell ~= false
+      record.dependencies = def.dependencies or {}
+      record.embedded = def.embedded
+      record.builder = record.builder or B[def.builder]
+      record.show = record.show or B[def.show]
+      record.refresh = record.refresh or (def.refresh and B[def.refresh] or nil)
+      record.built = def.ready(B) and true or false
+      record.building = false
+      record.failed = record.failed == true
+      record.dirty = record.dirty == true
+      record.buildCount = tonumber(record.buildCount or 0) or 0
+      record.buildRequests = tonumber(record.buildRequests or 0) or 0
+      record.reuses = tonumber(record.reuses or 0) or 0
+      record.failures = tonumber(record.failures or 0) or 0
+      record.retries = tonumber(record.retries or 0) or 0
+      record.refreshWhileUnbuilt = tonumber(record.refreshWhileUnbuilt or 0) or 0
+      record.firstTrigger = record.firstTrigger
+      record.buildMsTotal = tonumber(record.buildMsTotal or 0) or 0
+      record.buildMsMax = tonumber(record.buildMsMax or 0) or 0
+    end
+
+    function LP:RecordError(scope, err)
+      local row = {scope=tostring(scope or "unknown"), error=tostring(err or "unknown error"), at=time and time() or 0}
+      table.insert(self.errors, row)
+      while #self.errors > self.maximumErrors do table.remove(self.errors, 1) end
+      return row
+    end
+
+    function LP:IsShellReady()
+      return B.frame and B.side and B.content and true or false
+    end
+
+    function LP:EnsureStartup()
+      p7_note("startupRequests", 1)
+      if not self.restoredListingState and type(original.RestoreMyListingState) == "function" then
+        self.restoredListingState = true
+        local ok, err = pcall(original.RestoreMyListingState, B)
+        if not ok then self:RecordError("RestoreMyListingState", err) end
+      end
+      if not B.mm and type(original.BuildMinimap) == "function" then
+        local ok, err = pcall(original.BuildMinimap, B)
+        if not ok then self:RecordError("BuildMinimap", err) end
+      end
+      if B.mm and type(original.UpdateMinimap) == "function" then
+        local ok, err = pcall(original.UpdateMinimap, B)
+        if not ok then self:RecordError("UpdateMinimap", err) end
+      end
+      return true
+    end
+
+    function LP:EnsureMainShell(trigger)
+      p7_note("shellRequests", 1)
+      if self:IsShellReady() then
+        p7_note("shellReuses", 1)
+        return true
+      end
+      if self.shellBuilding then
+        local err = "recursive main-shell construction"
+        self:RecordError("mainShell", err)
+        p7_note("shellFailures", 1)
+        return false, err
+      end
+      self.shellBuilding = true
+      self.suppressFeatureBuilders = true
+      self.shellTrigger = self.shellTrigger or tostring(trigger or "unknown")
+      local started = p7_now_ms()
+      local results = p7_pack(pcall(original.CreateUI, B))
+      self.suppressFeatureBuilders = nil
+      self.shellBuilding = nil
+      local elapsed = math.max(0, p7_now_ms() - started)
+      if results[1] and self:IsShellReady() then
+        self.shellBuilt = true
+        self.shellBuildCount = (tonumber(self.shellBuildCount or 0) or 0) + 1
+        self.shellBuildMsTotal = (tonumber(self.shellBuildMsTotal or 0) or 0) + elapsed
+        self.shellBuildMsMax = math.max(tonumber(self.shellBuildMsMax or 0) or 0, elapsed)
+        p7_note("shellBuilds", 1)
+        if B.frame and BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.scale then
+          B.frame:SetScale(BronzeLFG_DB.options.scale)
+        end
+        if B.ApplySignalFireBetaTitle then pcall(B.ApplySignalFireBetaTitle, B) end
+        if B.SFUI1434_Apply then pcall(B.SFUI1434_Apply, B) end
+        return true
+      end
+      local err = results[1] and "main shell did not create its required controls" or results[2]
+      self:RecordError("mainShell", err)
+      p7_note("shellFailures", 1)
+      return false, err
+    end
+
+    function LP:MarkDirty(key, reason)
+      local record = self.panels[key]
+      if not record then return false end
+      record.dirty = true
+      record.lastDirtyReason = tostring(reason or "data")
+      if not record.built then
+        record.dirtyWhileUnbuilt = (tonumber(record.dirtyWhileUnbuilt or 0) or 0) + 1
+        p7_note("dirtyMarksWhileUnbuilt", 1)
+      end
+      return true
+    end
+
+    function LP:EnsurePanel(key, trigger)
+      local record = self.panels[key]
+      if not record then return false, "unknown panel: " .. tostring(key) end
+      record.buildRequests = record.buildRequests + 1
+      p7_note("panelBuildRequests", 1)
+      if record.ready(B) and not record.failed then
+        record.built = true
+        record.failed = false
+        record.reuses = record.reuses + 1
+        p7_note("panelReuses", 1)
+        return true, false
+      end
+      if record.building then
+        local err = "lazy-panel dependency cycle at " .. tostring(key)
+        record.failures = record.failures + 1
+        record.lastError = err
+        self:RecordError(key, err)
+        p7_note("panelFailures", 1)
+        return false, err
+      end
+      if record.failed then
+        record.retries = record.retries + 1
+        p7_note("panelRetries", 1)
+      end
+      if record.requiresShell then
+        local ok, err = self:EnsureMainShell(trigger or key)
+        if not ok then return false, err end
+      end
+      record.building = true
+      for _, dependency in ipairs(record.dependencies or {}) do
+        local ok, err = self:EnsurePanel(dependency, "dependency:" .. tostring(key))
+        if not ok then
+          record.building = false
+          record.failed = true
+          record.failures = record.failures + 1
+          record.lastError = tostring(err)
+          self:RecordError(key, err)
+          p7_note("panelFailures", 1)
+          return false, err
+        end
+      end
+      self.activeBuilder = key
+      record.firstTrigger = record.firstTrigger or tostring(trigger or "direct")
+      local started = p7_now_ms()
+      local results
+      if type(record.builder) == "function" then
+        results = p7_pack(pcall(record.builder, B))
+      else
+        results = {n=2, false, "missing builder " .. tostring(record.builderName)}
+      end
+      self.activeBuilder = nil
+      record.building = false
+      local elapsed = math.max(0, p7_now_ms() - started)
+      if results[1] and record.ready(B) then
+        record.built = true
+        record.failed = false
+        record.lastError = nil
+        record.buildCount = record.buildCount + 1
+        record.buildMsTotal = record.buildMsTotal + elapsed
+        record.buildMsMax = math.max(record.buildMsMax, elapsed)
+        if not self.mainOpenRequested then
+          record.builtBeforeFirstOpen = (tonumber(record.builtBeforeFirstOpen or 0) or 0) + 1
+          p7_note("panelsBuiltBeforeFirstOpen", 1)
+        end
+        if not self.mainOpenRequested and not (B.frame and B.frame:IsShown()) then
+          record.builtWhileHidden = (tonumber(record.builtWhileHidden or 0) or 0) + 1
+          p7_note("panelsBuiltWhileHidden", 1)
+        end
+        p7_note("panelBuilds", 1)
+        local lifecycle = _G.SignalFireUILifecycle151
+        if lifecycle and lifecycle.RegisterKnownDropdowns then lifecycle:RegisterKnownDropdowns(B) end
+        return true, true
+      end
+      local err = results[1] and ("builder did not create " .. tostring(key)) or results[2]
+      record.failed = true
+      record.built = false
+      record.failures = record.failures + 1
+      record.lastError = tostring(err)
+      self:RecordError(key, err)
+      p7_note("panelFailures", 1)
+      return false, err
+    end
+
+    function LP:HideBuiltPanels()
+      local fields = {
+        "browse", "create", "profile", "apps", "publicPanel", "guildPanel", "myPanel",
+        "optionsPanel", "sfmmPanel", "sfcpPanel", "sfn138FavoriteOptionsPanel", "sfamPolishPanel",
+        "sfe141EventOptionsPanel", "sfnPanel", "onlinePanel", "invasionPanel", "bronzeNetProfile",
+      }
+      for _, field in ipairs(fields) do
+        local frame = B[field]
+        if frame and frame.Hide then frame:Hide() end
+      end
+    end
+
+    function LP:Open(key, trigger)
+      self.mainOpenRequested = true
+      local ok, builtOrError = self:EnsurePanel(key, trigger)
+      if not ok then
+        p7_emit("Could not open " .. tostring(key) .. ": " .. tostring(builtOrError))
+        return false
+      end
+      local record = self.panels[key]
+      local renderStarted = p7_now_ms()
+      local results = p7_pack(pcall(record.show, B))
+      if not results[1] then
+        record.lastError = tostring(results[2])
+        self:RecordError(key .. ".show", results[2])
+        p7_emit("Could not show " .. tostring(key) .. ": " .. tostring(results[2]))
+        return false
+      end
+      record.openCount = (tonumber(record.openCount or 0) or 0) + 1
+      if not builtOrError then record.fastOpens = (tonumber(record.fastOpens or 0) or 0) + 1 end
+      if builtOrError and not record.firstRenderMs then
+        record.firstRenderMs = math.max(0, p7_now_ms() - renderStarted)
+      end
+      record.dirty = false
+      return true
+    end
+
+    -- Login callers retain SavedVariables/minimap recovery but no longer create
+    -- the shell or any feature panel.
+    B.CreateUI = function(self)
+      return LP:EnsureStartup()
+    end
+
+    -- Legacy recovery callers now repair only the shared shell and the currently
+    -- selected failed panel. They never enumerate every feature panel.
+    B.SF135N_EnsureCoreUI = function(self)
+      if LP.shellBuilding then return LP:IsShellReady() end
+      if not LP:IsShellReady() then return false end
+      local tabMap = {
+        ["Browse"]="browse", ["Create Listing"]="create", ["Profile"]="profile",
+        ["Applicants"]="applicants", ["Public Groups"]="publicGroups",
+        ["Guild Browser"]="guildBrowser", ["My Listing"]="myListing",
+        ["Options"]="options", ["Network"]="network", ["Invasions"]="invasions",
+      }
+      local key = tabMap[self.currentTab]
+      if key and LP.panels[key] and LP.panels[key].failed then LP:EnsurePanel(key, "repair") end
+      return true
+    end
+
+    for key, record in pairs(LP.panels) do
+      local panelKey = key
+      local panelRecord = record
+      B[panelRecord.builderName] = function(self, ...)
+        if LP.suppressFeatureBuilders then
+          p7_note("backgroundBuildsPrevented", 1)
+          return nil
+        end
+        if panelRecord.ready(self) and not panelRecord.failed then return true end
+        LP:MarkDirty(panelKey, "builder:" .. tostring(panelRecord.builderName))
+        p7_note("backgroundBuildsPrevented", 1)
+        return false
+      end
+      if panelRecord.refreshName and type(panelRecord.refresh) == "function" then
+        local refreshName = panelRecord.refreshName
+        B[refreshName] = function(self, ...)
+          local isBuilt = panelRecord.ready(self)
+          if not isBuilt or (panelRecord.visible and not panelRecord.visible(self)) then
+            if not isBuilt then panelRecord.refreshWhileUnbuilt = panelRecord.refreshWhileUnbuilt + 1 end
+            LP:MarkDirty(panelKey, refreshName)
+            p7_note("refreshesConvertedToDirty", 1)
+            return false
+          end
+          local results = p7_pack(pcall(panelRecord.refresh, self, ...))
+          if not results[1] then error(results[2], 0) end
+          panelRecord.dirty = false
+          return unpack(results, 2, results.n)
+        end
+      end
+      if type(panelRecord.show) == "function" then
+        B[panelRecord.showName] = function(self, ...)
+          if LP.suppressFeatureBuilders then
+            p7_note("backgroundBuildsPrevented", 1)
+            return false
+          end
+          return LP:Open(panelKey, "show:" .. tostring(panelRecord.showName))
+        end
+      end
+    end
+
+    -- Event/Notice boards are embedded in the current Network hub. Background
+    -- protocol updates may dirty Network, but cannot create its board.
+    original.SFE_BuildEventBoard = original.SFE_BuildEventBoard or B.SFE_BuildEventBoard
+    original.SFE_RefreshEventBoard = original.SFE_RefreshEventBoard or B.SFE_RefreshEventBoard
+    original.OpenSFEEventBoard = original.OpenSFEEventBoard or B.OpenSFEEventBoard
+    if type(original.SFE_BuildEventBoard) == "function" then
+      B.SFE_BuildEventBoard = function(self, ...)
+        if LP.activeBuilder == "network" or (self.sfnPanel and self.sfnPanel:IsShown()) then
+          return original.SFE_BuildEventBoard(self, ...)
+        end
+        LP:MarkDirty("network", "event-board-build")
+        p7_note("backgroundBuildsPrevented", 1)
+        return false
+      end
+    end
+    if type(original.SFE_RefreshEventBoard) == "function" then
+      B.SFE_RefreshEventBoard = function(self, ...)
+        if not (self.sfnPanel and self.sfeEventPanel and self.sfnPanel:IsShown()) then
+          LP:MarkDirty("network", "event-board-refresh")
+          p7_note("refreshesConvertedToDirty", 1)
+          return false
+        end
+        return original.SFE_RefreshEventBoard(self, ...)
+      end
+    end
+    if type(original.OpenSFEEventBoard) == "function" then
+      B.OpenSFEEventBoard = function(self, ...)
+        local ok, err = LP:EnsurePanel("network", "show:Event Board")
+        if not ok then return false, err end
+        return original.OpenSFEEventBoard(self, ...)
+      end
+    end
+
+    original.RequestPublicGroupsRefresh = original.RequestPublicGroupsRefresh or B.RequestPublicGroupsRefresh
+    if type(original.RequestPublicGroupsRefresh) == "function" then
+      B.RequestPublicGroupsRefresh = function(self, ...)
+        LP:MarkDirty("publicGroups", "public-data")
+        return original.RequestPublicGroupsRefresh(self, ...)
+      end
+    end
+
+    B.HidePanels = function(self)
+      LP:HideBuiltPanels()
+    end
+
+    B.Show = function(self)
+      return LP:Open("browse", "show:main")
+    end
+
+    B.Toggle = function(self)
+      LP:EnsureStartup()
+      if self.frame and self.frame:IsShown() then self.frame:Hide(); return true end
+      return LP:Open("browse", "toggle:main")
+    end
+
+    function B:SF151_GetLazyPanelDiagnostics()
+      local panels = {}
+      for _, key in ipairs(LP.order) do
+        local record = LP.panels[key]
+        panels[key] = {
+          built=record.ready(self) and true or false,
+          building=record.building == true,
+          failed=record.failed == true,
+          dirty=record.dirty == true,
+          buildRequests=record.buildRequests,
+          buildCount=record.buildCount,
+          reuses=record.reuses,
+          failures=record.failures,
+          retries=record.retries,
+          refreshWhileUnbuilt=record.refreshWhileUnbuilt,
+          dirtyWhileUnbuilt=record.dirtyWhileUnbuilt or 0,
+          fastOpens=record.fastOpens or 0,
+          firstTrigger=record.firstTrigger,
+          buildMsAverage=record.buildCount > 0 and (record.buildMsTotal / record.buildCount) or 0,
+          buildMsMaximum=record.buildMsMax,
+          firstRenderMs=record.firstRenderMs or 0,
+          lastError=record.lastError,
+        }
+      end
+      return {
+        generation=LP.generation,
+        shellBuilt=LP:IsShellReady(),
+        shellBuildCount=LP.shellBuildCount or 0,
+        shellBuildRequests=LP.stats.shellRequests or 0,
+        shellReuses=LP.stats.shellReuses or 0,
+        shellFailures=LP.stats.shellFailures or 0,
+        shellBuildMsAverage=(LP.shellBuildCount or 0) > 0 and ((LP.shellBuildMsTotal or 0) / LP.shellBuildCount) or 0,
+        shellBuildMsMaximum=LP.shellBuildMsMax or 0,
+        backgroundBuildsPrevented=LP.stats.backgroundBuildsPrevented or 0,
+        refreshesConvertedToDirty=LP.stats.refreshesConvertedToDirty or 0,
+        panelsBuiltBeforeFirstOpen=LP.stats.panelsBuiltBeforeFirstOpen or 0,
+        panelsBuiltWhileHidden=LP.stats.panelsBuiltWhileHidden or 0,
+        errors=LP.errors,
+        panels=panels,
+      }
+    end
+
+    function B:SF151_PrintLazyPanelDiagnostics()
+      local d = self:SF151_GetLazyPanelDiagnostics()
+      p7_emit("lazy owner " .. tostring(d.generation) .. ", shell=" .. tostring(d.shellBuilt)
+        .. ", shellBuilds=" .. tostring(d.shellBuildCount) .. ", prevented=" .. tostring(d.backgroundBuildsPrevented)
+        .. ", dirty=" .. tostring(d.refreshesConvertedToDirty))
+      for _, key in ipairs(LP.order) do
+        local row = d.panels[key]
+        p7_emit(key .. ": built=" .. tostring(row.built) .. ", builds=" .. tostring(row.buildCount)
+          .. ", reuse=" .. tostring(row.reuses) .. ", dirty=" .. tostring(row.dirty)
+          .. ", deferred=" .. tostring(row.refreshWhileUnbuilt) .. ", failures=" .. tostring(row.failures)
+          .. ", avg=" .. string.format("%.3fms", row.buildMsAverage or 0)
+          .. ", max=" .. string.format("%.3fms", row.buildMsMaximum or 0))
+      end
+      return d
+    end
+
+    function B:SF151_ResetLazyPanelStats()
+      LP.stats = {}
+      LP.errors = {}
+      for _, record in pairs(LP.panels) do
+        record.buildRequests = 0
+        record.reuses = 0
+        record.failures = 0
+        record.retries = 0
+        record.refreshWhileUnbuilt = 0
+        record.dirtyWhileUnbuilt = 0
+        record.fastOpens = 0
+        record.buildMsTotal = 0
+        record.buildMsMax = 0
+      end
+      return true
+    end
+  end
+end
+-- SIGNALFIRE_PHASE7_LAZY_PANELS_END
