@@ -7,13 +7,15 @@ function requireText(text, label) {
   if (!ui.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText('PG.generationName = "1.5.1-perf-phase6"', "Phase 6 owner");
+requireText('PG.generationName = "1.5.1-perf-phase6b"', "Phase 6 owner");
 requireText("PG.maximumViews = 16", "bounded view cache");
 requireText("function B:SF151_InvalidatePublicGroupsData", "data-generation invalidation");
 requireText("snapshotGeneration == PG.dataGeneration", "snapshot generation hit");
 requireText("local signature = table.concat({tostring(PG.dataGeneration)", "view signature");
 requireText("p6_note(\"rowRenderSignatureHits\")", "row render signatures");
 requireText("public-groups.expiry", "sleepable expiration task");
+requireText('B:SF151_CancelDelayed("public-groups.expiry")', "hidden expiry cancellation");
+requireText("PG.AttachPanel = p6_attach_panel", "panel lifecycle owner");
 requireText("Refresh.original.publicGroups = function() return PG.Render() end", "final scheduled owner");
 requireText("p6_wrap_row_mutation(\"MirrorListingToPublic\")", "listing invalidation");
 requireText("p6_wrap_row_mutation(\"UpsertInvasionPublicListing\")", "invasion invalidation");

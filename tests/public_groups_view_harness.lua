@@ -6,7 +6,7 @@ dofile(parserHarness)
 local B = assert(BronzeLFG, "SignalFire did not load")
 local PG = assert(SignalFirePublicGroupsView151, "Phase 6 Public Groups owner did not load")
 local Refresh = assert(SignalFireRefresh151, "refresh scheduler did not load")
-assert(PG.generationName == "1.5.1-perf-phase6", "unexpected Public Groups view owner")
+assert(PG.generationName == "1.5.1-perf-phase6b", "unexpected Public Groups view owner")
 
 local function widget(shown)
   local value = {shown=shown ~= false, text="", textCalls=0, backdropCalls=0, widthCalls=0}
@@ -51,6 +51,7 @@ local function installWidgets()
 end
 
 installWidgets()
+PG.AttachPanel(B.publicPanel)
 B.GetOnlineUserRows=function() return {} end
 B.SFModuleIsEnabled=function() return true end
 B.SFAM_MarkRelevant=function() end
@@ -135,13 +136,17 @@ assert((B:SF151_GetPublicGroupsViewDiagnostics().detailRendersExecuted or 0) == 
 assert((B:SF151_GetPublicGroupsViewDiagnostics().detailSignatureHits or 0) >= 1, "repeated selection missed detail signature")
 
 B.publicPanel:Hide()
+if B.publicPanel.hookOnHide then B.publicPanel:hookOnHide() end
 local hiddenSnapshotBuilds=B:SF151_GetPublicGroupsViewDiagnostics().snapshotsBuilt
 B.publicGroups.hidden=listing("hidden", "HiddenPlayer", "Molten Core", "Raid", time())
 B:SF151_InvalidatePublicGroupsData("hidden-burst", "hidden")
 assert(render() == false, "hidden panel rendered rows")
+assert(not (SignalFireTimer151.taskByKey or {})["public-groups.expiry"], "hidden panel retained an expiration task")
 local hidden=B:SF151_GetPublicGroupsViewDiagnostics()
 assert(hidden.snapshotsBuilt == hiddenSnapshotBuilds and (hidden.hiddenRendersSkipped or 0) >= 1, "hidden panel built a snapshot")
 B.publicPanel:Show()
+if B.publicPanel.hookOnShow then B.publicPanel:hookOnShow() end
+assert((SignalFireTimer151.taskByKey or {})["public-groups.expiry"], "visible panel did not restore expiration scheduling")
 assert(render() == true, "dirty panel did not render when shown")
 assert(B:SF151_GetPublicGroupsViewDiagnostics().snapshotsBuilt == hiddenSnapshotBuilds + 1, "opening dirty panel did not build once")
 

@@ -2776,7 +2776,7 @@ do
   if B and Refresh and Refresh.original then
     local PG = _G.SignalFirePublicGroupsView151 or {}
     _G.SignalFirePublicGroupsView151 = PG
-    PG.generationName = "1.5.1-perf-phase6"
+    PG.generationName = "1.5.1-perf-phase6b"
     PG.dataGeneration = tonumber(PG.dataGeneration or 0) or 0
     if PG.dataGeneration < 1 then PG.dataGeneration = 1 end
     PG.maximumViews = 16
@@ -2964,6 +2964,12 @@ do
     local function p6_schedule_expiry(deadline)
       deadline = tonumber(deadline or 0) or 0
       if deadline <= 0 then return end
+      if not p6_visible(B.publicPanel) then
+        if B.SF151_CancelDelayed then B:SF151_CancelDelayed("public-groups.expiry") end
+        PG.expiryScheduled = nil
+        PG.expiryDeadline = nil
+        return
+      end
       if PG.expiryScheduled and PG.expiryDeadline and PG.expiryDeadline <= deadline then return end
       PG.expiryDeadline = deadline
       if not B.SF151_ScheduleDelayed then return end
@@ -2981,6 +2987,12 @@ do
     end
 
     function PG.RescheduleExpiry()
+      if not p6_visible(B.publicPanel) then
+        if B.SF151_CancelDelayed then B:SF151_CancelDelayed("public-groups.expiry") end
+        PG.expiryScheduled = nil
+        PG.expiryDeadline = nil
+        return false
+      end
       local nearest = nil
       for _, row in pairs(B.publicGroups or {}) do
         local deadline = p6_row_deadline(row)
@@ -2994,6 +3006,7 @@ do
         PG.expiryScheduled = nil
         PG.expiryDeadline = nil
       end
+      return nearest ~= nil
     end
 
     local function p6_clear_views()
@@ -3413,13 +3426,19 @@ do
       if panel.HookScript then
         panel:HookScript("OnShow", function()
           PG.dirty = true
+          if B.ExpirePublicGroups then B:ExpirePublicGroups() end
+          PG.RescheduleExpiry()
           if B.RefreshPublicGroups then B:RefreshPublicGroups() end
         end)
         panel:HookScript("OnHide", function()
           if B.SF151_CancelDelayed then B:SF151_CancelDelayed("public-groups.age") end
+          if B.SF151_CancelDelayed then B:SF151_CancelDelayed("public-groups.expiry") end
+          PG.expiryScheduled = nil
+          PG.expiryDeadline = nil
         end)
       end
     end
+    PG.AttachPanel = p6_attach_panel
 
     local oldBuildPublicGroups = B.BuildPublicGroups
     if type(oldBuildPublicGroups) == "function" then
