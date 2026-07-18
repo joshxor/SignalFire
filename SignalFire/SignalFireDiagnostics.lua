@@ -74,6 +74,7 @@ do
     if B.SF151_ResetTimerStats then B:SF151_ResetTimerStats() end
     if B.SF151_ResetHotPathStats then B:SF151_ResetHotPathStats() end
     if B.SF151_ResetRosterSnapshotStats then B:SF151_ResetRosterSnapshotStats() end
+    if B.SF151_ResetPublicGroupsViewStats then B:SF151_ResetPublicGroupsViewStats() end
     return true
   end
 
@@ -233,6 +234,7 @@ do
     local shared = db.signalFireNetwork or {}
     local p3 = _G.SignalFireChatRuntime151 or {}
     local roster = _G.SignalFireRosterSnapshot151 or {}
+    local publicView = _G.SignalFirePublicGroupsView151 or {}
     return {
       {"session.publicGroups", B.publicGroups, false},
       {"session.onlineUsers", B.onlineUsers, false},
@@ -275,6 +277,8 @@ do
       {"session.rosterClassCache", roster.classCache, false},
       {"session.rosterStatusMap", roster.statusByNameKey, false},
       {"session.rosterUnitMap", roster.unitByNameKey, false},
+      {"session.publicDisplaySnapshot", publicView.snapshot and publicView.snapshot.rows, false},
+      {"session.publicDisplayViews", publicView.viewCache, false},
       {"session.seenPublic", B.sfamSeenPublic, false},
       {"session.seenApplicants", B.sfamSeenApplicants, false},
       {"db.chatGuildListings", db.chatGuildListings, true},
@@ -418,6 +422,7 @@ do
       chat=p3,
       refresh=p4stats,
       timer=p5 and p5.stats or {},
+      publicGroupsView=B.SF151_GetPublicGroupsViewDiagnostics and B:SF151_GetPublicGroupsViewDiagnostics() or {},
       caches=self:SnapshotCaches(),
     }
   end
@@ -434,6 +439,7 @@ do
     local memory = stats.memory or {}
     local timer = report.timer or {}
     local roster = B.SF151_GetRosterSnapshotDiagnostics and B:SF151_GetRosterSnapshotDiagnostics() or {}
+    local publicView = report.publicGroupsView or {}
     perf_emit("perf owner " .. tostring(report.generation) .. ", enabled=" .. tostring(report.enabled))
     if self.installError then perf_emit("instrumentation error: " .. tostring(self.installError)) end
     perf_emit("chat: filters=" .. tostring(chat.filterCalls or 0) .. ", wrappers=" .. tostring(chat.wrapperCalls or 0)
@@ -464,6 +470,29 @@ do
       .. ", linksBuilt=" .. tostring(chat.linksBuilt or 0)
       .. ", wrapperDuplicates=" .. tostring(chat.wrapperDuplicateSkips or 0)
       .. ", errors=" .. tostring(chat.processingErrors or 0))
+    perf_emit("public view: gen=" .. tostring(publicView.dataGeneration or 0)
+      .. ", snapshot=" .. tostring(publicView.snapshotRequests or 0) .. "/" .. tostring(publicView.snapshotsBuilt or 0)
+      .. ", snapshotHits=" .. tostring(publicView.snapshotCacheHits or 0)
+      .. ", views=" .. tostring(publicView.viewRequests or 0) .. "/" .. tostring(publicView.viewsBuilt or 0)
+      .. ", viewHits=" .. tostring(publicView.viewCacheHits or 0)
+      .. ", viewSorts=" .. tostring(publicView.viewSorts or 0))
+    perf_emit("public renderer: requests=" .. tostring(publicView.visibleRenderRequests or 0)
+      .. ", rendered=" .. tostring(publicView.visibleRendersExecuted or 0)
+      .. ", hidden=" .. tostring(publicView.hiddenRendersSkipped or 0)
+      .. ", considered=" .. tostring(publicView.rowsConsidered or 0)
+      .. ", written=" .. tostring(publicView.rowsFullyWritten or 0)
+      .. ", signatureHits=" .. tostring(publicView.rowRenderSignatureHits or 0)
+      .. ", setText=" .. tostring(publicView.setTextCalls or 0)
+      .. ", backdrop=" .. tostring(publicView.backdropWrites or 0)
+      .. ", offPage=" .. tostring(publicView.offPageRowsFormatted or 0))
+    local snapshotAverage = (publicView.snapshotsBuilt or 0) > 0 and (publicView.snapshotBuildMsTotal or 0) / publicView.snapshotsBuilt or 0
+    local viewAverage = (publicView.viewsBuilt or 0) > 0 and (publicView.viewBuildMsTotal or 0) / publicView.viewsBuilt or 0
+    local renderAverage = (publicView.visibleRendersExecuted or 0) > 0 and (publicView.rowRenderMsTotal or 0) / publicView.visibleRendersExecuted or 0
+    local totalAverage = (publicView.visibleRendersExecuted or 0) > 0 and (publicView.totalRefreshMsTotal or 0) / publicView.visibleRendersExecuted or 0
+    perf_emit("public timing: snapshot=" .. string.format("%.3f/%.3fms", snapshotAverage, publicView.snapshotBuildMsMax or 0)
+      .. ", view=" .. string.format("%.3f/%.3fms", viewAverage, publicView.viewBuildMsMax or 0)
+      .. ", rows=" .. string.format("%.3f/%.3fms", renderAverage, publicView.rowRenderMsMax or 0)
+      .. ", total=" .. string.format("%.3f/%.3fms", totalAverage, publicView.totalRefreshMsMax or 0))
     perf_emit("network: presence=" .. tostring(network.presencePackets or refresh.incomingPresence or 0)
       .. ", requests=" .. tostring(refresh.requests or 0) .. ", merged=" .. tostring(refresh.merged or 0)
       .. ", rebuilds=" .. tostring(network.actualPanelRebuilds or 0) .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)

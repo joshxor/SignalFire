@@ -1391,13 +1391,16 @@ end
 
 function BLFG:ExpirePublicGroups()
   local expire = 300
+  local removed = 0
   if BronzeLFG_DB.options and BronzeLFG_DB.options.publicExpire then expire = tonumber(BronzeLFG_DB.options.publicExpire) or 300 end
   for id, g in pairs(self.publicGroups) do
     if now() - (g.seen or g.created or now()) > expire then
       self.publicGroups[id] = nil
+      removed = removed + 1
       if self.selectedPublic == id then self.selectedPublic = nil end
     end
   end
+  return removed
 end
 
 function BLFG:BuildProfileWhisper(activity)

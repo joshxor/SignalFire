@@ -1735,6 +1735,9 @@ do
       rec.isNew = isNew
       B._lastPublicGroupTouched = row
       B._lastPublicGroupTouchedKey = id
+      if B.SF151_InvalidatePublicGroupsData then
+        B:SF151_InvalidatePublicGroupsData(isNew and "chat-insert" or "chat-update", id)
+      end
       p3_note("refreshDirtyRequests")
       if B.RequestPublicGroupsRefresh then B:RequestPublicGroupsRefresh() end
       return row
@@ -2763,6 +2766,823 @@ do
     T.ApplyMinimapOwner()
   end
 end
+
+-- SIGNALFIRE_PHASE6_PUBLIC_GROUPS_VIEW_BEGIN
+-- Phase 6 owns only the Public Groups display pipeline. Canonical chat identity,
+-- queueing, alerts, and the Phase 4 refresh scheduler remain authoritative.
+do
+  local B = _G.BronzeLFG
+  local Refresh = _G.SignalFireRefresh151
+  if B and Refresh and Refresh.original then
+    local PG = _G.SignalFirePublicGroupsView151 or {}
+    _G.SignalFirePublicGroupsView151 = PG
+    PG.generationName = "1.5.1-perf-phase6"
+    PG.dataGeneration = tonumber(PG.dataGeneration or 0) or 0
+    if PG.dataGeneration < 1 then PG.dataGeneration = 1 end
+    PG.maximumViews = 16
+    PG.viewCache = PG.viewCache or {}
+    PG.viewOrder = PG.viewOrder or {}
+    PG.stats = PG.stats or {}
+    PG.dirty = true
+
+    -- Session-only cache design:
+    -- Snapshot owner: SignalFirePublicGroupsView151, key=dataGeneration, max=1,
+    -- no TTL, replaced on material Public Groups mutation.
+    -- View owner: SignalFirePublicGroupsView151, key=generation/filter/search/
+    -- role/sort/profile/hidden settings, max=16, no TTL, FIFO eviction and full
+    -- invalidation on data-generation change. Nothing is persisted.
+    local function p6_diagnostics()
+      return (_G.SignalFirePerf151 and _G.SignalFirePerf151.enabled == true)
+        or (BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.developerDiagnostics == true)
+    end
+
+    local function p6_note(field, amount)
+      if not p6_diagnostics() then return end
+      PG.stats[field] = (PG.stats[field] or 0) + (amount or 1)
+    end
+
+    local function p6_max(field, value)
+      if not p6_diagnostics() then return end
+      value = tonumber(value or 0) or 0
+      if value > (PG.stats[field] or 0) then PG.stats[field] = value end
+    end
+
+    local function p6_clock()
+      if debugprofilestop then return debugprofilestop() end
+      return ((GetTime and GetTime()) or 0) * 1000
+    end
+
+    local function p6_time_call(totalField, maxField, callback)
+      if not p6_diagnostics() then return callback() end
+      local started = p6_clock()
+      local results = {pcall(callback)}
+      local elapsed = math.max(0, p6_clock() - started)
+      PG.stats[totalField] = (PG.stats[totalField] or 0) + elapsed
+      p6_max(maxField, elapsed)
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2)
+    end
+
+    local function p6_trim(value)
+      local text = tostring(value or "")
+      text = string.gsub(text, "^%s+", "")
+      text = string.gsub(text, "%s+$", "")
+      return text
+    end
+
+    local function p6_lower(value)
+      return string.lower(tostring(value or ""))
+    end
+
+    local function p6_epoch()
+      return (time and time()) or 0
+    end
+
+    local function p6_visible(frame)
+      if not frame then return false end
+      if frame.IsVisible then return frame:IsVisible() and true or false end
+      if frame.IsShown then return frame:IsShown() and true or false end
+      return false
+    end
+
+    local function p6_count(values)
+      local count = 0
+      for _ in pairs(values or {}) do count = count + 1 end
+      return count
+    end
+
+    local function p6_shorten(value, maximum)
+      local text = tostring(value or "")
+      maximum = tonumber(maximum or 30) or 30
+      if string.len(text) <= maximum then return text end
+      return string.sub(text, 1, math.max(1, maximum - 3)) .. "..."
+    end
+
+    local function p6_stable_time(row)
+      local stamp = tonumber(row and (row.firstSeen or row.created or row.seen) or 0) or 0
+      if stamp <= 0 then stamp = p6_epoch() end
+      return stamp
+    end
+
+    local function p6_age(stamp)
+      local delta = math.max(0, p6_epoch() - (tonumber(stamp or 0) or p6_epoch()))
+      if delta < 60 then return tostring(delta) .. " sec ago" end
+      if delta < 3600 then return tostring(math.floor(delta / 60)) .. " min ago" end
+      return tostring(math.floor(delta / 3600)) .. " hr ago"
+    end
+
+    local typeIcon = {
+      Dungeon="Interface\\Icons\\Ability_DualWield",
+      Raid="Interface\\Icons\\Achievement_Boss_CThun",
+      Key="Interface\\Icons\\INV_Misc_Key_03",
+      Event="Interface\\Icons\\INV_Misc_Ticket_Tarot_Madness",
+      Guild="Interface\\Icons\\INV_Misc_TabardPVP_01",
+      LFG="Interface\\Icons\\INV_Misc_GroupNeedMore",
+      Social="Interface\\Icons\\INV_Misc_GroupLooking",
+      Other="Interface\\Icons\\INV_Misc_Note_01",
+    }
+    local typeColor = {
+      Dungeon="|cff3fa7ff", Raid="|cff4dff7a", Key="|cffb866ff",
+      Event="|cffff9a33", Guild="|cff00e6cc", LFG="|cffffff66",
+      Social="|cffff66cc", Other="|cffaaaaaa",
+    }
+    local classColors = {
+      WARRIOR="|cffc79c6e", PALADIN="|cfff58cba", HUNTER="|cffabd473",
+      ROGUE="|cfffff569", PRIEST="|cffffffff", DEATHKNIGHT="|cffc41f3b",
+      SHAMAN="|cff0070de", MAGE="|cff69ccf0", WARLOCK="|cff9482c9",
+      DRUID="|cffff7d0a",
+    }
+
+    local function p6_type_label(value)
+      local kind = tostring(value or "Other")
+      local icon = typeIcon[kind] or typeIcon.Other
+      local color = typeColor[kind] or typeColor.Other
+      return "|T" .. icon .. ":14:14:0:0|t " .. color .. kind .. "|r"
+    end
+
+    local function p6_filter_label(kind, count)
+      count = tonumber(count or 0) or 0
+      if kind == "All" then return "All (" .. tostring(count) .. ")" end
+      local icon = typeIcon[kind] or typeIcon.Other
+      return "|T" .. icon .. ":12:12:0:0|t " .. tostring(kind) .. " (" .. tostring(count) .. ")"
+    end
+
+    local function p6_class_color(value)
+      local key = string.upper(tostring(value or ""))
+      key = string.gsub(key, "%s+", "")
+      key = string.gsub(key, "[^A-Z]", "")
+      if key == "DK" then key = "DEATHKNIGHT" end
+      return classColors[key] or "|cff9fd6ff"
+    end
+
+    local function p6_roles(value)
+      local raw = tostring(value or "")
+      local low = p6_lower(raw)
+      if raw == "" or low == "not detected" then return "-", false, false, false end
+      local tank = string.find(low, "tank", 1, true) ~= nil or string.find(raw, ">T<", 1, true) ~= nil or string.find(raw, "T/", 1, true) ~= nil
+      local healer = string.find(low, "heal", 1, true) ~= nil or string.find(raw, ">H<", 1, true) ~= nil or string.find(raw, "/H", 1, true) ~= nil
+      local dps = string.find(low, "dps", 1, true) ~= nil or string.find(raw, ">D<", 1, true) ~= nil or string.find(raw, "/D", 1, true) ~= nil
+      if string.find(raw, "T/H/D", 1, true) then tank, healer, dps = true, true, true end
+      local values = {}
+      if tank then table.insert(values, "|cff4aa3ffT|r") end
+      if healer then table.insert(values, "|cff44ff66H|r") end
+      if dps then table.insert(values, "|cffff5555D|r") end
+      if string.find(low, "flex", 1, true) then table.insert(values, "|cffffff66F|r") end
+      if #values == 0 then return "-", false, false, false end
+      return table.concat(values, "/"), tank, healer, dps
+    end
+
+    local function p6_is_invasion(row)
+      return row and (row.isInvasionBeacon
+        or tostring(row.source or "") == "Invasion Beacon"
+        or string.find(tostring(row.tags or ""), "Invasion", 1, true) ~= nil)
+    end
+
+    local function p6_material_signature(row)
+      if not row then return "" end
+      return table.concat({
+        tostring(row.id or ""), tostring(row.player or ""), tostring(row.message or ""),
+        tostring(row.channel or ""), tostring(row.type or ""), tostring(row.activity or ""),
+        tostring(row.roles or ""), tostring(row.intent or ""), tostring(row.tags or ""),
+        tostring(row.ilevel or ""), tostring(row.score or ""), tostring(row.playerLevel or ""),
+        tostring(row.playerClassFile or row.playerClass or ""), tostring(row.playerRole or ""),
+        tostring(row.playerSpec or ""), tostring(row.playerZone or ""),
+        tostring(row.playerGuild or ""), tostring(row.playerInfoSource or ""),
+        tostring(row.seen or ""), tostring(row.created or ""), tostring(row.firstSeen or ""),
+      }, "\31")
+    end
+
+    local function p6_expire_seconds()
+      local value = BronzeLFG_DB and BronzeLFG_DB.options and tonumber(BronzeLFG_DB.options.publicExpire) or 300
+      return math.max(1, value or 300)
+    end
+
+    local function p6_row_deadline(row)
+      return (tonumber(row and (row.seen or row.created) or 0) or 0) + p6_expire_seconds() + 1
+    end
+
+    local function p6_schedule_expiry(deadline)
+      deadline = tonumber(deadline or 0) or 0
+      if deadline <= 0 then return end
+      if PG.expiryScheduled and PG.expiryDeadline and PG.expiryDeadline <= deadline then return end
+      PG.expiryDeadline = deadline
+      if not B.SF151_ScheduleDelayed then return end
+      PG.expiryScheduled = true
+      B:SF151_ScheduleDelayed("public-groups.expiry", math.max(0, deadline - p6_epoch()), function()
+        PG.expiryScheduled = nil
+        PG.expiryDeadline = nil
+        p6_note("scheduledExpiryWakes")
+        p6_note("expirationChecks")
+        local removed = B.ExpirePublicGroups and (tonumber(B:ExpirePublicGroups()) or 0) or 0
+        if removed <= 0 then p6_note("noChangeExpirationChecks") end
+        if removed > 0 and B.RefreshPublicGroups then B:RefreshPublicGroups() end
+        if PG.RescheduleExpiry then PG.RescheduleExpiry() end
+      end)
+    end
+
+    function PG.RescheduleExpiry()
+      local nearest = nil
+      for _, row in pairs(B.publicGroups or {}) do
+        local deadline = p6_row_deadline(row)
+        if deadline > p6_epoch() and (not nearest or deadline < nearest) then nearest = deadline end
+      end
+      if nearest then
+        PG.expiryScheduled = nil
+        p6_schedule_expiry(nearest)
+      elseif B.SF151_CancelDelayed then
+        B:SF151_CancelDelayed("public-groups.expiry")
+        PG.expiryScheduled = nil
+        PG.expiryDeadline = nil
+      end
+    end
+
+    local function p6_clear_views()
+      PG.viewCache = {}
+      PG.viewOrder = {}
+    end
+
+    function B:SF151_InvalidatePublicGroupsData(reason, id)
+      PG.dataGeneration = (tonumber(PG.dataGeneration or 0) or 0) + 1
+      PG.snapshot = nil
+      PG.snapshotGeneration = nil
+      p6_clear_views()
+      PG.dirty = true
+      p6_note("generationIncrements")
+      local row = id and self.publicGroups and self.publicGroups[id] or nil
+      if row then p6_schedule_expiry(p6_row_deadline(row)) end
+      return PG.dataGeneration, reason
+    end
+
+    local function p6_module_enabled(row)
+      if not p6_is_invasion(row) then return true end
+      if B.SFModuleIsEnabled then return B:SFModuleIsEnabled("invasions") and true or false end
+      return true
+    end
+
+    local function p6_displayable(id, row)
+      if not row or not row.message or row.message == "" then return false end
+      if _G.BronzeLFG_IsAddonSpam and _G.BronzeLFG_IsAddonSpam(row.message) then return false end
+      if not p6_module_enabled(row) then return false end
+      if row.type == "Guild" or row.activity == "Guild Recruitment" then return false end
+      if row.sf151StableLink then return true end
+      if row.signalFireListing or row.isInvasionBeacon or tostring(id or ""):find("^listing%-") then return true end
+      if _G.BLFG_5713_IsPublicQueueChatter and _G.BLFG_5713_IsPublicQueueChatter(row.message) then return false end
+      if _G.BLFG_5713_IsStrongPublicListing and not _G.BLFG_5713_IsStrongPublicListing(row.message) then return false end
+      return true
+    end
+
+    local function p6_snapshot_build()
+      if PG.testErrorStage == "snapshot" then error("injected Public Groups snapshot error") end
+      p6_note("snapshotsBuilt")
+      local rows, byId = {}, {}
+      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0}
+      local nearest = nil
+      for id, row in pairs(B.publicGroups or {}) do
+        if p6_displayable(id, row) then
+          p6_note("canonicalRowsProcessed")
+          local rolesText, tank, healer, dps = p6_roles(row.roles)
+          local playerClass = row.playerClassFile or row.playerClass or ""
+          local lookup = _G.BLFG_PublicPlayerLookup and _G.BLFG_PublicPlayerLookup(B, row.player) or nil
+          if playerClass == "" and lookup then playerClass = lookup.classFile or lookup.class or "" end
+          local kind = tostring(row.type or "Other")
+          local stableTime = p6_stable_time(row)
+          local record = {
+            id=tostring(row.id or id), row=row, player=tostring(row.player or ""),
+            message=tostring(row.message or ""), activity=tostring(row.activity or ""),
+            kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
+            needsTank=tank, needsHealer=healer, needsDPS=dps,
+            intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
+            tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),
+            ilevel=tostring(row.ilevel or ""), score=tostring(row.score or ""),
+            playerClass=playerClass, playerLevel=tostring(row.playerLevel or (lookup and lookup.level) or ""),
+            playerRole=tostring(row.playerRole or (lookup and lookup.role) or ""),
+            playerSpec=tostring(row.playerSpec or (lookup and lookup.spec) or ""),
+            playerZone=tostring(row.playerZone or (lookup and lookup.zone) or ""),
+            playerGuild=tostring(row.playerGuild or (lookup and lookup.guild) or ""),
+            playerInfoSource=tostring(row.playerInfoSource or (lookup and lookup.source) or ""),
+            stableTime=stableTime, seen=tonumber(row.seen or row.created or 0) or 0,
+            materialSignature=p6_material_signature(row),
+          }
+          record.playerText = record.player
+          if record.playerClass ~= "" then record.playerText = p6_class_color(record.playerClass) .. record.player .. "|r" end
+          record.typeText = p6_type_label(kind)
+          record.activityText = p6_shorten(record.activity, 26)
+          record.messageText = p6_shorten(record.message, 70)
+          record.searchText = p6_lower(table.concat({record.player, kind, record.activity,
+            record.message, record.intent, record.roles, record.tags, record.channel}, " "))
+          p6_note("normalizedStringsGenerated")
+          table.insert(rows, record)
+          byId[record.id] = record
+          counts.All = counts.All + 1
+          if kind == "Dungeon" then counts.Dungeon = counts.Dungeon + 1 end
+          if kind == "Raid" then counts.Raid = counts.Raid + 1 end
+          if kind == "Key" then counts.Key = counts.Key + 1 end
+          if kind == "Event" or record.activity == "Event" or record.activity == "Seasonal Event"
+            or string.find(record.tags, "Boss Blitz", 1, true) then counts.Event = counts.Event + 1 end
+          if kind == "LFG" or record.intent == "Applicant" then counts.LFG = counts.LFG + 1 end
+          if kind == "Social" or record.intent == "Social" then counts.Social = counts.Social + 1 end
+          local deadline = p6_row_deadline(row)
+          if deadline > p6_epoch() and (not nearest or deadline < nearest) then nearest = deadline end
+        end
+      end
+      PG.snapshot = {rows=rows, byId=byId, counts=counts, generation=PG.dataGeneration}
+      PG.snapshotGeneration = PG.dataGeneration
+      if nearest then p6_schedule_expiry(nearest) end
+      return PG.snapshot
+    end
+
+    local function p6_snapshot()
+      p6_note("snapshotRequests")
+      if PG.snapshot and PG.snapshotGeneration == PG.dataGeneration then
+        p6_note("snapshotCacheHits")
+        return PG.snapshot
+      end
+      return p6_time_call("snapshotBuildMsTotal", "snapshotBuildMsMax", p6_snapshot_build)
+    end
+
+    local function p6_hidden_signature()
+      local hidden = BronzeLFG_DB and BronzeLFG_DB.publicHiddenTypes or {}
+      local names = {"Other", "Social", "Guild", "LFG", "Event", "Raid", "Dungeon", "Key"}
+      local values = {}
+      for _, name in ipairs(names) do
+        if hidden and hidden[name] then table.insert(values, name) end
+      end
+      if B.publicHideOther == true and not (hidden and hidden.Other) then table.insert(values, "Other") end
+      return table.concat(values, ",")
+    end
+
+    local function p6_filter_matches(record, filter)
+      if filter == "All" then return true end
+      if filter == "Event" then
+        return record.kind == "Event" or record.activity == "Event" or record.activity == "Seasonal Event"
+          or string.find(record.tags, "Boss Blitz", 1, true) ~= nil
+      end
+      if filter == "LFG" then return record.kind == "LFG" or record.intent == "Applicant" end
+      if filter == "Social" then return record.kind == "Social" or record.intent == "Social" end
+      return record.kind == filter
+    end
+
+    local function p6_role_matches(record, filter)
+      if filter == "T" then return record.needsTank end
+      if filter == "H" then return record.needsHealer end
+      if filter == "D" then return record.needsDPS end
+      return true
+    end
+
+    local function p6_view_inputs()
+      local filter = tostring(B.publicFilter or "All")
+      if filter == "Ascended" then filter = "Raid" end
+      if filter == "Boss Blitz" then filter = "Event" end
+      if filter == "Guild" then filter = "All" end
+      B.publicFilter = filter
+      if BronzeLFG_DB and BronzeLFG_DB.publicHiddenTypes then BronzeLFG_DB.publicHiddenTypes.Guild = nil end
+      local query = B.publicSearchText or (B.publicSearch and B.publicSearch.GetText and B.publicSearch:GetText()) or ""
+      query = p6_lower(p6_trim(query))
+      local role = tostring(B.publicRoleFilter or "All")
+      local mode = tostring(B.publicSortMode or "Newest")
+      local hidden = p6_hidden_signature()
+      local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
+      local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
+      return filter, query, role, mode, hidden, profile, invasion
+    end
+
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature)
+      if PG.testErrorStage == "view" then error("injected Public Groups view error") end
+      p6_note("viewsBuilt")
+      local hidden = {}
+      for name in string.gmatch(hiddenSignature or "", "[^,]+") do hidden[name] = true end
+      local rows = {}
+      for _, record in ipairs(snapshot.rows) do
+        p6_note("filterScans")
+        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
+        if keep and query ~= "" then
+          p6_note("searchScans")
+          keep = string.find(record.searchText, query, 1, true) ~= nil
+        end
+        if keep then table.insert(rows, record) end
+      end
+      p6_note("viewSorts")
+      table.sort(rows, function(a, b)
+        if mode == "Type" and a.kind ~= b.kind then return a.kind < b.kind end
+        if mode == "Activity" and a.activity ~= b.activity then return a.activity < b.activity end
+        if mode == "Player" and a.player ~= b.player then return a.player < b.player end
+        return a.seen > b.seen
+      end)
+      local view = {rows=rows, signature=signature, generation=PG.dataGeneration}
+      PG.viewCache[signature] = view
+      table.insert(PG.viewOrder, signature)
+      while #PG.viewOrder > PG.maximumViews do
+        local old = table.remove(PG.viewOrder, 1)
+        if old then PG.viewCache[old] = nil end
+      end
+      return view
+    end
+
+    local function p6_view()
+      p6_note("viewRequests")
+      local snapshot = p6_snapshot()
+      local filter, query, role, mode, hidden, profile, invasion = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion}, "\31")
+      local cached = PG.viewCache[signature]
+      if cached then p6_note("viewCacheHits"); return cached, snapshot end
+      local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden)
+      end)
+      return view, snapshot
+    end
+
+    local function p6_set_text(widget, value)
+      if not widget or not widget.SetText then return false end
+      value = tostring(value or "")
+      if widget._sfP6Text == value then return false end
+      widget._sfP6Text = value
+      widget:SetText(value)
+      p6_note("setTextCalls")
+      return true
+    end
+
+    local function p6_set_highlight(button, active)
+      if not button or button._sfP6Highlight == active then return false end
+      button._sfP6Highlight = active
+      if active and button.LockHighlight then button:LockHighlight()
+      elseif not active and button.UnlockHighlight then button:UnlockHighlight() end
+      return true
+    end
+
+    local function p6_set_backdrop(row, selected)
+      if not row or row._sfP6Selected == selected then return false end
+      row._sfP6Selected = selected
+      if row.SetBackdropColor then
+        if selected then row:SetBackdropColor(.25, .25, .05, .95) else row:SetBackdropColor(0, 0, 0, .80) end
+        p6_note("backdropWrites")
+      end
+      return true
+    end
+
+    local function p6_apply_metadata(row, record, age)
+      if row._sfP6DataSignature == record.materialSignature then
+        row.fullTime = age
+        return false
+      end
+      row._sfP6DataSignature = record.materialSignature
+      row.key = record.id
+      row.fullPlayer = record.player
+      row.fullActivity = record.activity
+      row.fullType = record.kind
+      row.fullRoles = record.roles ~= "" and record.roles or "Not detected"
+      row.fullIntent = record.intent
+      row.fullChannel = record.channel
+      row.fullTags = record.tags
+      row.fullILevel = record.ilevel
+      row.fullScore = record.score
+      row.fullMessage = record.message
+      row.fullPlayerLevel = record.playerLevel
+      row.fullPlayerClass = record.playerClass
+      row.fullPlayerRole = record.playerRole
+      row.fullPlayerSpec = record.playerSpec
+      row.fullPlayerZone = record.playerZone
+      row.fullPlayerGuild = record.playerGuild
+      row.fullPlayerInfoSource = record.playerInfoSource
+      row.fullTime = age
+      row._sfP6StableTime = record.stableTime
+      return true
+    end
+
+    local function p6_hide_row(row)
+      if not row then return end
+      if row.IsShown and row:IsShown() then row:Hide() end
+      row.key = nil
+      row._sfP6RenderSignature = nil
+      row._sfP6DataSignature = nil
+      row._sfP6StableTime = nil
+      row._sfP6Selected = nil
+      row.fullPlayer, row.fullActivity, row.fullMessage, row.fullType = nil, nil, nil, nil
+    end
+
+    local function p6_render_row(row, record, selected)
+      p6_note("rowsConsidered")
+      if not record then p6_hide_row(row); return end
+      local age = p6_age(record.stableTime)
+      local signature = table.concat({record.materialSignature, record.playerText, record.typeText,
+        record.activityText, record.rolesText, record.messageText, tostring(selected)}, "\31")
+      if row._sfP6RenderSignature == signature then
+        if p6_set_text(row.time, age) then row.fullTime = age end
+        p6_note("rowRenderSignatureHits")
+        return
+      end
+      if PG.testErrorStage == "row" then error("injected Public Groups row-render error") end
+      local writes = 0
+      if not (row.IsShown and row:IsShown()) then row:Show() end
+      if p6_set_text(row.player, record.playerText) then writes = writes + 1 end
+      if p6_set_text(row.time, age) then writes = writes + 1 end
+      if p6_set_text(row.type, record.typeText) then writes = writes + 1 end
+      if p6_set_text(row.activity, record.activityText) then writes = writes + 1 end
+      if p6_set_text(row.roles, record.rolesText) then writes = writes + 1 end
+      if p6_set_text(row.message, record.messageText) then writes = writes + 1 end
+      if p6_set_backdrop(row, selected) then writes = writes + 1 end
+      if p6_apply_metadata(row, record, age) then writes = writes + 1 end
+      row._sfP6RenderSignature = signature
+      if writes > 0 then p6_note("rowsFullyWritten") else p6_note("rowRenderSignatureHits") end
+    end
+
+    local function p6_online_count()
+      local rows = B.GetOnlineUserRows and B:GetOnlineUserRows() or {}
+      return #(rows or {})
+    end
+
+    local function p6_render_controls(snapshot, view, page, pages)
+      local online = p6_online_count()
+      p6_set_text(B.publicCountText, "Listings: " .. tostring(snapshot.counts.All or #view.rows)
+        .. "  |  Results: " .. tostring(#view.rows) .. "  |  SignalFire Network: " .. tostring(online))
+      local hiddenCount = 0
+      for _ in string.gmatch(p6_hidden_signature(), "[^,]+") do hiddenCount = hiddenCount + 1 end
+      p6_set_text(B.publicHideOtherButton, "Hide Types: " .. tostring(hiddenCount))
+      p6_set_text(B.publicSortButton, "Sort: " .. tostring(B.publicSortMode or "Newest"))
+      p6_set_text(B.onlinePanelButton, "Full Roster (" .. tostring(online) .. ")")
+      if B.onlinePanelButton and B.onlinePanelButton.SetWidth and B.onlinePanelButton._sfP6Width ~= 146 then
+        B.onlinePanelButton._sfP6Width = 146
+        B.onlinePanelButton:SetWidth(146)
+      end
+      local names = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social"}
+      for _, name in ipairs(names) do
+        local button = B.publicFilterButtons and B.publicFilterButtons[name]
+        if button then
+          p6_set_text(button, p6_filter_label(name, snapshot.counts[name] or 0))
+          p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
+        end
+      end
+      for key, button in pairs(B.publicRoleFilterButtons or {}) do
+        p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
+      end
+      p6_set_text(B.publicPageText, "Page " .. tostring(page) .. " / " .. tostring(pages))
+    end
+
+    local function p6_render_detail(snapshot)
+      p6_note("detailRenderRequests")
+      local selected = B.selectedPublic and snapshot.byId[tostring(B.selectedPublic)] or nil
+      if B.selectedPublic and not selected then B.selectedPublic = nil end
+      local signature = selected and (selected.id .. "\31" .. selected.materialSignature) or "none"
+      if PG.detailSignature == signature then p6_note("detailSignatureHits"); return end
+      PG.detailSignature = signature
+      p6_note("detailRendersExecuted")
+    end
+
+    local function p6_record_public_attention()
+      B.sfamSeenPublic = B.sfamSeenPublic or {}
+      for _, row in ipairs(B.publicRows or {}) do
+        if row and row.key then
+          local key = tostring(row.key)
+          if B.sfamPublicInitialized and not B.sfamSeenPublic[key] then
+            if B.SFAM_PulsePublicGroupRow then B:SFAM_PulsePublicGroupRow(row) end
+            if B.SFAM_MarkRelevant then B:SFAM_MarkRelevant("New group listing", 5) end
+          end
+          B.sfamSeenPublic[key] = true
+        end
+      end
+      B.sfamPublicInitialized = true
+    end
+
+    local function p6_update_visible_ages()
+      if not p6_visible(B.publicPanel) then return end
+      for _, row in ipairs(B.publicRows or {}) do
+        if row and row.key and row._sfP6StableTime then
+          local age = p6_age(row._sfP6StableTime)
+          if p6_set_text(row.time, age) then
+            row.fullTime = age
+          end
+        end
+      end
+      if B.SF151_ScheduleDelayed then
+        B:SF151_ScheduleDelayed("public-groups.age", 1, p6_update_visible_ages)
+      end
+    end
+
+    local function p6_render_internal()
+      if not p6_visible(B.publicPanel) then
+        PG.dirty = true
+        p6_note("hiddenRendersSkipped")
+        return false
+      end
+      local view, snapshot = p6_view()
+      local per = tonumber(B.publicRowsPerPage or 8) or 8
+      local pages = math.max(1, math.ceil(#view.rows / per))
+      local page = tonumber(B.publicPage or 1) or 1
+      if page < 1 then page = 1 end
+      if page > pages then page = pages end
+      B.publicPage = page
+      local start = ((page - 1) * per) + 1
+      local selected = tostring(B.selectedPublic or "")
+      if PG.lastRenderedViewSignature == view.signature and PG.lastRenderedSelection ~= nil
+        and PG.lastRenderedSelection ~= selected then p6_note("selectionOnlyUpdates") end
+      p6_render_controls(snapshot, view, page, pages)
+      p6_time_call("rowRenderMsTotal", "rowRenderMsMax", function()
+        for index, row in ipairs(B.publicRows or {}) do
+          p6_render_row(row, view.rows[start + index - 1], B.selectedPublic == (view.rows[start + index - 1] and view.rows[start + index - 1].id))
+        end
+      end)
+      p6_time_call("detailRenderMsTotal", "detailRenderMsMax", function() p6_render_detail(snapshot) end)
+      PG.lastRenderedViewSignature = view.signature
+      PG.lastRenderedSelection = selected
+      p6_record_public_attention()
+      PG.dirty = false
+      if B.SF151_ScheduleDelayed then B:SF151_ScheduleDelayed("public-groups.age", 1, p6_update_visible_ages) end
+      return true
+    end
+
+    function PG.Render()
+      p6_note("visibleRenderRequests")
+      if PG.rendering then p6_note("renderReentrySkipped"); return false end
+      PG.rendering = true
+      local result = {pcall(function()
+        return p6_time_call("totalRefreshMsTotal", "totalRefreshMsMax", p6_render_internal)
+      end)}
+      PG.rendering = nil
+      if not result[1] then
+        PG.dirty = true
+        PG.lastError = tostring(result[2] or "Public Groups render error")
+        p6_note("renderErrors")
+        return false, PG.lastError
+      end
+      if result[2] then p6_note("visibleRendersExecuted") end
+      return result[2]
+    end
+
+    local function p6_attach_panel(panel)
+      if not panel or panel._sfP6ViewHooks then return end
+      panel._sfP6ViewHooks = true
+      if panel.HookScript then
+        panel:HookScript("OnShow", function()
+          PG.dirty = true
+          if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+        end)
+        panel:HookScript("OnHide", function()
+          if B.SF151_CancelDelayed then B:SF151_CancelDelayed("public-groups.age") end
+        end)
+      end
+    end
+
+    local oldBuildPublicGroups = B.BuildPublicGroups
+    if type(oldBuildPublicGroups) == "function" then
+      B.BuildPublicGroups = function(self, ...)
+        local results = {pcall(oldBuildPublicGroups, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p6_attach_panel(self.publicPanel)
+        return unpack(results, 2)
+      end
+    end
+    p6_attach_panel(B.publicPanel)
+
+    local oldExpirePublicGroups = B.ExpirePublicGroups
+    if type(oldExpirePublicGroups) == "function" then
+      B.ExpirePublicGroups = function(self, ...)
+        local results = {pcall(oldExpirePublicGroups, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        local removed = tonumber(results[2] or 0) or 0
+        if removed > 0 then
+          p6_note("rowsExpired", removed)
+          p6_note("expirationIndexRemovals", removed)
+          self:SF151_InvalidatePublicGroupsData("expiration")
+        end
+        return unpack(results, 2)
+      end
+    end
+
+    local function p6_wrap_row_mutation(methodName)
+      local old = B[methodName]
+      if type(old) ~= "function" then return end
+      B[methodName] = function(self, ...)
+        local args = {...}
+        local beforeId = nil
+        if methodName == "MirrorListingToPublic" and args[1] then beforeId = "listing-" .. tostring(args[1].id or "") end
+        if methodName == "UpsertInvasionPublicListing" and args[1] then
+          local name = tostring(args[1].invasionName or args[1].name or args[1].activity or "Invasion")
+          name = string.gsub(name, " Invasion$", "")
+          beforeId = "INVASION-" .. tostring(args[1].id or string.gsub(string.lower(name), "%s+", "-"))
+        end
+        local before = beforeId and p6_material_signature(self.publicGroups and self.publicGroups[beforeId]) or ""
+        local results = {pcall(old, self, unpack(args))}
+        if not results[1] then error(results[2], 0) end
+        local row = results[2] or (beforeId and self.publicGroups and self.publicGroups[beforeId])
+        local after = p6_material_signature(row)
+        if before ~= after then self:SF151_InvalidatePublicGroupsData(methodName, row and row.id or beforeId) end
+        return unpack(results, 2)
+      end
+    end
+    p6_wrap_row_mutation("MirrorListingToPublic")
+    p6_wrap_row_mutation("UpsertInvasionPublicListing")
+
+    local function p6_wrap_removal(methodName, countBefore)
+      local old = B[methodName]
+      if type(old) ~= "function" then return end
+      B[methodName] = function(self, ...)
+        local before = countBefore(self, ...)
+        local results = {pcall(old, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
+        return unpack(results, 2)
+      end
+    end
+    p6_wrap_removal("RemovePublicMirrorForListing", function(self, listingId)
+      local count = 0
+      for id, row in pairs(self.publicGroups or {}) do
+        if id == "listing-" .. tostring(listingId) or (row and row.listingId == listingId) then count = count + 1 end
+      end
+      return count
+    end)
+    p6_wrap_removal("RemoveInvasionBeaconFromPublic", function(self, id)
+      return self.publicGroups and self.publicGroups["INVASION-" .. tostring(id)] and 1 or 0
+    end)
+    p6_wrap_removal("ClearInvasionData", function(self)
+      local count = 0
+      for _, row in pairs(self.publicGroups or {}) do if p6_is_invasion(row) then count = count + 1 end end
+      return count
+    end)
+    p6_wrap_removal("ClearPublicGroups", function(self) return p6_count(self.publicGroups) end)
+
+    local oldCleanupInvasion = B.CleanupInvasionNetworkData
+    if type(oldCleanupInvasion) == "function" then
+      B.CleanupInvasionNetworkData = function(self, ...)
+        local before = 0
+        for _, row in pairs(self.publicGroups or {}) do if p6_is_invasion(row) then before = before + 1 end end
+        local results = {pcall(oldCleanupInvasion, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        local after = 0
+        for _, row in pairs(self.publicGroups or {}) do if p6_is_invasion(row) then after = after + 1 end end
+        if before ~= after then self:SF151_InvalidatePublicGroupsData("invasion-cleanup") end
+        return unpack(results, 2)
+      end
+    end
+
+    B.GetSortedPublicGroups = function()
+      local results = {pcall(p6_view)}
+      if not results[1] then PG.dirty = true; return {} end
+      return results[2].rows
+    end
+    B.GetPublicFilterCounts = function()
+      local results = {pcall(p6_snapshot)}
+      if not results[1] then PG.dirty = true; return {} end
+      return results[2].counts
+    end
+
+    PG.legacyRefreshOwner = PG.legacyRefreshOwner or Refresh.original.publicGroups
+    Refresh.original.publicGroups = function() return PG.Render() end
+
+    function B:SF151_ResetPublicGroupsViewStats()
+      PG.stats = {}
+      PG.lastError = nil
+      return true
+    end
+
+    function B:SF151_GetPublicGroupsViewDiagnostics()
+      local report = {
+        owner=PG.generationName, dataGeneration=PG.dataGeneration,
+        snapshotGeneration=PG.snapshotGeneration or 0, dirty=PG.dirty == true,
+        cachedViews=#(PG.viewOrder or {}), rendering=PG.rendering == true,
+        lastError=PG.lastError,
+      }
+      for key, value in pairs(PG.stats or {}) do report[key] = value end
+      return report
+    end
+
+    function B:SF151_PrintPublicGroupsViewDiagnostics()
+      local d = self:SF151_GetPublicGroupsViewDiagnostics()
+      local function out(text)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("SignalFire> " .. text) end
+      end
+      out("public view owner " .. tostring(d.owner) .. ", generation=" .. tostring(d.dataGeneration)
+        .. ", snapshot=" .. tostring(d.snapshotGeneration) .. ", views=" .. tostring(d.cachedViews) .. ", dirty=" .. tostring(d.dirty))
+      out("snapshot: requests=" .. tostring(d.snapshotRequests or 0) .. ", built=" .. tostring(d.snapshotsBuilt or 0)
+        .. ", hits=" .. tostring(d.snapshotCacheHits or 0) .. ", rows=" .. tostring(d.canonicalRowsProcessed or 0)
+        .. ", normalized=" .. tostring(d.normalizedStringsGenerated or 0) .. ", sorts=" .. tostring(d.canonicalSorts or 0))
+      out("views: requests=" .. tostring(d.viewRequests or 0) .. ", built=" .. tostring(d.viewsBuilt or 0)
+        .. ", hits=" .. tostring(d.viewCacheHits or 0) .. ", filters=" .. tostring(d.filterScans or 0)
+        .. ", searches=" .. tostring(d.searchScans or 0) .. ", sorts=" .. tostring(d.viewSorts or 0)
+        .. ", offPageFormatted=" .. tostring(d.offPageRowsFormatted or 0))
+      out("render: requests=" .. tostring(d.visibleRenderRequests or 0) .. ", executed=" .. tostring(d.visibleRendersExecuted or 0)
+        .. ", hidden=" .. tostring(d.hiddenRendersSkipped or 0) .. ", rows=" .. tostring(d.rowsConsidered or 0)
+        .. ", written=" .. tostring(d.rowsFullyWritten or 0) .. ", signatureHits=" .. tostring(d.rowRenderSignatureHits or 0)
+        .. ", setText=" .. tostring(d.setTextCalls or 0) .. ", backdrop=" .. tostring(d.backdropWrites or 0))
+      out("detail: requests=" .. tostring(d.detailRenderRequests or 0) .. ", executed=" .. tostring(d.detailRendersExecuted or 0)
+        .. ", hits=" .. tostring(d.detailSignatureHits or 0) .. ", errors=" .. tostring(d.renderErrors or 0))
+      out("expiry: checks=" .. tostring(d.expirationChecks or 0) .. ", expired=" .. tostring(d.rowsExpired or 0)
+        .. ", unchanged=" .. tostring(d.noChangeExpirationChecks or 0) .. ", wakes=" .. tostring(d.scheduledExpiryWakes or 0)
+        .. ", indexRemovals=" .. tostring(d.expirationIndexRemovals or 0))
+      return d
+    end
+
+    local startup = CreateFrame and CreateFrame("Frame") or nil
+    if startup then
+      startup:RegisterEvent("PLAYER_LOGIN")
+      startup:RegisterEvent("PLAYER_ENTERING_WORLD")
+      startup:SetScript("OnEvent", function()
+        p6_attach_panel(B.publicPanel)
+        PG.RescheduleExpiry()
+      end)
+      PG.eventFrame = startup
+    end
+  end
+end
+-- SIGNALFIRE_PHASE6_PUBLIC_GROUPS_VIEW_END
 
 if SignalFire_InstallPhase6 then SignalFire_InstallPhase6() end
 

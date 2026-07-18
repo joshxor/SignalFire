@@ -2155,6 +2155,10 @@ do
       if self.SFAM_PulseSideButton then self:SFAM_PulseSideButton("Network", tonumber(duration) or 8) end
     end
 
+    function BLFG:SFAM_PulsePublicGroupRow(row)
+      if row then sfam_pulse(row, 5, .25, .65, 1, .22) end
+    end
+
     function BLFG:SFAM_ShowToast(title, body, icon, duration)
       if not sfam_enabled("pulseEffects") then return end
       duration = tonumber(duration) or 5
