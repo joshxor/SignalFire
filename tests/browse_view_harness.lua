@@ -68,6 +68,8 @@ assert(first.offPageRowsFormatted == 0, "first open formatted off-page rows")
 assert(first.rowsConsidered == #B.rows, "first open did not limit work to the visible row pool")
 assert(rawget(B.rows[1], "key"), "first open rendered no Browse rows: count=" .. tostring(B.browseCountText:GetText())
   .. ", filter=" .. tostring(B.filter) .. ", search=" .. tostring(B.search:GetText()))
+assert(not (SignalFireTimer151.taskByKey and SignalFireTimer151.taskByKey["browse.expiration"]),
+  "first Browse render scheduled a long-lived expiration task")
 
 -- Reopen and unchanged refreshes reuse all data work and row signatures.
 openBrowse()
@@ -176,7 +178,7 @@ local reopenedBurst = B:SF151_GetBrowseViewDiagnostics()
 assert(reopenedBurst.snapshotsBuilt == snapshotsBeforeHidden + 1,
   "hidden burst did not collapse into one snapshot on reopen")
 
--- Expiration removes stale rows, repairs selection, and leaves no hidden spin.
+-- Refresh-time expiration removes stale rows and repairs selection without a timer.
 local expiring = B.rows[1].key
 assert(expiring and B.listings[expiring], "expiration target missing")
 B.listings[expiring].seen = testNow - 901
@@ -185,11 +187,8 @@ B:SF151_InvalidateBrowseData("expire-test", true)
 flushRefresh(false)
 assert(not B.listings[expiring], "expired listing remained in canonical data")
 assert(B.selectedListing == nil, "expired selected listing was not repaired")
-B.browse:Hide()
-local browseOnHide = B.browse:GetScript("OnHide")
-if browseOnHide then browseOnHide(B.browse) end
 assert(not (SignalFireTimer151.taskByKey and SignalFireTimer151.taskByKey["browse.expiration"]),
-  "hidden Browse retained an expiration task")
+  "Browse expiration created a delayed task")
 
 -- The final protocol owner invalidates one generation for one material LIST.
 B.browse:Show()

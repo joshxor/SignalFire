@@ -5986,7 +5986,6 @@ do
       local started = p8_perf_enabled() and p8_now_ms() or nil
       local rows = {}
       local expired = {}
-      local nearestExpiry = nil
       local applicantCounts = p8_build_applicant_counts()
       local nowValue = p8_now()
       for id, listing in pairs(B.listings or {}) do
@@ -6023,10 +6022,6 @@ do
           table.insert(rows, record)
           p8_note("listingsProcessed", 1)
           p8_note("normalizedStringsGenerated", 1)
-          if seen > 0 then
-            local deadline = seen + 900
-            if not nearestExpiry or deadline < nearestExpiry then nearestExpiry = deadline end
-          end
         end
       end
       if #expired > 0 then
@@ -6041,7 +6036,7 @@ do
       end)
       p8_note("canonicalSorts", 1)
       local snapshot = {
-        generation=BV.dataGeneration, rows=rows, byId={}, nearestExpiry=nearestExpiry,
+        generation=BV.dataGeneration, rows=rows, byId={},
         applicantCounts=applicantCounts,
       }
       for _, record in ipairs(rows) do snapshot.byId[record.id] = record end
@@ -6258,23 +6253,6 @@ do
       end
     end
 
-    local function p8_schedule_expiration(snapshot)
-      if not B.SF151_ScheduleDelayed or not B.SF151_CancelDelayed then return end
-      if not p8_visible() or not snapshot.nearestExpiry then
-        B:SF151_CancelDelayed("browse.expiration")
-        BV.expiryDeadline = nil
-        return
-      end
-      local remaining = math.max(0.05, snapshot.nearestExpiry - p8_now() + 0.05)
-      local deadline = ((GetTime and GetTime()) or 0) + remaining
-      if BV.expiryDeadline and math.abs(BV.expiryDeadline - deadline) < 0.05 then return end
-      BV.expiryDeadline = deadline
-      B:SF151_ScheduleDelayed("browse.expiration", remaining, function()
-        BV.expiryDeadline = nil
-        if p8_visible() and B.RefreshBrowse then B:RefreshBrowse("expiration") end
-      end)
-    end
-
     function BV:AuthoritativeRefresh()
       p8_note("authoritativeRefreshes", 1)
       if not B.rows or not B.browse then
@@ -6318,7 +6296,6 @@ do
         p8_render_rows(view, page, pageSize)
         p8_render_detail(snapshot)
         p8_render_badge(snapshot)
-        p8_schedule_expiration(snapshot)
         self.lastRenderedGeneration = snapshot.generation
         self.lastRenderedView = viewSignature
         self.lastRenderedSelection = B.selectedListing
@@ -6512,33 +6489,6 @@ do
         local results = p8_pack(pcall(oldSetProfile, self, ...))
         if not results[1] then error(results[2], 0) end
         if before ~= p8_profile() then BV:Invalidate("profile") end
-        return unpack(results, 2, results.n)
-      end
-    end
-
-    local browsePanel = LP.panels.browse
-    if browsePanel and type(browsePanel.builder) == "function" and not BV.originalBrowseBuilder then
-      BV.originalBrowseBuilder = browsePanel.builder
-      browsePanel.builder = function(self, ...)
-        local results = p8_pack(pcall(BV.originalBrowseBuilder, self, ...))
-        if not results[1] then error(results[2], 0) end
-        local frame = self.browse
-        if frame and frame._sfP8HideHook ~= true then
-          frame._sfP8HideHook = true
-          local function onHide()
-            BV.expiryDeadline = nil
-            if B.SF151_CancelDelayed then B:SF151_CancelDelayed("browse.expiration") end
-          end
-          if frame.GetScript and frame.SetScript then
-            local oldHide = frame:GetScript("OnHide")
-            frame:SetScript("OnHide", function(owner, ...)
-              if oldHide then oldHide(owner, ...) end
-              onHide()
-            end)
-          elseif frame.HookScript then
-            frame:HookScript("OnHide", onHide)
-          end
-        end
         return unpack(results, 2, results.n)
       end
     end
