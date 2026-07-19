@@ -14,9 +14,14 @@ requireText(chat, "options.inlineChatLinks = false", "safe Chat Links default");
 requireText(ui, "B:SF151_ApplyChatLinkSafeDefault(BronzeLFG_DB)", "final chat owner migration use");
 requireText(ui, "o.publicGroups ~= false and o.inlineChatLinks == true", "final safe link gate");
 requireText(diagnostics, "SIGNALFIRE_PHASE10_STABILITY_BEGIN", "Phase 10 begin marker");
-requireText(diagnostics, 'S.generation = "1.5.1-phase10"', "Phase 10 owner");
+requireText(diagnostics, 'S.generation = "1.5.1-phase10b"', "Phase 10b owner");
 requireText(diagnostics, "function B:SF151_RepairReleaseDatabase", "release database migration");
 requireText(diagnostics, "function S:GetConflicts", "conflict diagnostics");
+requireText(diagnostics, "function S:ProbeOwnership", "controlled ownership probe");
+requireText(diagnostics, "signalFireChained", "explicit chained ownership state");
+requireText(diagnostics, "function S:ProbeSetItemRefOwnership", "SetItemRef reachability probe");
+requireText(ui, "function B:SF151_ProbeChatFrameOwnership", "chat-frame reachability probe");
+requireText(ui, "function B:SF151_GetChatFilterState", "filter state and activity split");
 requireText(diagnostics, "function S:SampleResources", "resource attribution");
 requireText(diagnostics, 's_emit("chat ownership:', "printed chat ownership summary");
 requireText(diagnostics, 's_emit("panels:', "printed lazy-panel summary");
@@ -35,6 +40,12 @@ if (/SetScript\s*\(\s*["']OnUpdate["']/.test(phase10)) {
 }
 if (phase10.includes("SetCVar(\"scriptProfile\"") || phase10.includes("SetCVar('scriptProfile'")) {
   throw new Error("Phase 10 enables script profiling automatically");
+}
+if (phase10.includes("ChatFrame_AddMessageEventFilter") || phase10.includes("ChatFrame_RemoveMessageEventFilter")) {
+  throw new Error("Phase 10b changes chat-filter ownership");
+}
+if (/\b_G\.SetItemRef\s*=(?!=)/.test(phase10) || /\bSetItemRef\s*=\s*function/.test(phase10)) {
+  throw new Error("Phase 10b rehooks SetItemRef");
 }
 if (/BronzeLFG_DB\s*=\s*\{/.test(phase10)) {
   throw new Error("Phase 10 replaces the SavedVariables root");

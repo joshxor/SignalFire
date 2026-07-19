@@ -8242,6 +8242,10 @@ end
 -- Final SetItemRef wrapper: handles both BronzeLFG link types and strips link text safely.
 BLFG_SetItemRef_Before565 = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
+  if _G.SignalFireStability151 and _G.SignalFireStability151.setItemRefProbe
+      and _G.SignalFireStability151:ObserveSetItemRefProbe(link) then
+    return
+  end
   if type(link) == "string" and string.sub(link, 1, 13) == "bronzelfgpub:" then
     local id = string.sub(link, 14)
     local title = ""

@@ -1215,6 +1215,7 @@ do
       return (BronzeLFG_DB and BronzeLFG_DB.options
         and BronzeLFG_DB.options.developerDiagnostics == true)
         or (_G.SignalFirePerf151 and _G.SignalFirePerf151.enabled == true)
+        or P3._stabilityDiagnosticsEnabled == true
     end
 
     local function p3_note(field, amount)
@@ -2185,6 +2186,14 @@ do
       local base = frame.AddMessage
       frame._sfP3CustomBaseAddMessage = base
       frame._sfP3CustomAddMessageHook = function(self, text, ...)
+        local probe = P3._ownershipProbe
+        if probe and probe.active and probe.frame == self then
+          probe.depth = (probe.depth or 0) + 1
+          probe.maximumDepth = math.max(probe.maximumDepth or 0, probe.depth)
+          probe.hits = (probe.hits or 0) + 1
+          probe.depth = math.max(0, probe.depth - 1)
+          return
+        end
         return base(self, p3_rewrite_rendered_message(self, text), ...)
       end
       frame.AddMessage = frame._sfP3CustomAddMessageHook
@@ -2343,6 +2352,78 @@ do
       return p3_diagnostics_enabled()
     end
 
+    function B:SF151_SetChatOwnershipDiagnostics(enabled)
+      P3._stabilityDiagnosticsEnabled = enabled == true
+      if not P3._stabilityDiagnosticsEnabled then P3._ownershipProbe = nil end
+      return P3._stabilityDiagnosticsEnabled
+    end
+
+    -- Explicit, one-shot reachability probe. The nil payload cannot be parsed as
+    -- chat and is intercepted before the stored SignalFire wrapper calls the
+    -- underlying message frame. If an outer wrapper rejects it first, ownership
+    -- remains unknown rather than being reported as missing.
+    function B:SF151_ProbeChatFrameOwnership()
+      local report = {generation="1.5.1-phase10b", frames={}, totals={
+        signalFireOutermost=0, signalFireChained=0, signalFireMissing=0,
+        signalFireDuplicated=0, unknown=0,
+      }}
+      p3_each_chat_frame(function(frame)
+        local name = p3_frame_name(frame)
+        local stored = frame._sfP3CustomAddMessageHook
+        local current = frame.AddMessage
+        local item = {name=name, generation=frame._sfP3WrapperGeneration,
+          current=tostring(current), signalFire=tostring(stored), hits=0,
+          maximumDepth=0, callSucceeded=false}
+        if type(stored) ~= "function" or type(current) ~= "function" then
+          item.state = "signalFireMissing"
+        else
+          local probe = {active=true, frame=frame, hits=0, depth=0, maximumDepth=0}
+          P3._ownershipProbe = probe
+          local ok, err = pcall(current, frame, nil)
+          P3._ownershipProbe = nil
+          item.callSucceeded = ok == true
+          item.error = ok and nil or tostring(err or "probe call failed")
+          item.hits = probe.hits or 0
+          item.maximumDepth = probe.maximumDepth or 0
+          if item.hits > 1 or item.maximumDepth > 1 then
+            item.state = "signalFireDuplicated"
+          elseif current == stored and item.hits == 1 then
+            item.state = "signalFireOutermost"
+          elseif item.hits == 1 then
+            item.state = "signalFireChained"
+          elseif ok then
+            item.state = "signalFireMissing"
+          else
+            item.state = "unknown"
+          end
+        end
+        report.totals[item.state] = (report.totals[item.state] or 0) + 1
+        table.insert(report.frames, item)
+      end)
+      P3._ownershipProbe = nil
+      table.sort(report.frames, function(left, right) return tostring(left.name) < tostring(right.name) end)
+      P3._lastOwnershipProbe = report
+      return report
+    end
+
+    function B:SF151_GetChatFilterState()
+      local stats = p3_stats()
+      return {
+        generation=P3.generation,
+        expectedSignalFireFilters=3,
+        knownSignalFireRegistrations=P3._filterInstalled == true and 3 or 0,
+        registrationKnown=P3._filterInstalled == true,
+        introspection="WoW 3.3.5 does not expose the live filter list",
+        filterCalls=stats.filterCalls or 0,
+        messagesClassified=stats.sourceDecisionMisses or 0,
+        messagesLinked=stats.linksAppended or 0,
+        messagesParsed=stats.parserCalls or 0,
+        logicalRecordsQueued=stats.enqueued or 0,
+        logicalRecordsProcessed=stats.processed or 0,
+        drops=stats.queueDrops or 0,
+      }
+    end
+
     function B:SF151_ResetChatRuntimeStats()
       self._sfP3Stats = {}
       P3._frameDiagnostics = {}
@@ -2352,6 +2433,10 @@ do
 
     function B:SF151_GetChatFrameDiagnostics()
       local options = p3_options()
+      local probeByName = {}
+      for _, item in ipairs((P3._lastOwnershipProbe and P3._lastOwnershipProbe.frames) or {}) do
+        probeByName[item.name] = item
+      end
       local result = {
         generation=P3.generation,
         developerDiagnostics=p3_diagnostics_enabled(),
@@ -2376,6 +2461,10 @@ do
         item.visible = not frame.IsShown or frame:IsShown()
         item.signalFireWrapperInstalled = frame.AddMessage == frame._sfP3CustomAddMessageHook
         item.anotherFunctionReplacedIt = frame._sfP3CustomAddMessageHook ~= nil and not item.signalFireWrapperInstalled
+        item.signalFireOutermostIdentity = item.signalFireWrapperInstalled
+        item.differentOutermostIdentity = item.anotherFunctionReplacedIt
+        item.ownershipState = probeByName[item.name] and probeByName[item.name].state
+          or (item.signalFireOutermostIdentity and "signalFireOutermost" or "unknown")
         item.wrapperGeneration = frame._sfP3WrapperGeneration
         item.currentAddMessage = tostring(frame.AddMessage)
         item.signalFireAddMessage = tostring(frame._sfP3CustomAddMessageHook)
@@ -2411,8 +2500,9 @@ do
         .. ", linkCache=" .. tostring(stats.linkCacheHits or 0) .. "/" .. tostring(stats.linkCacheMisses or 0))
       for _, item in ipairs(report.frames or {}) do
         emit(tostring(item.name) .. ": visible=" .. tostring(item.visible)
-          .. ", owner=" .. tostring(item.signalFireWrapperInstalled)
-          .. ", replaced=" .. tostring(item.anotherFunctionReplacedIt)
+          .. ", state=" .. tostring(item.ownershipState)
+          .. ", outermost=" .. tostring(item.signalFireOutermostIdentity)
+          .. ", differentOutermost=" .. tostring(item.differentOutermostIdentity)
           .. ", filterSeen=" .. tostring(item.filterCalls or 0)
           .. ", wrapperSeen=" .. tostring(item.wrapperCalls or 0)
           .. ", rewritten=" .. tostring(item.rewritten or 0))

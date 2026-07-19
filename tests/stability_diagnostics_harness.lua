@@ -5,7 +5,10 @@ dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load from " .. tostring(addonRoot))
 local S = assert(SignalFireStability151, "Phase 10 diagnostics did not load")
-assert(S.generation == "1.5.1-phase10", "unexpected diagnostics generation")
+assert(S.generation == "1.5.1-phase10b", "unexpected diagnostics generation")
+assert(SignalFireChatRuntime151 and SignalFireChatRuntime151.Apply,
+  "chat runtime owner did not load")
+SignalFireChatRuntime151.Apply()
 assert(S.enabled == false and S.installed ~= true, "diagnostics did not default off")
 assert(next(S.bindings) == nil, "disabled diagnostics wrapped runtime methods")
 assert(not S.eventFrame:GetScript("OnUpdate"), "diagnostics installed idle polling")
@@ -17,6 +20,86 @@ assert(B.RefreshBrowse ~= originalBrowse, "audited method was not wrapped")
 local wrappedBrowse = B.RefreshBrowse
 B:SF151_HandleDiagnosticSlash("diag start")
 assert(B.RefreshBrowse == wrappedBrowse, "repeated start stacked a second wrapper")
+
+local function frame_state(report, name)
+  for _, row in ipairs(report.frames or {}) do
+    if row.name == name then return row.state, row end
+  end
+end
+
+local publicCountBeforeProbe = 0
+for _ in pairs(B.publicGroups or {}) do publicCountBeforeProbe = publicCountBeforeProbe + 1 end
+local networkSends = 0
+local savedSendAddonMessage = SendAddonMessage
+SendAddonMessage = function() networkSends = networkSends + 1 end
+local visibleBeforeProbe = ChatFrame1.lastMessage
+local ownership = B:SF151_ProbeChatFrameOwnership()
+assert((ownership.totals.signalFireOutermost or 0) == 10,
+  "outermost chat wrappers were not identified")
+assert(ChatFrame1.lastMessage == visibleBeforeProbe, "ownership probe produced visible chat output")
+local publicCountAfterProbe = 0
+for _ in pairs(B.publicGroups or {}) do publicCountAfterProbe = publicCountAfterProbe + 1 end
+assert(publicCountAfterProbe == publicCountBeforeProbe, "ownership probe created a fake listing")
+assert(networkSends == 0, "ownership probe generated network traffic")
+
+local signalFireAddMessage = ChatFrame1.AddMessage
+ChatFrame1.AddMessage = function(self, ...) return signalFireAddMessage(self, ...) end
+local chained = B:SF151_ProbeChatFrameOwnership()
+assert(frame_state(chained, "ChatFrame1") == "signalFireChained",
+  "later chat wrapper was not reported as chained")
+ChatFrame1.AddMessage = function() end
+local missing = B:SF151_ProbeChatFrameOwnership()
+assert(frame_state(missing, "ChatFrame1") == "signalFireMissing",
+  "missing chat wrapper was not detected")
+ChatFrame1.AddMessage = function(self, ...)
+  signalFireAddMessage(self, ...)
+  return signalFireAddMessage(self, ...)
+end
+local duplicated = B:SF151_ProbeChatFrameOwnership()
+assert(frame_state(duplicated, "ChatFrame1") == "signalFireDuplicated",
+  "duplicated chat wrapper execution was not detected")
+ChatFrame1.AddMessage = function() error("outer chat owner rejected diagnostic payload") end
+local unknown = B:SF151_ProbeChatFrameOwnership()
+assert(frame_state(unknown, "ChatFrame1") == "unknown",
+  "uncertain chat ownership was not reported honestly")
+ChatFrame1.AddMessage = signalFireAddMessage
+SendAddonMessage = savedSendAddonMessage
+
+local signalFireSetItemRef = SetItemRef
+local setItem = S:ProbeSetItemRefOwnership()
+assert(setItem.state == "signalFireOutermost" and setItem.hits == 1,
+  "outermost SetItemRef owner was not identified")
+SetItemRef = function(...) return signalFireSetItemRef(...) end
+setItem = S:ProbeSetItemRefOwnership()
+assert(setItem.state == "signalFireChained", "later SetItemRef wrapper was not reported as chained")
+SetItemRef = function(...)
+  signalFireSetItemRef(...)
+  return signalFireSetItemRef(...)
+end
+setItem = S:ProbeSetItemRefOwnership()
+assert(setItem.state == "signalFireDuplicated", "duplicated SetItemRef execution was not detected")
+SetItemRef = function() end
+setItem = S:ProbeSetItemRefOwnership()
+assert(setItem.state == "signalFireMissing", "missing SetItemRef handler was not detected")
+SetItemRef = function() error("outer SetItemRef owner rejected diagnostic payload") end
+setItem = S:ProbeSetItemRefOwnership()
+assert(setItem.state == "unknown", "uncertain SetItemRef ownership was not reported honestly")
+SetItemRef = signalFireSetItemRef
+
+local filterBefore = S:GetChatFilterReport().filterCalls
+BronzeLFG_DB.options.inlineChatLinks = false
+B.SignalFireTestSay = true
+SignalFireChatRuntime151.Filter(ChatFrame1, "CHAT_MSG_SAY", "LFM MC 1 HEALER", "Harness")
+local filterAfter = S:GetChatFilterReport()
+assert(filterAfter.expectedSignalFireFilters == 3 and filterAfter.knownSignalFireRegistrations == 3,
+  "filter registration state is incorrect")
+assert(filterAfter.filterCalls == filterBefore + 1, "filter interval activity was not measured")
+assert(BronzeLFG_DB.options.inlineChatLinks == false, "Chat Links Off changed during diagnostics")
+BronzeLFG_DB.options.inlineChatLinks = true
+local repaired, migration = B:SF151_RepairReleaseDatabase(BronzeLFG_DB)
+assert(repaired and migration.chatLinks == true and BronzeLFG_DB.options.inlineChatLinks == true,
+  "explicit Chat Links On preference was not preserved")
+BronzeLFG_DB.options.inlineChatLinks = false
 
 local savedFrame = B.frame
 B.frame = CreateFrame("Frame", "Phase10ScaleHarness")
@@ -88,12 +171,10 @@ assert(#conflicts.addons >= 1 and conflicts.addons[1].name == "ElvUI",
   "known addon conflict indicator was not reported")
 local savedAddMessage = ChatFrame1.AddMessage
 ChatFrame1.AddMessage = function() end
+S:ProbeOwnership()
 local replaced = S:GetConflicts()
-local sawReplacement = false
-for _, frame in ipairs(replaced.frames) do
-  if frame.name == "ChatFrame1" and frame.replaced then sawReplacement = true end
-end
-assert(sawReplacement, "chat-frame wrapper replacement was not detected")
+assert(frame_state(replaced.chatOwnership, "ChatFrame1") == "signalFireMissing",
+  "chat-frame replacement was not classified by reachability")
 ChatFrame1.AddMessage = savedAddMessage
 
 GetNumAddOns, GetAddOnInfo = oldGetNumAddOns, oldGetAddOnInfo
@@ -114,8 +195,8 @@ DEFAULT_CHAT_FRAME.AddMessage = function(_, text) printed[#printed + 1] = tostri
 S:PrintReport()
 DEFAULT_CHAT_FRAME.AddMessage = oldAddMessage
 local output = table.concat(printed, "\n")
-for _, label in ipairs({"chat ownership:", "panels:", "timers:", "cache lifecycle:",
-    "conflicts:", "resources:"}) do
+for _, label in ipairs({"chat ownership:", "chat filters:", "SetItemRef ownership:",
+    "panels:", "timers:", "cache lifecycle:", "conflicts:", "resources:"}) do
   assert(string.find(output, label, 1, true), "printed report missed " .. label)
 end
 assert(#printed < 80, "printed diagnostic report is not reasonably bounded")
