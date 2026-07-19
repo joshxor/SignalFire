@@ -82,7 +82,10 @@ These are static and harness results. They are not a new in-game confirmation.
 - Root: `SignalFire/`
 - Contents: one TOC and the 13 Lua files listed by the TOC
 - Public README/changelog in ZIP: no, matching the established addon-package convention
-- SHA-256: populated after the reproducible production archive is built
+- Size: 381,522 bytes
+- SHA-256: `8A0507B8FF4AEE8245488F8CA9D1858E8CC9DBAE286C31A8A1CADEB7BC53A251`
+- Reproducibility: two independent builds produced the same SHA-256
+- Byte validation: every archived addon file matched its committed source file
 
 ## Remaining Risks
 
