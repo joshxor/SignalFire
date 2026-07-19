@@ -1939,7 +1939,9 @@ do
       s_emit("SetItemRef ownership: state=" .. tostring(setItemRef.state or "unknown")
         .. ", hits=" .. tostring(setItemRef.hits or 0)
         .. ", maxDepth=" .. tostring(setItemRef.maximumDepth or 0)
-        .. ", currentChanged=" .. s_bool(conflicts.setItemRefChanged))
+        .. ", currentChanged=" .. s_bool(conflicts.setItemRefChanged)
+        .. (setItemRef.state == "unknown" and setItemRef.error
+          and (", probeError=" .. string.sub(tostring(setItemRef.error), 1, 120)) or ""))
       local lazy = report.lazy or {}
       local built, dirty, panelFailures = {}, {}, 0
       for name, panel in pairs(lazy.panels or {}) do
@@ -2052,7 +2054,9 @@ do
         s_emit(frame.name .. ": state=" .. tostring(frame.state or "unknown")
           .. ", hits=" .. tostring(frame.hits or 0)
           .. ", maxDepth=" .. tostring(frame.maximumDepth or 0)
-          .. ", generation=" .. tostring(frame.generation or "none"))
+          .. ", generation=" .. tostring(frame.generation or "none")
+          .. (frame.state == "unknown" and frame.error
+            and (", probeError=" .. string.sub(tostring(frame.error), 1, 120)) or ""))
       end
       local filters = report.filters or {}
       s_emit("chat filters: expected=" .. tostring(filters.expectedSignalFireFilters or 0)
