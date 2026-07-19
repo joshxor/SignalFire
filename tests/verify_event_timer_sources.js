@@ -31,7 +31,12 @@ if (!controls.includes('"startup.utility-controls"') || !controls.includes('"sta
 if (!chat.includes('"startup.slash-freeze"')) throw new Error("chat startup repair did not move to the delayed scheduler");
 if (!network.includes('"startup.login-summary"')) throw new Error("Network login summary did not move to the delayed scheduler");
 if (ui.includes('"maintenance.slow"')) throw new Error("slow maintenance still keeps the delayed scheduler awake");
-if (!ui.includes('T.RunMaintenance("world-entry")')) throw new Error("event-driven maintenance owner is missing");
+if (!ui.includes('T.RunMaintenance(event == "PLAYER_LOGIN" and "player-login" or "world-entry")')) {
+  throw new Error("event-driven maintenance owner is missing");
+}
+if (!ui.includes('pcall(B.SF151_RunSlowMaintenance, B, reason)')) {
+  throw new Error("event-driven maintenance reason is not forwarded to the lifecycle gate");
+}
 
 for (const obsolete of ["_sfUtilityFinalizerElapsed", "_sfHashRepairElapsed", "_sfSlashFreezeElapsed", "_sfLoginSummaryElapsed"]) {
   const combined = [integration, controls, chat, network].join("\n");

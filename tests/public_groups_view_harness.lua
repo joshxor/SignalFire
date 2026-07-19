@@ -212,8 +212,9 @@ recover("row")
 local final=B:SF151_GetPublicGroupsViewDiagnostics()
 assert((final.renderErrors or 0) == 3, "injected errors were not counted")
 assert((final.offPageRowsFormatted or 0) == 0, "off-page formatting occurred")
-assert((B._sfP3Stats.addMessageParseCalls or 0) == 0, "Phase 6 regressed AddMessage parsing")
-assert((B._sfP3Stats.consolidationRowsScanned or 0) == 0, "Phase 6 regressed chat consolidation")
+local legacyChatStats = B._sfP3Stats or {}
+assert((legacyChatStats.addMessageParseCalls or 0) == 0, "Phase 6 regressed AddMessage parsing")
+assert((legacyChatStats.consolidationRowsScanned or 0) == 0, "Phase 6 regressed chat consolidation")
 
 print("Public Groups view-cache harness: PASS (snapshots=" .. tostring(final.snapshotsBuilt or 0)
   .. ", snapshotHits=" .. tostring(final.snapshotCacheHits or 0)

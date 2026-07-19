@@ -1,4 +1,4 @@
--- SignalFire 1.5.1 developer-only runtime diagnostics.
+-- SignalFire 1.5.2 developer-only runtime diagnostics.
 do
   local B = _G.BronzeLFG
   if not B then return end
@@ -725,8 +725,8 @@ do
   if B and P and CreateFrame then
     local CL = _G.SignalFireCacheLifecycle151 or {}
     _G.SignalFireCacheLifecycle151 = CL
-    CL.generation = "1.5.1-perf-phase9"
-    CL.chatInterval = 256
+    CL.generation = "1.5.2-phase12a"
+    CL.minimumAutomaticInterval = 30
     CL.maximumErrors = 12
     -- Diagnostics owner: Phase 9. Counter/peak keys are the fixed fields
     -- emitted by this block (maximum 48/35); values are numbers or one cache
@@ -765,6 +765,10 @@ do
     local function cl_clock()
       if debugprofilestop then return debugprofilestop() end
       return ((GetTime and GetTime()) or 0) * 1000
+    end
+
+    local function cl_automatic_now()
+      return (GetTime and GetTime()) or cl_now()
     end
 
     local function cl_enabled()
@@ -1055,17 +1059,25 @@ do
       return removed
     end
 
+    local function cl_timed_cleanup(field, callback, ...)
+      if not cl_enabled() then return callback(...) end
+      local started = cl_clock()
+      local result = callback(...)
+      CL.stats[field] = math.max(0, cl_clock() - started)
+      return result
+    end
+
     CL.inventory = {
-      {name="session.publicGroups", owner="Phase 5 identity / Phase 9 capacity", key="stable listing id", maximum=512, ttl="publicExpire", cleanup="ExpirePublicGroups plus Phase 9 chat checkpoint", persistence="session"},
-      {name="session.listings", owner="Phase 9", key="listing id", maximum=256, ttl="900s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.applicants", owner="Phase 9", key="player name", maximum=128, ttl="7200s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.chatGuildListings", owner="Phase 9", key="normalized guild", maximum=256, ttl="21600s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.guilds", owner="Phase 9", key="guild identity", maximum=256, ttl="14d when timestamped", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.onlineUsers", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.sfnStatuses", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.knownClassNames", owner="Phase 9 capacity / class resolver", key="normalized player", maximum=256, ttl="session capacity", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.notificationSeen", owner="Phase 9", key="listing signature", maximum=256, ttl="120s", cleanup="chat checkpoint/world entry", persistence="session"},
-      {name="session.publicWho", owner="Phase 9", key="normalized player", maximum=128, ttl="120s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.publicGroups", owner="Phase 5 identity / Phase 9 capacity", key="stable listing id", maximum=512, ttl="publicExpire", cleanup="ExpirePublicGroups plus automatic lifecycle maintenance", persistence="session"},
+      {name="session.listings", owner="Phase 9", key="listing id", maximum=256, ttl="900s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.applicants", owner="Phase 9", key="player name", maximum=128, ttl="7200s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.chatGuildListings", owner="Phase 9", key="normalized guild", maximum=256, ttl="21600s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.guilds", owner="Phase 9", key="guild identity", maximum=256, ttl="14d when timestamped", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.onlineUsers", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.sfnStatuses", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.knownClassNames", owner="Phase 9 capacity / class resolver", key="normalized player", maximum=256, ttl="session capacity", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.notificationSeen", owner="Phase 9", key="listing signature", maximum=256, ttl="120s", cleanup="automatic lifecycle maintenance", persistence="session"},
+      {name="session.publicWho", owner="Phase 9", key="normalized player", maximum=128, ttl="120s", cleanup="automatic lifecycle maintenance", persistence="session"},
       {name="session.rosterSnapshot", owner="Phase 3", key="generation", maximum=1, ttl="generation/next expiry", cleanup="roster invalidation", persistence="session"},
       {name="session.rosterViews", owner="Phase 3", key="generation/filter/search/guild", maximum=16, ttl="generation", cleanup="FIFO/invalidation", persistence="session"},
       {name="session.rosterClassCache", owner="Phase 3", key="normalized player", maximum=128, ttl="1800s", cleanup="snapshot build", persistence="session"},
@@ -1088,12 +1100,12 @@ do
       {name="db.whoGuilds", owner="Phase 9 capacity / WHO TTL", key="normalized guild", maximum=256, ttl="14d", cleanup="WHO prune/Phase 9", persistence="BronzeLFG_DB"},
       {name="db.events", owner="Community Events", key="event id", maximum=60, ttl="event expiry", cleanup="event read/mutation", persistence="BronzeLFG_DB"},
       {name="db.notices", owner="Notice Board", key="array slot/event id", maximum=40, ttl="notice expiry", cleanup="notice read/mutation", persistence="BronzeLFG_DB"},
-      {name="db.eventNoticeState", owner="Phase 9 orphan cleanup", key="event/notice id", maximum=60, ttl="source lifetime", cleanup="chat checkpoint/world entry", persistence="BronzeLFG_DB"},
-      {name="db.favoriteAlertState", owner="Phase 9", key="player/listing signature", maximum=256, ttl="1-2h", cleanup="chat checkpoint/world entry", persistence="BronzeLFG_DB"},
+      {name="db.eventNoticeState", owner="Phase 9 orphan cleanup", key="event/notice id", maximum=60, ttl="source lifetime", cleanup="automatic lifecycle maintenance", persistence="BronzeLFG_DB"},
+      {name="db.favoriteAlertState", owner="Phase 9", key="player/listing signature", maximum=256, ttl="1-2h", cleanup="automatic lifecycle maintenance", persistence="BronzeLFG_DB"},
       {name="db.userSettings", owner="user settings", key="user-selected value", maximum="deterministic fields", ttl="user controlled", cleanup="explicit user action", persistence="BronzeLFG_DB"},
     }
 
-    function CL:Run(reason)
+    function CL:Run(reason, force)
       if self.running then
         cl_note("nestedRunsSkipped", 1)
         return false, 0
@@ -1103,37 +1115,63 @@ do
       local results = {pcall(function()
         local stamp = cl_now()
         local removed = 0
-        removed = removed + cl_cleanup_dead_compatibility()
-        removed = removed + cl_cleanup_public(stamp)
-        removed = removed + cl_cleanup_browse(stamp)
-        removed = removed + cl_cleanup_network(stamp)
-        removed = removed + cl_cleanup_guilds(stamp)
-        removed = removed + cl_cleanup_who(stamp)
-        removed = removed + cl_cleanup_alerts(stamp)
-        removed = removed + cl_cleanup_community()
+        removed = removed + cl_timed_cleanup("compatibilityMs", cl_cleanup_dead_compatibility)
+        removed = removed + cl_timed_cleanup("publicMs", cl_cleanup_public, stamp)
+        removed = removed + cl_timed_cleanup("browseMs", cl_cleanup_browse, stamp)
+        removed = removed + cl_timed_cleanup("networkMs", cl_cleanup_network, stamp)
+        removed = removed + cl_timed_cleanup("guildMs", cl_cleanup_guilds, stamp)
+        removed = removed + cl_timed_cleanup("whoMs", cl_cleanup_who, stamp)
+        removed = removed + cl_timed_cleanup("alertsMs", cl_cleanup_alerts, stamp)
+        removed = removed + cl_timed_cleanup("communityMs", cl_cleanup_community)
         cl_note("runs", 1)
+        if force == true then cl_note("forcedRuns", 1) end
+        local runReason = tostring(reason or (force and "manual" or "automatic"))
+        if string.find(runReason, "chat", 1, true) then cl_note("chatMaintenanceRuns", 1) end
+        if string.find(runReason, "login", 1, true) then cl_note("loginMaintenanceRuns", 1) end
+        if string.find(runReason, "world-entry", 1, true) then cl_note("worldEntryMaintenanceRuns", 1) end
         cl_note("entriesRemoved", removed)
-        CL.lastReason = tostring(reason or "manual")
+        CL.lastReason = runReason
         CL.lastRunAt = stamp
         return removed
       end)}
       self.running = false
+      local elapsed = nil
       if started then
-        local elapsed = math.max(0, cl_clock() - started)
+        elapsed = math.max(0, cl_clock() - started)
         cl_note("cleanupMsTotal", elapsed)
         cl_max("cleanupMsMaximum", elapsed)
+        cl_max("maximumCleanupMs", elapsed)
       end
       if not results[1] then
         cl_record_error("run." .. tostring(reason or "manual"), results[2])
+        return false, 0, elapsed
+      end
+      return true, tonumber(results[2] or 0) or 0, elapsed
+    end
+
+    function CL:MaybeRun(reason)
+      cl_note("automaticRunRequests", 1)
+      if self.running then
+        cl_note("nestedRunsSkipped", 1)
         return false, 0
       end
-      return true, tonumber(results[2] or 0) or 0
+      local now = cl_automatic_now()
+      local last = tonumber(self.lastAutomaticRunAt or 0) or 0
+      if last > 0 and now >= last and (now - last) < self.minimumAutomaticInterval then
+        cl_note("automaticRunsCooldownSkipped", 1)
+        return false, 0
+      end
+      local ok, removed, elapsed = self:Run(reason or "automatic", false)
+      if ok then
+        self.lastAutomaticRunAt = now
+        cl_note("automaticRunsExecuted", 1)
+      end
+      return ok, removed, elapsed
     end
 
     function CL:ObserveChat()
       self.chatEvents = (tonumber(self.chatEvents or 0) or 0) + 1
       if cl_enabled() then cl_note("chatEvents", 1) end
-      if self.chatEvents % self.chatInterval == 0 then return self:Run("chat-checkpoint") end
       return false, 0
     end
 
@@ -1141,7 +1179,16 @@ do
       local result = {
         generation=self.generation, running=self.running == true, lastReason=self.lastReason,
         lastRunAt=self.lastRunAt or 0, chatEvents=self.chatEvents or 0,
-        chatInterval=self.chatInterval, inventoryEntries=#self.inventory,
+        minimumAutomaticInterval=self.minimumAutomaticInterval,
+        automaticRunRequests=self.stats.automaticRunRequests or 0,
+        automaticRunsExecuted=self.stats.automaticRunsExecuted or 0,
+        automaticRunsCooldownSkipped=self.stats.automaticRunsCooldownSkipped or 0,
+        forcedRuns=self.stats.forcedRuns or 0,
+        chatMaintenanceRuns=self.stats.chatMaintenanceRuns or 0,
+        loginMaintenanceRuns=self.stats.loginMaintenanceRuns or 0,
+        worldEntryMaintenanceRuns=self.stats.worldEntryMaintenanceRuns or 0,
+        maximumCleanupMs=self.stats.maximumCleanupMs or 0,
+        inventoryEntries=#self.inventory,
         errors=self.errors, peaks=self.peaks,
       }
       for key, value in pairs(self.stats or {}) do result[key] = value end
@@ -1150,7 +1197,7 @@ do
     end
 
     function B:SF151_RunCacheMaintenance(reason)
-      return CL:Run(reason or "explicit")
+      return CL:Run(reason or "explicit", true)
     end
 
     function B:SF151_GetCacheLifecycleDiagnostics(includeMemory)
@@ -1177,10 +1224,10 @@ do
     local oldSlowMaintenance = B.SF151_RunSlowMaintenance
     if type(oldSlowMaintenance) == "function" and not CL.oldSlowMaintenance then
       CL.oldSlowMaintenance = oldSlowMaintenance
-      B.SF151_RunSlowMaintenance = function(self, ...)
-        local results = {pcall(CL.oldSlowMaintenance, self, ...)}
-        local cleanup = {pcall(CL.Run, CL, "slow-maintenance")}
+      B.SF151_RunSlowMaintenance = function(self, reason, ...)
+        local results = {pcall(CL.oldSlowMaintenance, self, reason, ...)}
         if not results[1] then error(results[2], 0) end
+        local cleanup = {pcall(CL.MaybeRun, CL, reason or "slow-maintenance")}
         if not cleanup[1] then error(cleanup[2], 0) end
         return unpack(results, 2)
       end
@@ -1208,6 +1255,10 @@ do
       if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache lifecycle: owner=" .. tostring(row.generation)
           .. ", runs=" .. tostring(row.runs or 0) .. ", removed=" .. tostring(row.entriesRemoved or 0)
+          .. ", auto=" .. tostring(row.automaticRunsExecuted or 0) .. "/" .. tostring(row.automaticRunRequests or 0)
+          .. ", skipped=" .. tostring(row.automaticRunsCooldownSkipped or 0)
+          .. ", forced=" .. tostring(row.forcedRuns or 0)
+          .. ", chatRuns=" .. tostring(row.chatMaintenanceRuns or 0)
           .. ", ttl=" .. tostring(row.ttlRemovals or 0) .. ", evicted=" .. tostring(row.boundedEvictions or 0)
           .. ", orphans=" .. tostring(row.orphanedReferencesRemoved or 0)
           .. ", largest=" .. tostring(row.largestCacheName or "none") .. "/" .. tostring(row.largestCacheSize or 0)
@@ -1220,10 +1271,11 @@ do
     B.SF151_HandlePerfSlash = function(self, command)
       local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
       if cmd == "perf cleanup" then
-        local ok, removed = CL:Run("slash")
+        local ok, removed, elapsed = CL:Run("slash", true)
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
           DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache cleanup "
-            .. (ok and "complete" or "failed") .. ": removed " .. tostring(removed or 0) .. " entries.")
+            .. (ok and "complete" or "failed") .. ": removed " .. tostring(removed or 0) .. " entries"
+            .. (cl_enabled() and elapsed and (" in " .. string.format("%.3f", elapsed) .. " ms") or "") .. ".")
         end
         return true
       elseif cmd == "perf cachelife" or cmd == "perf cachelife memory" then
@@ -1231,6 +1283,10 @@ do
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
           DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache lifecycle " .. tostring(row.generation)
             .. ": runs=" .. tostring(row.runs or 0) .. ", removed=" .. tostring(row.entriesRemoved or 0)
+            .. ", auto=" .. tostring(row.automaticRunsExecuted or 0) .. "/" .. tostring(row.automaticRunRequests or 0)
+            .. ", skipped=" .. tostring(row.automaticRunsCooldownSkipped or 0)
+            .. ", forced=" .. tostring(row.forcedRuns or 0)
+            .. ", chatRuns=" .. tostring(row.chatMaintenanceRuns or 0)
             .. ", ttl=" .. tostring(row.ttlRemovals or 0) .. ", evicted=" .. tostring(row.boundedEvictions or 0)
             .. ", errors=" .. tostring(#(row.errors or {})))
           if row.memoryKB then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r Lua memory: "
@@ -1242,20 +1298,9 @@ do
     end
 
     cl_cleanup_dead_compatibility()
-    local eventFrame = CreateFrame("Frame")
-    CL.eventFrame = eventFrame
-    eventFrame:RegisterEvent("PLAYER_LOGIN")
-    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
-    eventFrame:RegisterEvent("CHAT_MSG_SAY")
-    eventFrame:RegisterEvent("CHAT_MSG_YELL")
-    eventFrame:SetScript("OnEvent", function(_, event)
-      if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-        CL:Run(string.lower(event))
-      else
-        CL:ObserveChat()
-      end
-    end)
+    -- Phase 4 owns lifecycle events. Its slow-maintenance call reaches the
+    -- throttled Phase 9 wrapper above, so this subsystem needs no event frame.
+    CL.eventFrame = nil
   end
 end
 -- SIGNALFIRE_PHASE9_CACHE_LIFECYCLE_END

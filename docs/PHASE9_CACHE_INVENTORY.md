@@ -2,14 +2,14 @@
 
 Baseline: `perf/08-browse-view-cache` at `8708839c250b82bc6e5bb6f219a87177eb986f3f`.
 
-Phase 9 adds no renderer, parser, chat-link, timer, lazy-panel, roster-snapshot, or Network-snapshot owner. It provides one final lifecycle owner in `SignalFireDiagnostics.lua`. Cleanup runs at login/world entry, through the existing slow-maintenance callback, after each 256 source chat events, or explicitly with `/sf perf cleanup`. It has no `OnUpdate` script.
+Phase 9 adds no renderer, parser, chat-link, timer, lazy-panel, roster-snapshot, or Network-snapshot owner. Phase 12A removes its independent event frame and routes automatic cleanup through the Phase 4 lifecycle owner with a minimum 30-second gate. Public chat never triggers a cache sweep. `/sf perf cleanup` remains an immediate forced cleanup command. No cache-lifecycle `OnUpdate` script exists.
 
 ## Mutable Session Data
 
 | Store | Owner and purpose | Key and value | Bound and expiry | Cleanup and persistence |
 |---|---|---|---|---|
 | `B.publicGroups` | Phase 5 identity; Public Groups rows | Stable listing ID to canonical row | 512; normal `publicExpire` age | `ExpirePublicGroups`, then Phase 9 capacity reconciliation; session |
-| `B.listings` | Browse listings | Listing ID to listing row | 256; 900s, active own listing protected | Phase 9 checkpoint/slow maintenance; session |
+| `B.listings` | Browse listings | Listing ID to listing row | 256; 900s, active own listing protected | Phase 9 automatic lifecycle maintenance; session |
 | `B.applicants` | Listing applicants | Player/listing identity to applicant row | 128; 7200s | Phase 9; session |
 | `B.chatGuildListings` | Guild parser results | Normalized guild identity to recruitment row | 256; 21600s | Phase 9; session |
 | `B.guilds` | Guild Browser profiles | Guild identity to profile | 256; timestamped rows 14d | Phase 9; session |

@@ -7,14 +7,15 @@ if (start < 0 || end <= start) throw new Error("Phase 9 cache lifecycle markers 
 const block = diagnostics.slice(start, end);
 
 for (const required of [
-  'CL.generation = "1.5.1-perf-phase9"',
-  "CL.chatInterval = 256",
+  'CL.generation = "1.5.2-phase12a"',
+  "CL.minimumAutomaticInterval = 30",
+  "function CL:MaybeRun(reason)",
+  "function CL:Run(reason, force)",
   "SF151_RunCacheMaintenance",
   "SF151_GetCacheLifecycleDiagnostics",
   "SF151_GetCacheLifecycleInventory",
   "SF151_ResetCacheLifecycleStats",
-  'eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")',
-  'eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")',
+  "CL.eventFrame = nil",
 ]) {
   if (!block.includes(required)) throw new Error(`missing Phase 9 source contract: ${required}`);
 }
@@ -24,6 +25,21 @@ if (/SetScript\s*\(\s*["']OnUpdate["']/.test(block)) {
 }
 if (block.includes("InlinePublicChatLinkForMessage") || block.includes("ChatFrame_AddMessageEventFilter")) {
   throw new Error("Phase 9 modified chat-link or filter ownership");
+}
+for (const forbidden of [
+  'RegisterEvent("CHAT_MSG_CHANNEL")',
+  'RegisterEvent("CHAT_MSG_SAY")',
+  'RegisterEvent("CHAT_MSG_YELL")',
+  'self.chatEvents % self.chatInterval',
+  'CL:Run("chat-checkpoint")',
+]) {
+  if (block.includes(forbidden)) throw new Error(`Phase 12A retained chat maintenance ownership: ${forbidden}`);
+}
+if (!block.includes('pcall(CL.MaybeRun, CL, reason or "slow-maintenance")')) {
+  throw new Error("slow maintenance does not use the automatic lifecycle gate");
+}
+if (!block.includes('CL:Run("slash", true)')) {
+  throw new Error("manual cleanup is not forced");
 }
 if (block.includes("RefreshPublicGroups =") || block.includes("RefreshBrowse =")) {
   throw new Error("Phase 9 modified a renderer owner");

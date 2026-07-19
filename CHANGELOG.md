@@ -1,3 +1,13 @@
+# SignalFire 1.5.2 Phase 12A RC
+
+This test candidate removes a cache-maintenance path that could perform broad cleanup during sustained public chat. Automatic cleanup now runs through the existing lifecycle scheduler with a minimum 30-second interval, while `/sf perf cleanup` remains available as an immediate developer command.
+
+- Removed cache sweeps triggered by every 256 public chat messages.
+- Removed the duplicate cache-lifecycle event frame.
+- Consolidated login and world-entry cleanup under the existing timer lifecycle owner.
+- Added cooldown, execution, skip, forced-run, and per-pass timing diagnostics.
+- Preserved chat parsing, chat links, Public Groups identity, and all cache bounds.
+
 # SignalFire 1.5.1
 
 SignalFire 1.5.1 is a performance, stability, and compatibility update for Ascension / Conquest of Azeroth and Triumvirate.

@@ -6,6 +6,8 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 
 **Current release: 1.5.1**
 
+**Current test candidate: 1.5.2 Phase 12A** removes chat-triggered cache maintenance and consolidates automatic cleanup behind the existing lifecycle scheduler.
+
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
 ## Highlights

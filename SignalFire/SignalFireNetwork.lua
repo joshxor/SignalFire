@@ -1,4 +1,4 @@
--- SignalFire 1.5.1
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Network services
@@ -9,7 +9,7 @@ do
 
     local SFN_PREFIX = "BLFG312"
     local SFN_CHANNEL = "BLFG"
-    local SFN_VERSION = _G.SignalFire_VERSION or "1.5.1"
+    local SFN_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function sfn_now()
       return (time and time()) or 0
@@ -1883,7 +1883,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFAM_VERSION = _G.SignalFire_VERSION or "1.5.1"
+    local SFAM_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function sfam_now()
       return (GetTime and GetTime()) or (time and time()) or 0
@@ -2821,7 +2821,7 @@ end
 -- Compatibility
 do
   repeat
-    local SF_VERSION = _G.SignalFire_VERSION or "1.5.1"
+    local SF_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function cleanAddonText(msg)
       if type(msg) ~= "string" then return msg end

@@ -13,7 +13,7 @@ function requireText(source, text, label) {
 }
 
 requireText(tocText, "## Interface: 30300", "Wrath interface version");
-requireText(tocText, "## Version: 1.5.1", "TOC version");
+requireText(tocText, "## Version: 1.5.2", "TOC version");
 requireText(tocText, "## SavedVariables: BronzeLFG_DB", "SavedVariables declaration");
 if (tocFiles.length !== 13) throw new Error(`expected 13 TOC files, got ${tocFiles.length}`);
 if (JSON.stringify([...tocFiles].sort()) !== JSON.stringify(luaFiles)) {
@@ -30,9 +30,9 @@ const network = fs.readFileSync(path.join(addon, "SignalFireNetwork.lua"), "utf8
 const diagnostics = fs.readFileSync(path.join(addon, "SignalFireDiagnostics.lua"), "utf8");
 const workflow = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
 
-requireText(core, 'SignalFire_VERSION = "1.5.1"', "authoritative version");
-requireText(core, 'SignalFire_RELEASE_CHANNEL = "stable"', "stable release channel");
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.1"', "release name");
+requireText(core, 'SignalFire_VERSION = "1.5.2"', "authoritative version");
+requireText(core, 'SignalFire_RELEASE_CHANNEL = "release-candidate"', "release channel");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12A RC"', "release name");
 requireText(core, 'return "SignalFire v" .. SignalFire_GetVersion()', "stable title composition");
 requireText(chat, "options.inlineChatLinks = false", "safe Chat Links default");
 requireText(chat, "options.inlineChatLinks ~= true and options.inlineChatLinks ~= false",
@@ -56,4 +56,4 @@ if (testSayAssignments.length !== 2
   throw new Error("test-say mode has an unexpected enable path");
 }
 
-console.log(`production release source verification: PASS (${tocFiles.length} Lua files, version 1.5.1)`);
+console.log(`production release source verification: PASS (${tocFiles.length} Lua files, version 1.5.2 RC)`);

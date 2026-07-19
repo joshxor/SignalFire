@@ -1,15 +1,15 @@
--- SignalFire 1.5.1
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Version
 do
   repeat
-    SignalFire_VERSION = "1.5.1"
-    SignalFire_RELEASE_CHANNEL = "stable"
-    SignalFire_RELEASE_NAME = "SignalFire 1.5.1"
+    SignalFire_VERSION = "1.5.2"
+    SignalFire_RELEASE_CHANNEL = "release-candidate"
+    SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12A RC"
 
     function SignalFire_GetVersion()
-      return tostring(SignalFire_VERSION or "1.5.1")
+      return tostring(SignalFire_VERSION or "1.5.2")
     end
 
     function SignalFire_GetTitleText()

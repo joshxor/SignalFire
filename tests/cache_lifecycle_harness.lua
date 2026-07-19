@@ -5,8 +5,8 @@ dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load from " .. tostring(addonRoot))
 local CL = assert(SignalFireCacheLifecycle151, "Phase 9 cache lifecycle owner did not load")
-assert(CL.generation == "1.5.1-perf-phase9", "unexpected cache lifecycle owner")
-assert(not CL.eventFrame:GetScript("OnUpdate"), "Phase 9 installed permanent OnUpdate polling")
+assert(CL.generation == "1.5.2-phase12a", "unexpected cache lifecycle owner")
+assert(CL.eventFrame == nil, "cache lifecycle retained an independent event owner")
 
 local testNow = 900000
 local profileClock = 1000

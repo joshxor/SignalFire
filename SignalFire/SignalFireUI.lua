@@ -1,4 +1,4 @@
--- SignalFire 1.5.1
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Final interface ownership
@@ -31,7 +31,7 @@ do
 
     local function sfui_version_label()
       if SignalFire_GetVersionLabel then return SignalFire_GetVersionLabel(sfui_profile_id()) end
-      return "v" .. tostring(SignalFire_VERSION or "1.5.1") .. " - " .. sfui_profile_name(true)
+      return "v" .. tostring(SignalFire_VERSION or "1.5.2") .. " - " .. sfui_profile_name(true)
     end
 
     local function sfui_flat(frame, alpha)
@@ -176,7 +176,7 @@ do
     end
 
     local function sfui_apply_identity()
-      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.1")
+      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.2")
       if BronzeLFG_ApplyVisibleVersion then
         BronzeLFG_ApplyVisibleVersion()
       elseif BLFG.titleText then
@@ -264,7 +264,7 @@ do
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_LOGIN")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    eventFrame:SetScript("OnEvent", function()
+    eventFrame:SetScript("OnEvent", function(_, event)
       if BLFG and BLFG.SFUI1434_Apply then BLFG:SFUI1434_Apply() end
     end)
 
@@ -4415,7 +4415,7 @@ do
         local className, classFile = nil, nil
         if UnitClass then className, classFile = UnitClass("player") end
         selfRow.name = selfName
-        selfRow.version = tostring(_G.SignalFire_VERSION or "1.5.1")
+        selfRow.version = tostring(_G.SignalFire_VERSION or "1.5.2")
         selfRow.level = tostring(UnitLevel and UnitLevel("player") or "")
         selfRow.className = className or selfRow.className
         selfRow.classFile = classFile or selfRow.classFile
@@ -5246,7 +5246,7 @@ do
     -- maintenance deadline needs to keep the delayed scheduler awake.
     function T.RunMaintenance(reason)
       if not B.SF151_RunSlowMaintenance then return false end
-      local ok, result = pcall(B.SF151_RunSlowMaintenance, B)
+      local ok, result = pcall(B.SF151_RunSlowMaintenance, B, reason)
       if not ok then
         p4_record_error("maintenance." .. tostring(reason or "event"), result)
         return false
@@ -5281,13 +5281,13 @@ do
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_LOGIN")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    eventFrame:SetScript("OnEvent", function()
+    eventFrame:SetScript("OnEvent", function(_, event)
       p4_attach_panel(B.sfnPanel)
       p4_attach_panel(B.onlinePanel)
       T.ApplyApplicantOwner()
       T.ApplyMinimapOwner()
       p4_update_listing_owner()
-      T.RunMaintenance("world-entry")
+      T.RunMaintenance(event == "PLAYER_LOGIN" and "player-login" or "world-entry")
       T.UpdateNetworkOwner()
     end)
     T.eventFrame = eventFrame
