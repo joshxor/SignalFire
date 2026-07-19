@@ -240,6 +240,8 @@ do
     local browseView = _G.SignalFireBrowseView151 or {}
     return {
       {"session.publicGroups", B.publicGroups, false},
+      {"session.listings", B.listings, false},
+      {"session.applicants", B.applicants, false},
       {"session.onlineUsers", B.onlineUsers, false},
       {"session.sfnStatuses", B.sfnStatuses, false},
       {"session.chatGuildListings", B.chatGuildListings, false},
@@ -265,7 +267,9 @@ do
       {"session.fastLinkFilterCache", B._sffclFilterCache, false},
       {"session.fastLinkDisplayCache", B._sffclDisplayCache, false},
       {"session.publicRefreshQueue", B._publicRefreshQueue, false},
-      {"session.notificationSeen", B._notifySeen, false},
+      {"session.notificationSeen", B._notifySeen569, false},
+      {"session.publicWhoLastQuery", B.publicPlayerWho and B.publicPlayerWho.lastQuery, false},
+      {"session.publicWhoFinalResult", B.publicPlayerWho and B.publicPlayerWho.finalResult, false},
       {"session.alertSeen", B._sf151AlertSeen, false},
       {"session.chatDecisionCache", p3._decisionCache, false},
       {"session.chatDecisionSlots", p3._decisionSlots, false},
@@ -712,3 +716,546 @@ do
     if not slashAttached then P.slashInstallError = tostring(slashErr) end
   end)
 end
+
+-- Phase 9 general cache and memory lifecycle ownership.
+-- SIGNALFIRE_PHASE9_CACHE_LIFECYCLE_BEGIN
+do
+  local B = _G.BronzeLFG
+  local P = _G.SignalFirePerf151
+  if B and P and CreateFrame then
+    local CL = _G.SignalFireCacheLifecycle151 or {}
+    _G.SignalFireCacheLifecycle151 = CL
+    CL.generation = "1.5.1-perf-phase9"
+    CL.chatInterval = 256
+    CL.maximumErrors = 12
+    -- Diagnostics owner: Phase 9. Counter/peak keys are the fixed fields
+    -- emitted by this block (maximum 48/35); values are numbers or one cache
+    -- name. Error history is FIFO-capped at 12. All are session-only and are
+    -- cleared by /sf perf reset or reload. No diagnostic table is persisted.
+    CL.stats = CL.stats or {}
+    CL.peaks = CL.peaks or {}
+    CL.errors = CL.errors or {}
+    CL.chatEvents = tonumber(CL.chatEvents or 0) or 0
+    CL.running = false
+
+    -- Phase 9 owns cleanup only for the mutable stores listed below. Snapshot,
+    -- view, queue, index, timer, lazy-panel, wrapper, selection, search, and
+    -- filter state remain bounded by their original Phase 2-8 owners.
+    -- All Phase 9 session caches are cleared on reload and are never persisted.
+    CL.maximums = {
+      publicGroups=512, listings=256, applicants=128, chatGuildListings=256,
+      guilds=256, guildPosts=256, onlineUsers=512, sfnStatuses=512,
+      knownClassNames=256,
+      notificationSeen=256, seenPublic=512, seenApplicants=128,
+      invasionUsers=256, invasionOtherPlayers=256, invasionBeacons=256,
+      whoGuilds=256, whoPlayers=1024, whoMembers=128, publicWho=128,
+      favoriteAlertState=256,
+    }
+    CL.ttls = {
+      listings=900, applicants=7200, chatGuildListings=21600,
+      guilds=1209600, guildPosts=21600, onlineUsers=300, sfnStatuses=300,
+      notificationSeen=120, publicWho=120, favoriteAlertCooldowns=7200,
+      favoriteAlertSeenListings=7200, favoriteOnlineSeen=3600,
+    }
+
+    local function cl_now()
+      return (time and time()) or 0
+    end
+
+    local function cl_clock()
+      if debugprofilestop then return debugprofilestop() end
+      return ((GetTime and GetTime()) or 0) * 1000
+    end
+
+    local function cl_enabled()
+      return P.enabled == true
+    end
+
+    local function cl_note(field, amount)
+      if not cl_enabled() then return end
+      CL.stats[field] = (tonumber(CL.stats[field] or 0) or 0) + (amount or 1)
+    end
+
+    local function cl_max(field, value)
+      if not cl_enabled() then return end
+      value = tonumber(value or 0) or 0
+      if value > (tonumber(CL.stats[field] or 0) or 0) then CL.stats[field] = value end
+    end
+
+    local function cl_count(values)
+      if type(values) ~= "table" then return 0 end
+      local count = 0
+      for _ in pairs(values) do count = count + 1 end
+      return count
+    end
+
+    local function cl_stamp(record, ...)
+      if type(record) == "number" then return record end
+      if type(record) ~= "table" then return 0 end
+      for index = 1, select("#", ...) do
+        local value = tonumber(record[select(index, ...)] or 0) or 0
+        if value > 0 then return value end
+      end
+      return 0
+    end
+
+    local function cl_record_error(scope, value)
+      table.insert(CL.errors, {scope=tostring(scope or "cleanup"), error=tostring(value or "unknown"), at=cl_now()})
+      while #CL.errors > CL.maximumErrors do table.remove(CL.errors, 1) end
+    end
+
+    local function cl_observe(name, values)
+      if not cl_enabled() then return end
+      local count = cl_count(values)
+      if count > (tonumber(CL.peaks[name] or 0) or 0) then CL.peaks[name] = count end
+      if count > (tonumber(CL.stats.largestCacheSize or 0) or 0) then
+        CL.stats.largestCacheSize = count
+        CL.stats.largestCacheName = name
+      end
+    end
+
+    local function cl_remove_oldest(name, values, maximum, stampReader, protected)
+      if type(values) ~= "table" then return 0 end
+      local count = cl_count(values)
+      cl_max("maximumEntriesObserved", count)
+      if count <= maximum then return 0 end
+      local rows = {}
+      for key, value in pairs(values) do
+        if not protected or not protected(key, value) then
+          table.insert(rows, {key=key, stamp=stampReader and stampReader(value) or 0})
+        end
+      end
+      table.sort(rows, function(left, right)
+        if left.stamp ~= right.stamp then return left.stamp < right.stamp end
+        return tostring(left.key) < tostring(right.key)
+      end)
+      local removed = 0
+      local needed = count - maximum
+      for index = 1, math.min(needed, #rows) do
+        local row = rows[index]
+        if row and values[row.key] ~= nil then
+          values[row.key] = nil
+          removed = removed + 1
+        end
+      end
+      if removed > 0 then cl_note("boundedEvictions", removed) end
+      cl_observe(name, values)
+      return removed
+    end
+
+    local function cl_prune_timed(name, values, ttl, maximum, stamp, stampReader, protected)
+      if type(values) ~= "table" then return 0, 0 end
+      local expired = 0
+      for key, value in pairs(values) do
+        local itemStamp = stampReader and stampReader(value) or 0
+        if (not protected or not protected(key, value)) and itemStamp > 0 and (stamp - itemStamp) > ttl then
+          values[key] = nil
+          expired = expired + 1
+        end
+      end
+      if expired > 0 then cl_note("ttlRemovals", expired) end
+      local capped = cl_remove_oldest(name, values, maximum, stampReader, protected)
+      cl_observe(name, values)
+      return expired, capped
+    end
+
+    local function cl_reconcile(name, values, live, maximum)
+      if type(values) ~= "table" then return 0 end
+      local removed = 0
+      for key in pairs(values) do
+        if type(live) ~= "table" or live[key] == nil then
+          values[key] = nil
+          removed = removed + 1
+        end
+      end
+      if removed > 0 then cl_note("orphanedReferencesRemoved", removed) end
+      local capped = cl_remove_oldest(name, values, maximum, nil, nil)
+      cl_observe(name, values)
+      return removed + capped
+    end
+
+    local function cl_active_ids(rows)
+      local active = {}
+      for _, row in ipairs(rows or {}) do
+        local id = tostring(row and row.id or "")
+        if id ~= "" then active[id] = true end
+      end
+      return active
+    end
+
+    local function cl_cleanup_dead_compatibility()
+      local removed = 0
+      for _, name in ipairs({
+        "_inlinePublicChatCache", "_sfDirectLinkCache",
+        "_sffclSeen", "_sffclLastRow", "_sffclFilterCache", "_sffclDisplayCache",
+      }) do
+        local value = B[name]
+        if value ~= nil then
+          removed = removed + cl_count(value)
+          B[name] = nil
+        end
+      end
+      if removed > 0 then cl_note("deadCacheEntriesRemoved", removed) end
+      return removed
+    end
+
+    local function cl_cleanup_public(stamp)
+      local removed = 0
+      if B.ExpirePublicGroups then
+        local before = cl_count(B.publicGroups)
+        local ok, value = pcall(B.ExpirePublicGroups, B)
+        if ok then removed = removed + math.max(0, before - cl_count(B.publicGroups))
+        else cl_record_error("public.expire", value) end
+      end
+      local capped = cl_remove_oldest("session.publicGroups", B.publicGroups or {}, CL.maximums.publicGroups,
+        function(row) return cl_stamp(row, "seen", "created", "firstSeen") end)
+      removed = removed + capped
+      if capped > 0 then
+        if B.selectedPublic and not B.publicGroups[B.selectedPublic] then B.selectedPublic = nil end
+        if B.SF151_InvalidatePublicGroupsData then B:SF151_InvalidatePublicGroupsData("cache-capacity") end
+        -- The Phase 5 expiry wrapper owns canonical-index reconciliation.
+        -- Re-enter it after capacity eviction so no index points at a removed row.
+        local ok, value = pcall(B.ExpirePublicGroups, B)
+        if not ok then cl_record_error("public.index-reconcile", value) end
+      end
+      removed = removed + cl_reconcile("session.seenPublic", B.sfamSeenPublic, B.publicGroups, CL.maximums.seenPublic)
+      return removed
+    end
+
+    local function cl_cleanup_browse(stamp)
+      local listingId = B.myListing and tostring(B.myListing.id or "") or ""
+      local protected = function(key, row)
+        return listingId ~= "" and (tostring(key or "") == listingId or tostring(row and row.id or "") == listingId)
+      end
+      local expired, capped = cl_prune_timed("session.listings", B.listings, CL.ttls.listings,
+        CL.maximums.listings, stamp, function(row) return cl_stamp(row, "seen", "created") end, protected)
+      local removed = expired + capped
+      if removed > 0 then
+        if B.selectedListing and not B.listings[B.selectedListing] then B.selectedListing = nil end
+        if B.SF151_InvalidateBrowseData then B:SF151_InvalidateBrowseData("cache-lifecycle", true) end
+      end
+      local appExpired, appCapped = cl_prune_timed("session.applicants", B.applicants,
+        CL.ttls.applicants, CL.maximums.applicants, stamp,
+        function(row) return cl_stamp(row, "applied", "seen", "created") end)
+      if appExpired + appCapped > 0 then
+        if B.selectedApplicant and not B.applicants[B.selectedApplicant] then B.selectedApplicant = nil end
+        if B.SF151_InvalidateBrowseData then B:SF151_InvalidateBrowseData("applicant-cache-lifecycle", true) end
+      end
+      local seenRemoved = cl_reconcile("session.seenApplicants", B.sfamSeenApplicants, B.applicants, CL.maximums.seenApplicants)
+      return removed + appExpired + appCapped + seenRemoved
+    end
+
+    local function cl_cleanup_network(stamp)
+      local expiredOnline, cappedOnline = cl_prune_timed("session.onlineUsers", B.onlineUsers,
+        CL.ttls.onlineUsers, CL.maximums.onlineUsers, stamp,
+        function(row) return cl_stamp(row, "seen", "created") end)
+      local expiredStatus, cappedStatus = cl_prune_timed("session.sfnStatuses", B.sfnStatuses,
+        CL.ttls.sfnStatuses, CL.maximums.sfnStatuses, stamp,
+        function(row) return cl_stamp(row, "seen", "created") end)
+      local removed = expiredOnline + cappedOnline + expiredStatus + cappedStatus
+      if removed > 0 and B.SF151_InvalidateRosterData then B:SF151_InvalidateRosterData("cache-lifecycle") end
+      removed = removed + cl_remove_oldest("session.invasionUsers", B.invasionUsers or {}, CL.maximums.invasionUsers,
+        function(row) return cl_stamp(row, "seen", "lastSeen", "created") end)
+      removed = removed + cl_remove_oldest("session.invasionOtherPlayers", B.invasionOtherPlayers or {}, CL.maximums.invasionOtherPlayers,
+        function(row) return cl_stamp(row, "seen", "lastSeen", "created") end)
+      removed = removed + cl_remove_oldest("session.invasionBeacons", B.invasionBeacons or {}, CL.maximums.invasionBeacons,
+        function(row) return cl_stamp(row, "seen", "lastSeen", "created") end)
+      removed = removed + cl_remove_oldest("session.knownClassNames", B._sf151KnownClassNames or {}, CL.maximums.knownClassNames)
+      return removed
+    end
+
+    local function cl_cleanup_guilds(stamp)
+      local runtime = B.chatGuildListings
+      local persisted = BronzeLFG_DB and BronzeLFG_DB.chatGuildListings or nil
+      local expired, capped = cl_prune_timed("session.chatGuildListings", runtime,
+        CL.ttls.chatGuildListings, CL.maximums.chatGuildListings, stamp,
+        function(row) return cl_stamp(row, "lastPostSeen", "seen", "created", "firstSeen") end)
+      if persisted and persisted ~= runtime then
+        local dbExpired, dbCapped = cl_prune_timed("db.chatGuildListings", persisted,
+          CL.ttls.chatGuildListings, CL.maximums.chatGuildListings, stamp,
+          function(row) return cl_stamp(row, "lastPostSeen", "seen", "created", "firstSeen") end)
+        expired = expired + dbExpired
+        capped = capped + dbCapped
+      end
+      local guildExpired, guildCapped = cl_prune_timed("session.guilds", B.guilds, CL.ttls.guilds, CL.maximums.guilds, stamp,
+        function(row) return cl_stamp(row, "lastPostSeen", "lastSeen", "seen", "created", "firstSeen") end)
+      local postExpired, postCapped = cl_prune_timed("session.guildPosts", B.guildPosts, CL.ttls.guildPosts, CL.maximums.guildPosts, stamp,
+        function(row) return cl_stamp(row, "lastPostSeen", "seen", "created") end)
+      return expired + capped + guildExpired + guildCapped + postExpired + postCapped
+    end
+
+    local function cl_cleanup_who(stamp)
+      local removed = 0
+      if B.PruneWhoGuilds then
+        local ok, value = pcall(B.PruneWhoGuilds, B)
+        if not ok then cl_record_error("who.prune", value) end
+      end
+      local db = BronzeLFG_DB or {}
+      local players = db.whoPlayers or B.whoPlayers
+      local guilds = db.whoGuilds or B.whoGuilds
+      removed = removed + cl_remove_oldest("db.whoPlayers", players or {}, CL.maximums.whoPlayers,
+        function(row) return cl_stamp(row, "seen", "lastSeen") end)
+      removed = removed + cl_remove_oldest("db.whoGuilds", guilds or {}, CL.maximums.whoGuilds,
+        function(row) return cl_stamp(row, "lastSeen", "seen", "firstSeen") end)
+      for _, guild in pairs(guilds or {}) do
+        removed = removed + cl_remove_oldest("db.whoGuildMembers", guild and guild.members or nil, CL.maximums.whoMembers,
+          function(row) return cl_stamp(row, "seen", "lastSeen") end)
+      end
+      local lookup = B.publicPlayerWho
+      if type(lookup) == "table" then
+        local queryExpired, queryCapped = cl_prune_timed("session.publicWhoLastQuery", lookup.lastQuery, CL.ttls.publicWho,
+          CL.maximums.publicWho, stamp, function(value) return tonumber(value or 0) or 0 end)
+        local resultExpired, resultCapped = cl_prune_timed("session.publicWhoFinalResult", lookup.finalResult, CL.ttls.publicWho,
+          CL.maximums.publicWho, stamp, function(value) return tonumber(value or 0) or 0 end)
+        removed = removed + queryExpired + queryCapped + resultExpired + resultCapped
+      end
+      return removed
+    end
+
+    local function cl_cleanup_alerts(stamp)
+      local removed = 0
+      local notifyExpired, notifyCapped = cl_prune_timed("session.notificationSeen", B._notifySeen569, CL.ttls.notificationSeen,
+        CL.maximums.notificationSeen, stamp, function(value) return tonumber(value or 0) or 0 end)
+      removed = removed + notifyExpired + notifyCapped
+      local network = BronzeLFG_DB and BronzeLFG_DB.network or nil
+      if network then
+        local cooldownExpired, cooldownCapped = cl_prune_timed("db.favoriteAlertCooldowns", network.favoriteAlertCooldowns,
+          CL.ttls.favoriteAlertCooldowns, CL.maximums.favoriteAlertState, stamp,
+          function(value) return tonumber(value or 0) or 0 end)
+        local seenExpired, seenCapped = cl_prune_timed("db.favoriteAlertSeenListings", network.favoriteAlertSeenListings,
+          CL.ttls.favoriteAlertSeenListings, CL.maximums.favoriteAlertState, stamp,
+          function(value) return tonumber(value or 0) or 0 end)
+        local onlineExpired, onlineCapped = cl_prune_timed("db.favoriteOnlineSeen", network.favoriteOnlineSeen,
+          CL.ttls.favoriteOnlineSeen, CL.maximums.favoriteAlertState, stamp,
+          function(value) return tonumber(value or 0) or 0 end)
+        removed = removed + cooldownExpired + cooldownCapped + seenExpired + seenCapped + onlineExpired + onlineCapped
+      end
+      return removed
+    end
+
+    local function cl_cleanup_community()
+      local removed = 0
+      local shared = BronzeLFG_DB and BronzeLFG_DB.signalFireNetwork or nil
+      local network = BronzeLFG_DB and BronzeLFG_DB.network or nil
+      if shared then
+        local activeEvents = cl_active_ids(shared.events)
+        for _, field in ipairs({"eventAlertSeen", "eventAlertKnown", "eventAlertCooldowns", "eventDismissed"}) do
+          removed = removed + cl_reconcile("db." .. field, shared[field], activeEvents, 60)
+        end
+      end
+      if shared then
+        local activeNotices = cl_active_ids(shared.notices)
+        removed = removed + cl_reconcile("db.noticeSeen", shared.noticeSeen, activeNotices, 40)
+        removed = removed + cl_reconcile("db.noticeDismissed", shared.noticeDismissed, activeNotices, 40)
+        if network then
+          removed = removed + cl_reconcile("db.legacyNoticeSeen", network.noticeSeen, activeNotices, 40)
+          removed = removed + cl_reconcile("db.legacyNoticeDismissed", network.noticeDismissed, activeNotices, 40)
+        end
+      end
+      return removed
+    end
+
+    CL.inventory = {
+      {name="session.publicGroups", owner="Phase 5 identity / Phase 9 capacity", key="stable listing id", maximum=512, ttl="publicExpire", cleanup="ExpirePublicGroups plus Phase 9 chat checkpoint", persistence="session"},
+      {name="session.listings", owner="Phase 9", key="listing id", maximum=256, ttl="900s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.applicants", owner="Phase 9", key="player name", maximum=128, ttl="7200s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.chatGuildListings", owner="Phase 9", key="normalized guild", maximum=256, ttl="21600s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.guilds", owner="Phase 9", key="guild identity", maximum=256, ttl="14d when timestamped", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.onlineUsers", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.sfnStatuses", owner="Phase 9", key="player name", maximum=512, ttl="300s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.knownClassNames", owner="Phase 9 capacity / class resolver", key="normalized player", maximum=256, ttl="session capacity", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.notificationSeen", owner="Phase 9", key="listing signature", maximum=256, ttl="120s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.publicWho", owner="Phase 9", key="normalized player", maximum=128, ttl="120s", cleanup="chat checkpoint/world entry", persistence="session"},
+      {name="session.rosterSnapshot", owner="Phase 3", key="generation", maximum=1, ttl="generation/next expiry", cleanup="roster invalidation", persistence="session"},
+      {name="session.rosterViews", owner="Phase 3", key="generation/filter/search/guild", maximum=16, ttl="generation", cleanup="FIFO/invalidation", persistence="session"},
+      {name="session.rosterClassCache", owner="Phase 3", key="normalized player", maximum=128, ttl="1800s", cleanup="snapshot build", persistence="session"},
+      {name="session.publicSnapshot", owner="Phase 6b", key="data generation", maximum=1, ttl="generation", cleanup="Public Groups invalidation", persistence="session"},
+      {name="session.publicViews", owner="Phase 6b", key="view signature", maximum=16, ttl="generation", cleanup="FIFO/invalidation", persistence="session"},
+      {name="session.browseSnapshot", owner="Phase 8", key="data generation", maximum=1, ttl="generation", cleanup="Browse invalidation", persistence="session"},
+      {name="session.browseViews", owner="Phase 8", key="view signature", maximum=16, ttl="generation", cleanup="FIFO/invalidation", persistence="session"},
+      {name="session.chatSeen", owner="Phase 5", key="sender/message", maximum=256, ttl="5s", cleanup="ring replacement/prune", persistence="session"},
+      {name="session.chatRecords", owner="Phase 5", key="stable record id", maximum=256, ttl="30s", cleanup="ring replacement/prune", persistence="session"},
+      {name="session.chatQueue", owner="Phase 5", key="FIFO index", maximum=40, ttl="until processed/dropped", cleanup="queue owner", persistence="session"},
+      {name="session.chatDecisions", owner="Phase 5", key="source event", maximum=256, ttl="2-6s", cleanup="ring replacement/lookup", persistence="session"},
+      {name="session.chatRenderDecisions", owner="Phase 5", key="sender/message", maximum=256, ttl="2-6s", cleanup="ring replacement/lookup", persistence="session"},
+      {name="session.publicCanonicalIndex", owner="Phase 5", key="canonical sender/message", maximum=512, ttl="public expiry + 30s", cleanup="index ring/row expiry", persistence="session"},
+      {name="session.timerTasks", owner="Phase 4b", key="task key", maximum=128, ttl="deadline", cleanup="execute/cancel/replace", persistence="session"},
+      {name="session.lazyPanels", owner="Phase 7", key="fixed panel id", maximum=13, ttl="session", cleanup="reload", persistence="session"},
+      {name="session.wrapperState", owner="final loaded subsystem owners", key="fixed function/frame", maximum=64, ttl="session", cleanup="reload", persistence="session"},
+      {name="session.selectionSearchFilters", owner="panel owners", key="fixed scalar state", maximum=24, ttl="session/profile", cleanup="selection repair/profile switch", persistence="session"},
+      {name="session.diagnostics", owner="Phase 1", key="fixed category/ring", maximum=128, ttl="session/30s", cleanup="ring/reset/reload", persistence="session"},
+      {name="db.whoPlayers", owner="Phase 9 capacity / WHO TTL", key="normalized player", maximum=1024, ttl="3600s", cleanup="WHO prune/Phase 9", persistence="BronzeLFG_DB"},
+      {name="db.whoGuilds", owner="Phase 9 capacity / WHO TTL", key="normalized guild", maximum=256, ttl="14d", cleanup="WHO prune/Phase 9", persistence="BronzeLFG_DB"},
+      {name="db.events", owner="Community Events", key="event id", maximum=60, ttl="event expiry", cleanup="event read/mutation", persistence="BronzeLFG_DB"},
+      {name="db.notices", owner="Notice Board", key="array slot/event id", maximum=40, ttl="notice expiry", cleanup="notice read/mutation", persistence="BronzeLFG_DB"},
+      {name="db.eventNoticeState", owner="Phase 9 orphan cleanup", key="event/notice id", maximum=60, ttl="source lifetime", cleanup="chat checkpoint/world entry", persistence="BronzeLFG_DB"},
+      {name="db.favoriteAlertState", owner="Phase 9", key="player/listing signature", maximum=256, ttl="1-2h", cleanup="chat checkpoint/world entry", persistence="BronzeLFG_DB"},
+      {name="db.userSettings", owner="user settings", key="user-selected value", maximum="deterministic fields", ttl="user controlled", cleanup="explicit user action", persistence="BronzeLFG_DB"},
+    }
+
+    function CL:Run(reason)
+      if self.running then
+        cl_note("nestedRunsSkipped", 1)
+        return false, 0
+      end
+      self.running = true
+      local started = cl_enabled() and cl_clock() or nil
+      local results = {pcall(function()
+        local stamp = cl_now()
+        local removed = 0
+        removed = removed + cl_cleanup_dead_compatibility()
+        removed = removed + cl_cleanup_public(stamp)
+        removed = removed + cl_cleanup_browse(stamp)
+        removed = removed + cl_cleanup_network(stamp)
+        removed = removed + cl_cleanup_guilds(stamp)
+        removed = removed + cl_cleanup_who(stamp)
+        removed = removed + cl_cleanup_alerts(stamp)
+        removed = removed + cl_cleanup_community()
+        cl_note("runs", 1)
+        cl_note("entriesRemoved", removed)
+        CL.lastReason = tostring(reason or "manual")
+        CL.lastRunAt = stamp
+        return removed
+      end)}
+      self.running = false
+      if started then
+        local elapsed = math.max(0, cl_clock() - started)
+        cl_note("cleanupMsTotal", elapsed)
+        cl_max("cleanupMsMaximum", elapsed)
+      end
+      if not results[1] then
+        cl_record_error("run." .. tostring(reason or "manual"), results[2])
+        return false, 0
+      end
+      return true, tonumber(results[2] or 0) or 0
+    end
+
+    function CL:ObserveChat()
+      self.chatEvents = (tonumber(self.chatEvents or 0) or 0) + 1
+      if cl_enabled() then cl_note("chatEvents", 1) end
+      if self.chatEvents % self.chatInterval == 0 then return self:Run("chat-checkpoint") end
+      return false, 0
+    end
+
+    function CL:GetDiagnostics(includeMemory)
+      local result = {
+        generation=self.generation, running=self.running == true, lastReason=self.lastReason,
+        lastRunAt=self.lastRunAt or 0, chatEvents=self.chatEvents or 0,
+        chatInterval=self.chatInterval, inventoryEntries=#self.inventory,
+        errors=self.errors, peaks=self.peaks,
+      }
+      for key, value in pairs(self.stats or {}) do result[key] = value end
+      if includeMemory and collectgarbage then result.memoryKB = tonumber(collectgarbage("count") or 0) or 0 end
+      return result
+    end
+
+    function B:SF151_RunCacheMaintenance(reason)
+      return CL:Run(reason or "explicit")
+    end
+
+    function B:SF151_GetCacheLifecycleDiagnostics(includeMemory)
+      return CL:GetDiagnostics(includeMemory == true)
+    end
+
+    function B:SF151_GetCacheLifecycleInventory()
+      local rows = {}
+      for _, item in ipairs(CL.inventory) do
+        local copy = {}
+        for key, value in pairs(item) do copy[key] = value end
+        table.insert(rows, copy)
+      end
+      return rows
+    end
+
+    function B:SF151_ResetCacheLifecycleStats()
+      CL.stats = {}
+      CL.peaks = {}
+      CL.errors = {}
+      return true
+    end
+
+    local oldSlowMaintenance = B.SF151_RunSlowMaintenance
+    if type(oldSlowMaintenance) == "function" and not CL.oldSlowMaintenance then
+      CL.oldSlowMaintenance = oldSlowMaintenance
+      B.SF151_RunSlowMaintenance = function(self, ...)
+        local results = {pcall(CL.oldSlowMaintenance, self, ...)}
+        local cleanup = {pcall(CL.Run, CL, "slow-maintenance")}
+        if not results[1] then error(results[2], 0) end
+        if not cleanup[1] then error(cleanup[2], 0) end
+        return unpack(results, 2)
+      end
+    end
+
+    local oldReset = P.Reset
+    P.Reset = function(self, ...)
+      local results = {pcall(oldReset, self, ...)}
+      B:SF151_ResetCacheLifecycleStats()
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2)
+    end
+
+    local oldGetReport = P.GetReport
+    P.GetReport = function(self, ...)
+      local report = oldGetReport(self, ...)
+      report.cacheLifecycle = CL:GetDiagnostics(false)
+      return report
+    end
+
+    local oldPrint = P.Print
+    P.Print = function(self, ...)
+      local report = oldPrint(self, ...)
+      local row = CL:GetDiagnostics(false)
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache lifecycle: owner=" .. tostring(row.generation)
+          .. ", runs=" .. tostring(row.runs or 0) .. ", removed=" .. tostring(row.entriesRemoved or 0)
+          .. ", ttl=" .. tostring(row.ttlRemovals or 0) .. ", evicted=" .. tostring(row.boundedEvictions or 0)
+          .. ", orphans=" .. tostring(row.orphanedReferencesRemoved or 0)
+          .. ", largest=" .. tostring(row.largestCacheName or "none") .. "/" .. tostring(row.largestCacheSize or 0)
+          .. ", maxMs=" .. string.format("%.3f", tonumber(row.cleanupMsMaximum or 0) or 0))
+      end
+      return report
+    end
+
+    local oldPerfSlash = B.SF151_HandlePerfSlash
+    B.SF151_HandlePerfSlash = function(self, command)
+      local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      if cmd == "perf cleanup" then
+        local ok, removed = CL:Run("slash")
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache cleanup "
+            .. (ok and "complete" or "failed") .. ": removed " .. tostring(removed or 0) .. " entries.")
+        end
+        return true
+      elseif cmd == "perf cachelife" or cmd == "perf cachelife memory" then
+        local row = CL:GetDiagnostics(cmd == "perf cachelife memory")
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r cache lifecycle " .. tostring(row.generation)
+            .. ": runs=" .. tostring(row.runs or 0) .. ", removed=" .. tostring(row.entriesRemoved or 0)
+            .. ", ttl=" .. tostring(row.ttlRemovals or 0) .. ", evicted=" .. tostring(row.boundedEvictions or 0)
+            .. ", errors=" .. tostring(#(row.errors or {})))
+          if row.memoryKB then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r Lua memory: "
+            .. string.format("%.1f KB", row.memoryKB) .. " (explicit sample)") end
+        end
+        return true
+      end
+      return oldPerfSlash(self, command)
+    end
+
+    cl_cleanup_dead_compatibility()
+    local eventFrame = CreateFrame("Frame")
+    CL.eventFrame = eventFrame
+    eventFrame:RegisterEvent("PLAYER_LOGIN")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("CHAT_MSG_CHANNEL")
+    eventFrame:RegisterEvent("CHAT_MSG_SAY")
+    eventFrame:RegisterEvent("CHAT_MSG_YELL")
+    eventFrame:SetScript("OnEvent", function(_, event)
+      if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+        CL:Run(string.lower(event))
+      else
+        CL:ObserveChat()
+      end
+    end)
+  end
+end
+-- SIGNALFIRE_PHASE9_CACHE_LIFECYCLE_END
