@@ -176,11 +176,11 @@ do
     end
 
     local function sfui_apply_identity()
-      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.0")
+      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.1")
       if BronzeLFG_ApplyVisibleVersion then
         BronzeLFG_ApplyVisibleVersion()
       elseif BLFG.titleText then
-        BLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(BLFG.version) .. " (Beta)"))
+        BLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(BLFG.version)))
       end
       sfui_suppress_legacy_version_elements()
       if BLFG.sideBrand then

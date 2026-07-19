@@ -13,7 +13,7 @@ do
     end
 
     function SignalFire_GetTitleText()
-      return "SignalFire v" .. SignalFire_GetVersion() .. " (Beta)"
+      return "SignalFire v" .. SignalFire_GetVersion()
     end
 
     function SignalFire_GetProfileDisplayName(profile, compact)

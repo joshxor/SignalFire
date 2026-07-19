@@ -1,57 +1,78 @@
 # SignalFire 1.5.1
 
-SignalFire 1.5.1 is a reliability and performance update for Ascension / Conquest of Azeroth and Triumvirate.
+SignalFire 1.5.1 is a performance, stability, and compatibility update for Ascension / Conquest of Azeroth and Triumvirate.
+
+## Performance
+
+- Reduced repeated UI construction and made reopened panels substantially faster.
+- Added cached Network and Full Roster snapshots and views.
+- Replaced recurring background work with event-driven, sleeping timer owners.
+- Added a canonical Public Groups index, cached views, and incremental visible-row rendering.
+- Added lazy panel construction so unused panels are not built in the background.
+- Added cached Browse views and faster detail rendering.
+- Bounded session caches and assigned deterministic cleanup ownership for long sessions.
+
+## Stability
+
+- Removed recursive UI-tree scans and reduced hidden-panel work.
+- Bounded chat queues and reduced duplicate classification, listing, and alert work.
+- Improved SavedVariables repair for malformed legacy profile, scale, module, Network, Event, and Notice data.
+- Improved refresh merging and wrapper ownership reporting without repeatedly rehooking global functions.
+- Preserved Public Groups parsing and ordinary Blizzard hyperlinks when SignalFire links are disabled.
 
 ## Chat and Public Groups
 
-- Chat Links now default to Off on new installations and when an older installation has no saved preference. Existing explicit On or Off choices are preserved.
-- Public Groups parsing remains enabled when Chat Links are off, and links can be enabled manually from Chat & Parsing options.
-- Improved SignalFire activity links across multiple chat windows and tabs.
-- Links now display the recognized activity and required roles instead of a generic label.
-- Clicking a SignalFire link opens and highlights the exact Public Groups listing.
-- Reduced duplicate parsing, duplicate listings, and repeated alerts.
-- Improved recognition for RDF, dungeon shorthand, role-first messages, and Ascension activities.
-- Improved filtering for players seeking a guild so those messages do not appear as group or recruitment listings.
+- Improved activity-link coverage across chat windows and tabs.
+- Links show the recognized activity and requested roles and select the exact Public Groups row.
+- Expanded RDF, dungeon shorthand, role-first, and Ascension activity recognition.
+- Improved guild-seeker filtering and guild recruitment handling.
 - Corrected Public Groups listing ages and timestamps.
+- The parser regression suite now covers 33 cases.
 
 ## Create Listing
 
-- Added Random Dungeon Finder, Random Heroic Dungeon Finder, and Random Mythic Dungeon Finder options for Ascension.
-- Random finder activities no longer display an unnecessary dungeon selector.
-- Random finder difficulty is selected automatically for Normal, Heroic, or Mythic+.
-- Preserved existing Dungeon, Mythic+, Raid, World Boss, Ascended, and Custom Event listing behavior.
+- Added Random Dungeon Finder, Random Heroic Dungeon Finder, and Random Mythic Dungeon Finder options.
+- Random finder activities hide the individual dungeon selector and choose the matching difficulty.
+- Preserved existing Dungeon, Mythic+, Raid, World Boss, Ascended, applicant, and posting-preview behavior.
 
 ## Network and Profiles
 
-- Corrected custom Ascension class names in Network and Full Roster.
-- Improved batching of Network presence responses and visible-panel updates.
-- Hidden Network, roster, and listing panels no longer rebuild for every incoming response.
-- Preserved separate Ascension and Triumvirate settings and profile-specific module behavior.
+- Corrected Ascension custom class names in Network and Full Roster.
+- Batched presence responses and visible-panel updates.
+- Preserved separate Ascension and Triumvirate settings and profile-aware modules.
+- Unsupported Invasion listeners remain disabled on Ascension and when the Triumvirate module is disabled.
 
-## Performance and Stability
+## Safety
 
-- Invasion combat and target listeners now run only on Triumvirate while the Invasions module is enabled.
-- Removed recurring UI-tree scans and unnecessary hidden-panel polling.
-- Reduced background Event Alert, listing-preview, and maintenance work.
-- Consolidated repeated refresh requests and protected hot UI paths from nested rebuilds.
-- Bounded chat caches and deferred heavier parsing outside immediate chat rendering.
-- Developer chat profiling is disabled during normal play.
-- Expanded the parser regression suite to 33 cases.
+- **Chat Links now default to Off** on fresh installations and when an older installation has no valid saved preference.
+- Existing explicit Chat Links On and Off choices are preserved during upgrade.
+- Public Groups parsing remains active while Chat Links are Off.
 
-## Installation
+## Diagnostics
+
+- Added opt-in `/sf diag` stability, ownership, memory, and compatibility reporting.
+- Diagnostics are disabled by default, session-only, bounded, and have no idle update loop.
+
+## Compatibility
+
+- World of Warcraft 3.3.5 build 12340 / Lua 5.1.
+- Ascension / Conquest of Azeroth and Triumvirate profiles.
+- Existing `BronzeLFG_DB` SavedVariables remain supported through normal upgrades.
+
+## Installation and Upgrade
 
 1. Fully exit World of Warcraft.
-2. Delete the existing `Interface\AddOns\SignalFire` folder.
+2. Delete the existing `Interface\AddOns\SignalFire` addon folder.
 3. Extract the new SignalFire folder into `Interface\AddOns`.
-4. Confirm the final path is `Interface\AddOns\SignalFire\SignalFire.toc`.
-5. Launch the game and use `/sf` to open SignalFire.
+4. Confirm `Interface\AddOns\SignalFire\SignalFire.toc` exists.
+5. Launch the game and use `/sf`.
 
-Do not overwrite an older SignalFire folder.
+Deleting the addon folder does not delete SavedVariables. A SavedVariables reset is not required for normal upgrades.
 
-## Known Limitation
+## Known Limitations
 
-Some Ascension / CoA clients may still experience intermittent micro-stutter while custom SignalFire links are visible during very busy public chat. SignalFire now caches parsing and hyperlink construction, but part of the remaining cost appears to occur inside Ascension's chat-link rendering path.
-
-Players can reduce the impact by selecting **Main Chat Only** or **Visible Chat Frames**, or by disabling visible SignalFire links while keeping Public Groups parsing enabled.
+- Some Ascension/CoA clients may still experience intermittent micro-stutter while custom SignalFire links are visible during very busy chat. Links can remain Off while Public Groups parsing stays active.
+- The first Public Groups link click may briefly pause while the lazily built panel opens for the first time.
+- This release optimizes known measured hotspots; it does not claim that every FPS issue or client crash is fixed.
 
 **SignalFire. Lighting the Path to Adventure.**

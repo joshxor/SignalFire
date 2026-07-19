@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.1
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Recruitment
@@ -7,7 +7,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SF139_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SF139_VERSION = _G.SignalFire_VERSION or "1.5.1"
     local SF139_DEFAULT_CHANNEL = "Global-Guild-Recruitment"
     local SF139_FALLBACK_CHANNEL = "Global-Guild-Recruitment"
 
@@ -503,7 +503,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFE_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFE_VERSION = _G.SignalFire_VERSION or "1.5.1"
     local SFE_PREFIX = "BLFG312"
     local SFE_CHANNEL = "BLFG"
 
@@ -1954,7 +1954,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFE141_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFE141_VERSION = _G.SignalFire_VERSION or "1.5.1"
     local SFE141_TYPES = {"Dungeon", "World Boss", "Invasion", "PvP", "Social", "Other"}
     local function sfe141_now()
       return (time and time()) or 0

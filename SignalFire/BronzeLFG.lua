@@ -15,7 +15,7 @@ end
 -- BronzeNet profiles, right-click options, autosave settings, UI polish.
 -- WoW 3.3.5 / Bronzebeard compatible.
 
-local VERSION = SignalFire_VERSION or "1.4.23"
+local VERSION = SignalFire_VERSION or "1.5.1"
 local CHANNEL = "BLFG"
 local PREFIX = "BLFG312"
 
@@ -1652,7 +1652,7 @@ function BLFG:CreateUI()
   f:Hide()
   table.insert(UISpecialFrames, "BronzeLFGFrame")
 
-  local title = font(f, (SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)", 22, 1, .75, 0)
+  local title = font(f, (SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire v1.5.1", 22, 1, .75, 0)
   title:SetPoint("TOP", f, "TOP", 0, -14)
   local ver = font(f, "", 10, .9, .8, .45)
   ver:SetPoint("LEFT", title, "RIGHT", 8, -4)
@@ -15097,7 +15097,7 @@ function BLFG:ApplySignalFireBetaTitle()
     BronzeLFG_ApplyVisibleVersion()
     return
   end
-  if self.titleText then self.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)") end
+  if self.titleText then self.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire v1.5.1") end
   if self.versionText then
     self.versionText:SetText("")
     if self.versionText.SetAlpha then self.versionText:SetAlpha(0) end
@@ -16944,7 +16944,7 @@ end
 -- SignalFire 1.4.23: no-local central visible-version finalizer.
 -- Keep this block free of `local` declarations; BronzeLFG.lua is already near
 -- Lua 5.1/Wrath's 200-local main-chunk compiler limit.
-VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.5.1"
 BRONZELFG_VERSION = VERSION
 BLFG_VERSION = VERSION
 BronzeLFG_Version = VERSION
@@ -16953,7 +16953,7 @@ if BronzeLFG then
   if BronzeLFG_ApplyVisibleVersion then
     BronzeLFG_ApplyVisibleVersion()
   elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
-    BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+    BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION)))
   end
 end
 if CreateFrame then
@@ -16961,7 +16961,7 @@ if CreateFrame then
   BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_LOGIN")
   BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
   BLFG_SFV_FinalizeFrame:SetScript("OnEvent", function()
-    VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+    VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.5.1"
     BRONZELFG_VERSION = VERSION
     BLFG_VERSION = VERSION
     BronzeLFG_Version = VERSION
@@ -16970,7 +16970,7 @@ if CreateFrame then
       if BronzeLFG_ApplyVisibleVersion then
         BronzeLFG_ApplyVisibleVersion()
       elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
-        BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+        BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION)))
       end
     end
   end)
