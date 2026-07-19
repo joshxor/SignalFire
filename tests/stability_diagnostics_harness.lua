@@ -43,7 +43,11 @@ assert(publicCountAfterProbe == publicCountBeforeProbe, "ownership probe created
 assert(networkSends == 0, "ownership probe generated network traffic")
 
 local signalFireAddMessage = ChatFrame1.AddMessage
-ChatFrame1.AddMessage = function(self, ...) return signalFireAddMessage(self, ...) end
+ChatFrame1.AddMessage = function(self, text, ...)
+  assert(type(text) == "string", "later chat wrapper requires a string payload")
+  string.lower(text)
+  return signalFireAddMessage(self, text, ...)
+end
 local chained = B:SF151_ProbeChatFrameOwnership()
 assert(frame_state(chained, "ChatFrame1") == "signalFireChained",
   "later chat wrapper was not reported as chained")
@@ -69,7 +73,11 @@ local signalFireSetItemRef = SetItemRef
 local setItem = S:ProbeSetItemRefOwnership()
 assert(setItem.state == "signalFireOutermost" and setItem.hits == 1,
   "outermost SetItemRef owner was not identified")
-SetItemRef = function(...) return signalFireSetItemRef(...) end
+SetItemRef = function(link, ...)
+  assert(type(link) == "string", "later SetItemRef wrapper requires a string payload")
+  string.sub(link, 1, 8)
+  return signalFireSetItemRef(link, ...)
+end
 setItem = S:ProbeSetItemRefOwnership()
 assert(setItem.state == "signalFireChained", "later SetItemRef wrapper was not reported as chained")
 SetItemRef = function(...)

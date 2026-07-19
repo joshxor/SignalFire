@@ -1719,9 +1719,9 @@ do
     local knownAddons = {"ElvUI","Prat-3.0","Prat","Chatter","PhanxChat","Glass","WIM",
       "WeakAuras","WeakAuras2","Questie","BugSack","BugGrabber"}
 
-    function S:ObserveSetItemRefProbe()
+    function S:ObserveSetItemRefProbe(link)
       local probe = self.setItemRefProbe
-      if not (probe and probe.active) then return false end
+      if not (probe and probe.active and link == probe.sentinel) then return false end
       probe.depth = (probe.depth or 0) + 1
       probe.maximumDepth = math.max(probe.maximumDepth or 0, probe.depth)
       probe.hits = (probe.hits or 0) + 1
@@ -1737,9 +1737,10 @@ do
       if type(expected) ~= "function" or type(current) ~= "function" then
         result.state = "signalFireMissing"
       else
-        local probe = {active=true, hits=0, depth=0, maximumDepth=0}
+        local probe = {active=true, sentinel="signalfirediag:ownership",
+          hits=0, depth=0, maximumDepth=0}
         self.setItemRefProbe = probe
-        local ok, err = pcall(current, nil, nil, nil, nil)
+        local ok, err = pcall(current, probe.sentinel, "", "LeftButton", nil)
         self.setItemRefProbe = nil
         result.callSucceeded = ok == true
         result.error = ok and nil or tostring(err or "probe call failed")

@@ -2187,7 +2187,7 @@ do
       frame._sfP3CustomBaseAddMessage = base
       frame._sfP3CustomAddMessageHook = function(self, text, ...)
         local probe = P3._ownershipProbe
-        if probe and probe.active and probe.frame == self then
+        if probe and probe.active and probe.sink == self then
           probe.depth = (probe.depth or 0) + 1
           probe.maximumDepth = math.max(probe.maximumDepth or 0, probe.depth)
           probe.hits = (probe.hits or 0) + 1
@@ -2358,10 +2358,10 @@ do
       return P3._stabilityDiagnosticsEnabled
     end
 
-    -- Explicit, one-shot reachability probe. The nil payload cannot be parsed as
-    -- chat and is intercepted before the stored SignalFire wrapper calls the
-    -- underlying message frame. If an outer wrapper rejects it first, ownership
-    -- remains unknown rather than being reported as missing.
+    -- Explicit, one-shot reachability probe. A temporary table proxy prevents a
+    -- missing chain from writing to a real chat frame. The valid, visually empty
+    -- string passes wrappers that reject nil and is intercepted before the stored
+    -- SignalFire wrapper calls the underlying message frame.
     function B:SF151_ProbeChatFrameOwnership()
       local report = {generation="1.5.1-phase10b", frames={}, totals={
         signalFireOutermost=0, signalFireChained=0, signalFireMissing=0,
@@ -2377,9 +2377,18 @@ do
         if type(stored) ~= "function" or type(current) ~= "function" then
           item.state = "signalFireMissing"
         else
-          local probe = {active=true, frame=frame, hits=0, depth=0, maximumDepth=0}
+          local sink = {}
+          setmetatable(sink, {__index=function(_, key)
+            if key == "AddMessage" then return function() end end
+            local value = frame[key]
+            if type(value) == "function" then
+              return function(_, ...) return value(frame, ...) end
+            end
+            return value
+          end})
+          local probe = {active=true, frame=frame, sink=sink, hits=0, depth=0, maximumDepth=0}
           P3._ownershipProbe = probe
-          local ok, err = pcall(current, frame, nil)
+          local ok, err = pcall(current, sink, "|c00000000|r")
           P3._ownershipProbe = nil
           item.callSucceeded = ok == true
           item.error = ok and nil or tostring(err or "probe call failed")
