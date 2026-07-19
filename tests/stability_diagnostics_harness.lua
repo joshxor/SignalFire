@@ -103,8 +103,22 @@ UpdateAddOnCPUUsage, GetAddOnCPUUsage, GetCVar = oldUpdateCPU, oldGetCPU, oldGet
 local report = B:SF151_GetStabilityDiagnostics()
 assert(report.enabled and report.maximumActiveDepth >= 2, "integrated report missed call depth")
 assert(report.refresh and report.refresh.generation, "integrated report missed refresh ownership")
+assert(type(report.cacheSizes) == "table" and #report.cacheSizes > 0,
+  "integrated report missed current cache sizes")
 assert(#report.recent <= S.maximumRecent and #report.errors <= S.maximumErrors,
   "integrated report contains unbounded history")
+
+local printed = {}
+local oldAddMessage = DEFAULT_CHAT_FRAME.AddMessage
+DEFAULT_CHAT_FRAME.AddMessage = function(_, text) printed[#printed + 1] = tostring(text or "") end
+S:PrintReport()
+DEFAULT_CHAT_FRAME.AddMessage = oldAddMessage
+local output = table.concat(printed, "\n")
+for _, label in ipairs({"chat ownership:", "panels:", "timers:", "cache lifecycle:",
+    "conflicts:", "resources:"}) do
+  assert(string.find(output, label, 1, true), "printed report missed " .. label)
+end
+assert(#printed < 80, "printed diagnostic report is not reasonably bounded")
 
 assert(B:SF151_HandleDiagnosticSlash("diag stop") == true and S.enabled == false,
   "diag stop was not handled")

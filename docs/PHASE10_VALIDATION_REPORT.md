@@ -67,6 +67,12 @@ CPU attribution was harness-tested both unavailable/disabled and enabled. Enabli
 
 The Fengari test runtime does not expose useful Lua memory samples, so its long-session memory fields were reported as unavailable. The approved Phase 9 in-game readings remain the memory baseline; no SignalFire-only memory claim is made from total Lua memory.
 
+## Initial Field Sample
+
+The first in-game diagnostic sample reported SignalFire at approximately 3.95 MB when the diagnostic baseline started and 4.45 MB at the final sample, a roughly 499 KB increase during warmup. Total Lua memory increased by approximately 5.35 MB across 28 loaded addons; that total is not attributed to SignalFire. The sample showed queue depth 0, reentrancy 0, cycles 0, errors 0, wrapper replacements 0, and Network message/presence maxima below 0.2 ms. The refresh scheduler merged 89 of 90 lifetime requests while panels were hidden.
+
+All ten ChatFrame wrappers remained installed. `SetItemRefChanged=true` was reported as an external-wrapper indicator; it is not proof of a conflict and requires an all-other-addons-disabled comparison. The field sample also exposed that `/sf diag report` collected but did not print its panel, timer, cache, conflict, and bounded-history sections. The RC was corrected to print those sections concisely, and the diagnostics/parser/migration gates were rerun successfully.
+
 ## Regression Results
 
 - Lua 5.1 parse: 26 Lua files passed.
@@ -98,7 +104,7 @@ These are static and harness results, not in-game confirmation.
 ## Package
 
 - File: `SignalFire-1.5.1-phase10-integrated-stability-rc.zip`
-- SHA-256: `C85F34E9BAA90F0B10AF8568698D2318E9355A7000F5ED4D79A6568053293011`
+- SHA-256: `01ABFCEF01EAB82F77E15A1C1BFACECC52D04E2B167DCC98FDDF1C8742D9E2C1`
 - Contents: `SignalFire/` at ZIP root, 13 TOC-listed Lua files, one TOC, no reports/tests/README.
 
 ## Remaining Risks

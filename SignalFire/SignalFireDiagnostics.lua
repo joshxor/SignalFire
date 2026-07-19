@@ -1719,6 +1719,8 @@ do
       local cache = B.SF151_GetCacheLifecycleDiagnostics and B:SF151_GetCacheLifecycleDiagnostics(false) or {}
       local refresh = B.SF151_GetRefreshStats and B:SF151_GetRefreshStats() or {}
       local chatFrames = B.SF151_GetChatFrameDiagnostics and B:SF151_GetChatFrameDiagnostics() or {}
+      local perf = _G.SignalFirePerf151
+      local cacheSizes = perf and perf.SnapshotCaches and perf:SnapshotCaches() or {}
       return {generation=self.generation, enabled=self.enabled, deep=self.deep,
         version=SignalFire_GetVersion and SignalFire_GetVersion() or tostring(SignalFire_VERSION or "unknown"),
         profile=BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "unknown",
@@ -1729,7 +1731,7 @@ do
         cyclicEntries=self.cyclicEntries or 0, crossSubsystemEntries=self.crossSubsystemEntries or 0,
         wrapperReplacements=self.wrapperReplacements or 0, resources=self.lastSample,
         timers=timer, chat={queueDepth=chat.queueDepth or 0, counters=chat.counters or {}, frames=chatFrames},
-        lazy=lazy, cache=cache, refresh=refresh, conflicts=self:GetConflicts()}
+        lazy=lazy, cache=cache, cacheSizes=cacheSizes, refresh=refresh, conflicts=self:GetConflicts()}
     end
 
     function S:PrintReport()
@@ -1752,6 +1754,70 @@ do
           .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)
           .. ", nested=" .. tostring(refresh.nestedSuppressed or 0))
       end
+      local chatFrames = report.chat.frames or {}
+      local installed, replaced = 0, 0
+      for _, frame in ipairs(chatFrames.frames or {}) do
+        if frame.signalFireWrapperInstalled then installed = installed + 1 end
+        if frame.anotherFunctionReplacedIt then replaced = replaced + 1 end
+      end
+      local chatCounters = chatFrames.counters or report.chat.counters or {}
+      s_emit("chat ownership: frames=" .. tostring(#(chatFrames.frames or {}))
+        .. ", installed=" .. tostring(installed) .. ", replaced=" .. tostring(replaced)
+        .. ", filter=" .. tostring(chatCounters.filterCalls or 0)
+        .. ", wrapper=" .. tostring(chatCounters.wrapperCalls or 0)
+        .. ", linked=" .. tostring(chatCounters.linksAppended or 0)
+        .. ", parsed=" .. tostring(chatCounters.parserCalls or 0)
+        .. ", drops=" .. tostring(chatCounters.queueDrops or 0)
+        .. ", maxDepth=" .. tostring(chatCounters.maxDepth or 0))
+      local lazy = report.lazy or {}
+      local built, dirty, panelFailures = {}, {}, 0
+      for name, panel in pairs(lazy.panels or {}) do
+        if panel.built then table.insert(built, name) end
+        if panel.dirty then table.insert(dirty, name) end
+        panelFailures = panelFailures + (tonumber(panel.failures or 0) or 0)
+      end
+      table.sort(built); table.sort(dirty)
+      s_emit("panels: shell=" .. s_bool(lazy.shellBuilt) .. ", shellBuilds=" .. tostring(lazy.shellBuildCount or 0)
+        .. ", built=" .. (#built > 0 and table.concat(built, ",") or "none")
+        .. ", dirty=" .. (#dirty > 0 and table.concat(dirty, ",") or "none")
+        .. ", background=" .. tostring(lazy.panelsBuiltWhileHidden or 0)
+        .. ", failures=" .. tostring(panelFailures + #(lazy.errors or {})))
+      local timer = report.timers or {}
+      s_emit("timers: delayed=" .. s_bool(timer.delayedActive) .. "/" .. tostring(timer.delayedTasks or 0)
+        .. ", network=" .. s_bool(timer.networkActive) .. ", applicant=" .. s_bool(timer.applicantActive)
+        .. ", drag=" .. s_bool(timer.dragActive) .. ", legacy="
+        .. tostring((timer.oldCoreActive and 1 or 0) + (timer.oldNetworkActive and 1 or 0)
+          + (timer.oldPresenceActive and 1 or 0))
+        .. ", callbackErrors=" .. tostring(timer.callbackErrorCount or 0))
+      local cache = report.cache or {}
+      s_emit("cache lifecycle: runs=" .. tostring(cache.runs or 0)
+        .. ", removed=" .. tostring(cache.entriesRemoved or 0)
+        .. ", ttl=" .. tostring(cache.ttlRemovals or 0)
+        .. ", evicted=" .. tostring(cache.boundedEvictions or 0)
+        .. ", orphans=" .. tostring(cache.orphanedReferencesRemoved or 0)
+        .. ", largest=" .. tostring(cache.largestCacheName or "none") .. "/" .. tostring(cache.largestCacheSize or 0)
+        .. ", errors=" .. tostring(#(cache.errors or {})))
+      local cacheSizes = report.cacheSizes or {}
+      table.sort(cacheSizes, function(left, right)
+        if (left.count or 0) ~= (right.count or 0) then return (left.count or 0) > (right.count or 0) end
+        return tostring(left.name) < tostring(right.name)
+      end)
+      for index = 1, math.min(8, #cacheSizes) do
+        local row = cacheSizes[index]
+        if (row.count or 0) > 0 then
+          s_emit("cache " .. tostring(row.name) .. "=" .. tostring(row.count)
+            .. ", peak=" .. tostring(row.maximum or row.count)
+            .. ", persisted=" .. s_bool(row.persisted))
+        end
+      end
+      local conflicts = report.conflicts or {}
+      local addonNames = {}
+      for _, addon in ipairs(conflicts.addons or {}) do table.insert(addonNames, addon.name) end
+      s_emit("conflicts: addons=" .. (#addonNames > 0 and table.concat(addonNames, ",") or "none")
+        .. ", SetItemRefChanged=" .. s_bool(conflicts.setItemRefChanged)
+        .. ", tooltipChanged=" .. s_bool(conflicts.tooltipChanged)
+        .. ", scaleOwnerChanged=" .. s_bool(conflicts.scaleOwnerChanged)
+        .. ", indicatorsOnly=true")
       for _, row in ipairs(report.methods) do
         if (row.requests or 0) > 0 then
           s_emit(row.owner .. ": req=" .. tostring(row.requests) .. ", exec=" .. tostring(row.executions)
@@ -1765,9 +1831,23 @@ do
       local resources = report.resources
       if resources then
         s_emit("resources: SignalFireKB=" .. tostring(resources.signalFireKB or "unsupported")
+          .. ", deltaKB=" .. tostring(resources.signalFireDeltaKB or "n/a")
           .. ", totalLuaKB=" .. tostring(resources.totalLuaKB or "unsupported")
+          .. ", totalDeltaKB=" .. tostring(resources.totalLuaDeltaKB or "n/a")
           .. ", SignalFireCPU=" .. tostring(resources.signalFireCPU or "profiling-disabled")
           .. ", scriptProfile=" .. s_bool(resources.scriptProfile))
+      end
+      local recentStart = math.max(1, #report.recent - 7)
+      for index = recentStart, #report.recent do
+        local row = report.recent[index]
+        s_emit("slow " .. tostring(row.owner) .. ": " .. string.format("%.3fms", row.elapsed or 0)
+          .. ", level=" .. tostring(row.level or "none") .. ", reentrant=" .. s_bool(row.reentrant)
+          .. ", cyclic=" .. s_bool(row.cyclic) .. ", source=" .. tostring(row.source or "direct"))
+      end
+      local errorStart = math.max(1, #report.errors - 5)
+      for index = errorStart, #report.errors do
+        local row = report.errors[index]
+        s_emit("error " .. tostring(row.owner) .. ": " .. string.sub(tostring(row.error or "unknown"), 1, 240))
       end
       return report
     end
