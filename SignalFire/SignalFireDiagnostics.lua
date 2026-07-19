@@ -1259,3 +1259,625 @@ do
   end
 end
 -- SIGNALFIRE_PHASE9_CACHE_LIFECYCLE_END
+
+-- Phase 10 opt-in integrated stability and conflict diagnostics.
+-- SIGNALFIRE_PHASE10_STABILITY_BEGIN
+do
+  local B = _G.BronzeLFG
+  if B and CreateFrame then
+    local S = _G.SignalFireStability151 or {}
+    _G.SignalFireStability151 = S
+    S.generation = "1.5.1-phase10"
+    S.enabled = false
+    S.deep = false
+    S.maximumRecent = 32
+    S.maximumErrors = 12
+    S.maximumSamples = 16
+    S.thresholds = {notice=10, warning=25, severe=50}
+    S.bindings = S.bindings or {}
+    S.expectedSetItemRef = S.expectedSetItemRef or _G.SetItemRef
+    S.expectedTooltipSetHyperlink = S.expectedTooltipSetHyperlink
+      or (_G.ItemRefTooltip and _G.ItemRefTooltip.SetHyperlink)
+
+    -- Phase 10 diagnostics are session-only. Method records use fixed audited
+    -- owner names (maximum 40). Recent trigger/error/resource histories are
+    -- FIFO-capped at 32/12/16. Reset or reload clears them. Nothing is stored in
+    -- BronzeLFG_DB, and no raw chat or private message body is captured.
+    S.methods = S.methods or {}
+    S.recent = S.recent or {}
+    S.errors = S.errors or {}
+    S.samples = S.samples or {}
+    S.active = S.active or {}
+
+    local function s_now()
+      if GetTime then return GetTime() end
+      if time then return time() end
+      return 0
+    end
+
+    local function s_clock()
+      if debugprofilestop then return debugprofilestop() end
+      return s_now() * 1000
+    end
+
+    local function s_pack(...)
+      return {n=select("#", ...), ...}
+    end
+
+    local function s_emit(value)
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("SignalFire> " .. tostring(value or ""))
+      end
+    end
+
+    local function s_bool(value)
+      return value and "true" or "false"
+    end
+
+    local function s_source(value)
+      if type(value) ~= "string" then return nil end
+      value = value:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+      value = value:gsub("|H[^|]+|h.-|h", "[link]"):gsub("[%c]", " ")
+      value = value:gsub("^%s+", ""):gsub("%s+$", "")
+      if #value > 64 then value = string.sub(value, 1, 64) end
+      return value ~= "" and value or nil
+    end
+
+    local function s_push(list, maximum, value)
+      table.insert(list, value)
+      while #list > maximum do table.remove(list, 1) end
+    end
+
+    local function s_frame_visible(field)
+      local frame = field and B[field] or nil
+      return frame and frame.IsShown and frame:IsShown() and true or false
+    end
+
+    local function s_panel_built(key)
+      local lazy = _G.SignalFireLazyPanels151
+      local row = lazy and lazy.panels and lazy.panels[key] or nil
+      if not row then return nil end
+      if row.ready then
+        local ok, value = pcall(row.ready, B)
+        if ok then return value and true or false end
+      end
+      return row.built == true
+    end
+
+    -- Phase 10 release migration owns only structural repair. It preserves
+    -- valid user values, never constructs UI, and is safe to run repeatedly.
+    -- No migration state is cached outside the supplied SavedVariables table.
+    function B:SF151_RepairReleaseDatabase(db)
+      db = type(db) == "table" and db or BronzeLFG_DB
+      if type(db) ~= "table" then return false, {repairs=0} end
+      local repairs = 0
+      local function ensure_table(owner, key)
+        if type(owner[key]) ~= "table" then owner[key] = {}; repairs = repairs + 1 end
+        return owner[key]
+      end
+      local options = ensure_table(db, "options")
+      if self.SF151_ApplyChatLinkSafeDefault then self:SF151_ApplyChatLinkSafeDefault(db) end
+      if options.publicGroups == nil then options.publicGroups = true; repairs = repairs + 1 end
+      if options.publicStrict == nil then options.publicStrict = true; repairs = repairs + 1 end
+      if options.parseGuildRecruitment == nil then options.parseGuildRecruitment = true; repairs = repairs + 1 end
+      if options.serverProfile ~= "Triumvirate" and options.serverProfile ~= "Ascension" then
+        options.serverProfile = "Triumvirate"; repairs = repairs + 1
+      end
+      local validScale = {[.75]=true, [.85]=true, [.9]=true, [1]=true, [1.1]=true, [1.2]=true, [1.25]=true}
+      local scale = tonumber(options.scale)
+      if not scale or not validScale[scale] then options.scale = 1; repairs = repairs + 1 end
+      if options.chatLinkScope ~= "main" and options.chatLinkScope ~= "visible"
+          and options.chatLinkScope ~= "all" then
+        options.chatLinkScope = "main"; repairs = repairs + 1
+      end
+      ensure_table(options, "modules")
+      local byProfile = ensure_table(options, "modulesByProfile")
+      local saved = ensure_table(options, "moduleSavedSettings")
+      for _, profile in ipairs({"Triumvirate", "Ascension"}) do
+        ensure_table(byProfile, profile)
+        ensure_table(saved, profile)
+      end
+      local moduleKeys = {"chatParsing", "guildBrowser", "recruitmentCreator", "eventBoard",
+        "notices", "invasions", "ascensionListingTools", "raidTools"}
+      for _, owner in ipairs({options.modules, byProfile.Triumvirate, byProfile.Ascension}) do
+        for _, key in ipairs(moduleKeys) do
+          if owner[key] ~= nil and owner[key] ~= true and owner[key] ~= false then
+            owner[key] = nil; repairs = repairs + 1
+          end
+        end
+      end
+      if byProfile.Ascension.invasions ~= false then
+        byProfile.Ascension.invasions = false; repairs = repairs + 1
+      end
+      for _, key in ipairs({"profile", "favorites", "favoriteGuilds", "parserStats",
+          "guildBrowser", "publicHiddenTypes", "recruitmentCreator", "minimap",
+          "chatGuildListings", "whoGuilds", "whoPlayers", "network", "signalFireNetwork"}) do
+        ensure_table(db, key)
+      end
+      local network = db.network
+      for _, key in ipairs({"favoriteAlertCooldowns", "favoriteAlertSeenListings",
+          "favoriteOnlineSeen", "noticeSeen", "noticeDismissed"}) do
+        ensure_table(network, key)
+      end
+      local shared = db.signalFireNetwork
+      for _, key in ipairs({"events", "notices", "eventAlertSeen", "eventAlertKnown",
+          "eventAlertCooldowns", "eventDismissed", "noticeSeen", "noticeDismissed"}) do
+        ensure_table(shared, key)
+      end
+      options.sf151Phase10ReleaseMigration = true
+      return true, {repairs=repairs, profile=options.serverProfile, scale=options.scale,
+        chatLinks=options.inlineChatLinks == true}
+    end
+
+    function S:Reset()
+      self.methods = {}
+      self.recent = {}
+      self.errors = {}
+      self.samples = {}
+      self.active = {}
+      self.maximumActiveDepth = 0
+      self.crossSubsystemEntries = 0
+      self.reentrantEntries = 0
+      self.cyclicEntries = 0
+      self.wrapperReplacements = 0
+      self.startedAt = s_now()
+      self.baseline = nil
+      return true
+    end
+
+    function S:Method(owner)
+      local row = self.methods[owner]
+      if not row then
+        row = {requests=0, executions=0, reentrant=0, cyclic=0, hidden=0,
+          unbuilt=0, callsThisSecond=0, executionsThisSecond=0,
+          maxRequestsPerSecond=0, maxExecutionsPerSecond=0,
+          callsThisFrame=0, executionsThisFrame=0, maxRequestsInFrame=0,
+          maxExecutionsInFrame=0, totalMs=0, longestMs=0, errors=0}
+        self.methods[owner] = row
+      end
+      return row
+    end
+
+    function S:Enter(owner, kind, source, panelField, panelKey)
+      local stamp = s_now()
+      local row = self:Method(owner)
+      local second = math.floor(stamp)
+      local frame = math.floor((stamp * 60) + .5)
+      if row.second ~= second then
+        row.second = second
+        row.callsThisSecond = 0
+        row.executionsThisSecond = 0
+      end
+      if row.frame ~= frame then
+        row.frame = frame
+        row.callsThisFrame = 0
+        row.executionsThisFrame = 0
+      end
+      row.requests = row.requests + 1
+      row.callsThisSecond = row.callsThisSecond + 1
+      row.callsThisFrame = row.callsThisFrame + 1
+      row.maxRequestsPerSecond = math.max(row.maxRequestsPerSecond, row.callsThisSecond)
+      row.maxRequestsInFrame = math.max(row.maxRequestsInFrame, row.callsThisFrame)
+      if kind ~= "request" then
+        row.executions = row.executions + 1
+        row.executionsThisSecond = row.executionsThisSecond + 1
+        row.executionsThisFrame = row.executionsThisFrame + 1
+        row.maxExecutionsPerSecond = math.max(row.maxExecutionsPerSecond, row.executionsThisSecond)
+        row.maxExecutionsInFrame = math.max(row.maxExecutionsInFrame, row.executionsThisFrame)
+      end
+      if panelField and not s_frame_visible(panelField) then row.hidden = row.hidden + 1 end
+      if panelKey and s_panel_built(panelKey) == false then row.unbuilt = row.unbuilt + 1 end
+      local reentrant = false
+      for _, item in ipairs(self.active) do
+        if item.owner == owner then reentrant = true; break end
+      end
+      local parent = self.active[#self.active]
+      local cyclic = reentrant or (#self.active >= 24)
+      if reentrant then
+        row.reentrant = row.reentrant + 1
+        self.reentrantEntries = self.reentrantEntries + 1
+      end
+      if cyclic then
+        row.cyclic = row.cyclic + 1
+        self.cyclicEntries = self.cyclicEntries + 1
+      end
+      if parent and tostring(parent.owner):match("^[^.]+") ~= tostring(owner):match("^[^.]+") then
+        self.crossSubsystemEntries = self.crossSubsystemEntries + 1
+      end
+      row.lastSource = s_source(source) or tostring(parent and parent.owner or "direct")
+      local token = {owner=owner, row=row, started=s_clock(), reentrant=reentrant, cyclic=cyclic}
+      table.insert(self.active, token)
+      self.maximumActiveDepth = math.max(self.maximumActiveDepth or 0, #self.active)
+      return token
+    end
+
+    function S:Leave(token, ok, err)
+      local elapsed = math.max(0, s_clock() - token.started)
+      local row = token.row
+      row.totalMs = row.totalMs + elapsed
+      row.longestMs = math.max(row.longestMs, elapsed)
+      row.lastMs = elapsed
+      if not ok then
+        row.errors = row.errors + 1
+        s_push(self.errors, self.maximumErrors,
+          {owner=token.owner, error=tostring(err or "unknown"), at=s_now()})
+      end
+      local level = elapsed >= self.thresholds.severe and "severe"
+        or elapsed >= self.thresholds.warning and "warning"
+        or elapsed >= self.thresholds.notice and "notice" or nil
+      if level then row[level] = (row[level] or 0) + 1 end
+      if level or token.reentrant or token.cyclic then
+        local entry = {owner=token.owner, elapsed=elapsed, level=level,
+          reentrant=token.reentrant, cyclic=token.cyclic, at=s_now(), source=row.lastSource}
+        if self.deep and debugstack then
+          local stackOK, stack = pcall(debugstack, 3, 8, 8)
+          if stackOK then entry.stack=string.sub(tostring(stack or ""), 1, 1200) end
+        end
+        s_push(self.recent, self.maximumRecent, entry)
+      end
+      for index = #self.active, 1, -1 do
+        if self.active[index] == token then table.remove(self.active, index); break end
+      end
+      return elapsed
+    end
+
+    function S:InstallScaleOwner()
+      local frame = B.frame
+      if not frame or type(frame.SetScale) ~= "function" then return false end
+      local binding = self.scaleBinding
+      if binding and binding.frame == frame then
+        if frame.SetScale == binding.wrapper then return true end
+        if not binding.replaced then
+          binding.replaced = true
+          self.wrapperReplacements = (self.wrapperReplacements or 0) + 1
+        end
+        return false
+      end
+      binding = {frame=frame, original=frame.SetScale, installedAt=s_now()}
+      binding.wrapper = function(owner, value, ...)
+        if not S.enabled then return binding.original(owner, value, ...) end
+        local token = S:Enter("ui.scale", "execution", tostring(value or "nil"))
+        local results = s_pack(pcall(binding.original, owner, value, ...))
+        S:Leave(token, results[1], results[2])
+        if not results[1] then error(results[2], 0) end
+        return unpack(results, 2, results.n)
+      end
+      self.scaleBinding = binding
+      frame.SetScale = binding.wrapper
+      return true
+    end
+
+    function S:WrapMethod(owner, methodName, kind, panelField, panelKey, captureSource)
+      local current = B[methodName]
+      if type(current) ~= "function" then return false end
+      local binding = self.bindings[owner]
+      if binding then
+        if B[methodName] == binding.wrapper then return true end
+        binding.replaced = true
+        binding.replacedBy = tostring(B[methodName])
+        self.wrapperReplacements = (self.wrapperReplacements or 0) + 1
+        return false
+      end
+      binding = {owner=owner, method=methodName, original=current, kind=kind,
+        panelField=panelField, panelKey=panelKey, installedAt=s_now()}
+      binding.wrapper = function(self, ...)
+        if not S.enabled then return binding.original(self, ...) end
+        local source = captureSource and select(1, ...) or nil
+        local token = S:Enter(owner, kind, source, panelField, panelKey)
+        local results = s_pack(pcall(binding.original, self, ...))
+        if results[1] and (owner == "ui.CreateUI" or owner == "ui.Show"
+            or owner == "ui.Toggle" or owner == "ui.ShowOptions") then
+          S:InstallScaleOwner()
+        end
+        S:Leave(token, results[1], results[2])
+        if not results[1] then error(results[2], 0) end
+        return unpack(results, 2, results.n)
+      end
+      binding.wrapperIdentity = tostring(binding.wrapper)
+      self.bindings[owner] = binding
+      B[methodName] = binding.wrapper
+      return true
+    end
+
+    function S:Install()
+      local specs = {
+        {"ui.CreateUI","CreateUI","execution"}, {"ui.Show","Show","execution"},
+        {"ui.Toggle","Toggle","execution"}, {"ui.ShowBrowse","ShowBrowse","execution"},
+        {"ui.ShowPublicGroups","ShowPublicGroups","execution"}, {"ui.ShowNetwork","ShowSFNetwork","execution"},
+        {"ui.ShowRoster","ShowFullRoster","execution"}, {"ui.ShowGuild","ShowGuildBrowser","execution"},
+        {"ui.ShowApplicants","ShowApplicants","execution"}, {"ui.ShowOptions","ShowOptions","execution"},
+        {"ui.ShowCreate","ShowCreate","execution"}, {"ui.ShowProfile","ShowProfile","execution"},
+        {"refresh.request","SF151_RequestPanelRefresh","request",nil,nil,true},
+        {"refresh.publicRequest","RequestPublicGroupsRefresh","request",nil,nil,true},
+        {"refresh.public","RefreshPublicGroups","execution","publicPanel","publicGroups",true},
+        {"refresh.browse","RefreshBrowse","execution","browse","browse",true},
+        {"refresh.network","RefreshSFNetwork","execution","sfnPanel","network",true},
+        {"refresh.roster","RefreshOnlinePanel","execution","onlinePanel","fullRoster",true},
+        {"refresh.guild","RefreshGuildBrowser","execution","guildPanel","guildBrowser",true},
+        {"refresh.applicants","RefreshApplicants","execution","apps","applicants",true},
+        {"refresh.myListing","RefreshMyListing","execution","myPanel","myListing",true},
+        {"refresh.events","SFE_RefreshEventBoard","execution","sfeEventPanel","network",true},
+        {"refresh.invasions","RefreshInvasions","execution","invasionPanel","invasions",true},
+        {"profile.set","SF143_SetServerProfile","execution",nil,nil,true},
+        {"profile.create","SF143_ApplyProfileToCreate","execution"},
+        {"profile.options","SF143_ApplyProfileToOptions","execution"},
+        {"profile.modules","SFModulesApply","execution"},
+        {"create.controls","UpdateCreateControls","execution"},
+        {"network.presence","HandlePresence","execution"},
+        {"network.message","HandleMessage","execution"},
+        {"link.public","OpenPublicGroupLink","execution"},
+        {"link.guild","OpenGuildBrowserLink","execution"},
+      }
+      for _, spec in ipairs(specs) do
+        self:WrapMethod(spec[1], spec[2], spec[3], spec[4], spec[5], spec[6])
+      end
+      self:InstallScaleOwner()
+      self.installed = true
+      return true
+    end
+
+    local function s_addon_index()
+      if not GetNumAddOns or not GetAddOnInfo then return nil end
+      for index = 1, (tonumber(GetNumAddOns() or 0) or 0) do
+        local name = GetAddOnInfo(index)
+        if tostring(name or ""):lower() == "signalfire" then return index end
+      end
+      return nil
+    end
+
+    local function s_loaded_count()
+      if not GetNumAddOns then return nil end
+      local total = 0
+      for index = 1, (tonumber(GetNumAddOns() or 0) or 0) do
+        local loaded = IsAddOnLoaded and IsAddOnLoaded(index)
+        if loaded then total = total + 1 end
+      end
+      return total
+    end
+
+    function S:SampleResources(kind)
+      local sample = {at=s_now(), kind=tostring(kind or "memory"), loadedAddons=s_loaded_count()}
+      if collectgarbage then
+        local ok, value = pcall(collectgarbage, "count")
+        if ok then sample.totalLuaKB=tonumber(value or 0) end
+      end
+      local index = s_addon_index()
+      sample.addonIndex = index
+      if index and UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
+        pcall(UpdateAddOnMemoryUsage)
+        local ok, value = pcall(GetAddOnMemoryUsage, index)
+        if ok then sample.signalFireKB=tonumber(value or 0) end
+      end
+      local profileValue = GetCVar and GetCVar("scriptProfile") or nil
+      sample.scriptProfile = tostring(profileValue or "") == "1"
+      if kind == "cpu" and sample.scriptProfile and index and UpdateAddOnCPUUsage and GetAddOnCPUUsage then
+        pcall(UpdateAddOnCPUUsage)
+        local ok, value = pcall(GetAddOnCPUUsage, index)
+        if ok then sample.signalFireCPU=tonumber(value or 0) end
+      end
+      if self.baseline then
+        if sample.totalLuaKB and self.baseline.totalLuaKB then sample.totalLuaDeltaKB=sample.totalLuaKB-self.baseline.totalLuaKB end
+        if sample.signalFireKB and self.baseline.signalFireKB then sample.signalFireDeltaKB=sample.signalFireKB-self.baseline.signalFireKB end
+        if sample.signalFireCPU and self.baseline.signalFireCPU then sample.signalFireCPUDelta=sample.signalFireCPU-self.baseline.signalFireCPU end
+      end
+      s_push(self.samples, self.maximumSamples, sample)
+      if not self.baseline then self.baseline=sample end
+      self.lastSample=sample
+      return sample
+    end
+
+    local knownAddons = {"ElvUI","Prat-3.0","Prat","Chatter","PhanxChat","Glass","WIM",
+      "WeakAuras","WeakAuras2","Questie","BugSack","BugGrabber"}
+
+    function S:GetConflicts()
+      local report = {addons={}, frames={}, setItemRefChanged=_G.SetItemRef ~= self.expectedSetItemRef,
+        tooltipChanged=_G.ItemRefTooltip and _G.ItemRefTooltip.SetHyperlink ~= self.expectedTooltipSetHyperlink or false,
+        scaleOwnerChanged=self.scaleBinding and self.scaleBinding.frame
+          and self.scaleBinding.frame.SetScale ~= self.scaleBinding.wrapper or false,
+        filterIntrospection="unavailable on WoW 3.3.5; registration identity is reported instead",
+        wrapperChainIntrospection="closure chains are unavailable; identity/replacement indicators only"}
+      for _, name in ipairs(knownAddons) do
+        local loaded = IsAddOnLoaded and IsAddOnLoaded(name) and true or false
+        local enabled
+        if GetAddOnEnableState then
+          local ok, value = pcall(GetAddOnEnableState, UnitName and UnitName("player") or nil, name)
+          if ok then enabled=value end
+        end
+        if loaded or (enabled and enabled > 0) then
+          table.insert(report.addons, {name=name, loaded=loaded, enabled=enabled})
+        end
+      end
+      for index = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. tostring(index)]
+        if frame then
+          table.insert(report.frames, {name=frame.GetName and frame:GetName() or ("ChatFrame" .. index),
+            expected=frame._sfP3CustomAddMessageHook ~= nil,
+            installed=frame._sfP3CustomAddMessageHook ~= nil and frame.AddMessage == frame._sfP3CustomAddMessageHook,
+            replaced=frame._sfP3CustomAddMessageHook ~= nil and frame.AddMessage ~= frame._sfP3CustomAddMessageHook,
+            generation=frame._sfP3WrapperGeneration})
+        end
+      end
+      return report
+    end
+
+    function S:GetReport()
+      local methods = {}
+      for owner, row in pairs(self.methods) do
+        local copy = {owner=owner}
+        for key, value in pairs(row) do copy[key]=value end
+        table.insert(methods, copy)
+      end
+      table.sort(methods, function(left, right) return left.owner < right.owner end)
+      local buildVersion, buildNumber, buildDate, tocVersion
+      if GetBuildInfo then
+        local ok, a, b, c, d = pcall(GetBuildInfo)
+        if ok then buildVersion, buildNumber, buildDate, tocVersion=a,b,c,d end
+      end
+      local timer = B.SF151_GetTimerDiagnostics and B:SF151_GetTimerDiagnostics() or {}
+      local chat = B.SF151_GetChatPublicIndexDiagnostics and B:SF151_GetChatPublicIndexDiagnostics() or {}
+      local lazy = B.SF151_GetLazyPanelDiagnostics and B:SF151_GetLazyPanelDiagnostics() or {}
+      local cache = B.SF151_GetCacheLifecycleDiagnostics and B:SF151_GetCacheLifecycleDiagnostics(false) or {}
+      local refresh = B.SF151_GetRefreshStats and B:SF151_GetRefreshStats() or {}
+      local chatFrames = B.SF151_GetChatFrameDiagnostics and B:SF151_GetChatFrameDiagnostics() or {}
+      return {generation=self.generation, enabled=self.enabled, deep=self.deep,
+        version=SignalFire_GetVersion and SignalFire_GetVersion() or tostring(SignalFire_VERSION or "unknown"),
+        profile=BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "unknown",
+        chatLinks=BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.inlineChatLinks == true,
+        client={version=buildVersion, build=buildNumber, date=buildDate, toc=tocVersion},
+        loadedAddons=s_loaded_count(), methods=methods, recent=self.recent, errors=self.errors,
+        maximumActiveDepth=self.maximumActiveDepth or 0, reentrantEntries=self.reentrantEntries or 0,
+        cyclicEntries=self.cyclicEntries or 0, crossSubsystemEntries=self.crossSubsystemEntries or 0,
+        wrapperReplacements=self.wrapperReplacements or 0, resources=self.lastSample,
+        timers=timer, chat={queueDepth=chat.queueDepth or 0, counters=chat.counters or {}, frames=chatFrames},
+        lazy=lazy, cache=cache, refresh=refresh, conflicts=self:GetConflicts()}
+    end
+
+    function S:PrintReport()
+      local report = self:GetReport()
+      s_emit("diag owner=" .. report.generation .. ", enabled=" .. s_bool(report.enabled)
+        .. ", deep=" .. s_bool(report.deep) .. ", version=" .. tostring(report.version)
+        .. ", profile=" .. tostring(report.profile) .. ", chatLinks=" .. s_bool(report.chatLinks))
+      s_emit("client=" .. tostring(report.client.version or "unsupported") .. "/" .. tostring(report.client.build or "?")
+        .. ", loadedAddons=" .. tostring(report.loadedAddons or "unsupported")
+        .. ", queue=" .. tostring(report.chat.queueDepth or 0))
+      s_emit("stability: depth=" .. tostring(report.maximumActiveDepth) .. ", reentrant=" .. tostring(report.reentrantEntries)
+        .. ", cycles=" .. tostring(report.cyclicEntries) .. ", cross=" .. tostring(report.crossSubsystemEntries)
+        .. ", replacements=" .. tostring(report.wrapperReplacements) .. ", recent=" .. tostring(#report.recent)
+        .. ", errors=" .. tostring(#report.errors))
+      local refresh = report.refresh or {}
+      if refresh.generation then
+        s_emit("refresh scheduler: requests=" .. tostring(refresh.requests or 0)
+          .. ", executed=" .. tostring(refresh.executed or 0)
+          .. ", merged=" .. tostring(refresh.merged or 0)
+          .. ", hidden=" .. tostring(refresh.hiddenSkipped or 0)
+          .. ", nested=" .. tostring(refresh.nestedSuppressed or 0))
+      end
+      for _, row in ipairs(report.methods) do
+        if (row.requests or 0) > 0 then
+          s_emit(row.owner .. ": req=" .. tostring(row.requests) .. ", exec=" .. tostring(row.executions)
+            .. ", frame=" .. tostring(row.maxRequestsInFrame) .. "/" .. tostring(row.maxExecutionsInFrame)
+            .. ", sec=" .. tostring(row.maxRequestsPerSecond) .. "/" .. tostring(row.maxExecutionsPerSecond)
+            .. ", hidden=" .. tostring(row.hidden) .. ", unbuilt=" .. tostring(row.unbuilt)
+            .. ", reentrant=" .. tostring(row.reentrant) .. ", maxMs=" .. string.format("%.3f", row.longestMs or 0)
+            .. ", source=" .. tostring(row.lastSource or "direct"))
+        end
+      end
+      local resources = report.resources
+      if resources then
+        s_emit("resources: SignalFireKB=" .. tostring(resources.signalFireKB or "unsupported")
+          .. ", totalLuaKB=" .. tostring(resources.totalLuaKB or "unsupported")
+          .. ", SignalFireCPU=" .. tostring(resources.signalFireCPU or "profiling-disabled")
+          .. ", scriptProfile=" .. s_bool(resources.scriptProfile))
+      end
+      return report
+    end
+
+    function S:PrintConflicts()
+      local report = self:GetConflicts()
+      s_emit("conflicts: SetItemRefChanged=" .. s_bool(report.setItemRefChanged)
+        .. ", tooltipChanged=" .. s_bool(report.tooltipChanged)
+        .. ", scaleOwnerChanged=" .. s_bool(report.scaleOwnerChanged)
+        .. ", indicatorsOnly=true")
+      for _, addon in ipairs(report.addons) do
+        s_emit("addon " .. addon.name .. ": loaded=" .. s_bool(addon.loaded)
+          .. ", enabled=" .. tostring(addon.enabled or "unknown"))
+      end
+      for _, frame in ipairs(report.frames) do
+        if frame.expected or frame.replaced then
+          s_emit(frame.name .. ": wrapper=" .. s_bool(frame.installed) .. ", replaced=" .. s_bool(frame.replaced)
+            .. ", generation=" .. tostring(frame.generation or "none"))
+        end
+      end
+      s_emit("chat filter count: " .. report.filterIntrospection)
+      s_emit("wrapper chains: " .. report.wrapperChainIntrospection)
+      return report
+    end
+
+    function S:PrintResources(kind)
+      local sample = self:SampleResources(kind)
+      s_emit("resource sample: SignalFireKB=" .. tostring(sample.signalFireKB or "unsupported")
+        .. ", deltaKB=" .. tostring(sample.signalFireDeltaKB or "n/a")
+        .. ", totalLuaKB=" .. tostring(sample.totalLuaKB or "unsupported")
+        .. ", totalDeltaKB=" .. tostring(sample.totalLuaDeltaKB or "n/a")
+        .. ", loadedAddons=" .. tostring(sample.loadedAddons or "unsupported"))
+      if kind == "cpu" then
+        s_emit("CPU=" .. tostring(sample.signalFireCPU or "unsupported")
+          .. ", delta=" .. tostring(sample.signalFireCPUDelta or "n/a")
+          .. ", scriptProfile=" .. s_bool(sample.scriptProfile)
+          .. ". Profiling is never enabled automatically and can reduce performance."
+          .. (sample.scriptProfile and "" or " To sample CPU: /console scriptProfile 1, reload, then /sf diag cpu."))
+      end
+      return sample
+    end
+
+    function B:SF151_GetStabilityDiagnostics()
+      return S:GetReport()
+    end
+
+    function B:SF151_GetConflictDiagnostics()
+      return S:GetConflicts()
+    end
+
+    function B:SF151_HandleDiagnosticSlash(command)
+      local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      if cmd == "diag start" or cmd == "diag on" then
+        S:Reset(); S.enabled=true; S:Install(); S:SampleResources("memory")
+        s_emit("Stability diagnostics enabled for this session. Deep traces remain off.")
+        return true
+      elseif cmd == "diag stop" or cmd == "diag off" then
+        S.enabled=false; S.deep=false; s_emit("Stability diagnostics disabled."); return true
+      elseif cmd == "diag deep on" then
+        S.deep=true; s_emit("Deep diagnostics enabled. Only slow/reentrant operations capture bounded traces."); return true
+      elseif cmd == "diag deep off" then
+        S.deep=false; s_emit("Deep diagnostics disabled."); return true
+      elseif cmd == "diag reset" then
+        S:Reset(); s_emit("Stability diagnostics reset."); return true
+      elseif cmd == "diag report" then S:PrintReport(); return true
+      elseif cmd == "diag conflicts" then S:PrintConflicts(); return true
+      elseif cmd == "diag memory" then S:PrintResources("memory"); return true
+      elseif cmd == "diag cpu" then S:PrintResources("cpu"); return true
+      elseif cmd == "diag" then
+        s_emit("Diagnostics are " .. (S.enabled and "enabled" or "disabled")
+          .. ". Commands: /sf diag start, stop, report, conflicts, memory, cpu, reset, deep on, deep off")
+        return true
+      end
+      return false
+    end
+
+    local oldPerfSlash = B.SF151_HandlePerfSlash
+    B.SF151_HandlePerfSlash = function(self, command)
+      if self:SF151_HandleDiagnosticSlash(command) then return true end
+      return oldPerfSlash and oldPerfSlash(self, command) or false
+    end
+
+    local function s_install_slash()
+      if not SlashCmdList then return end
+      SLASH_SIGNALFIREDIAG1 = "/sfdiag"
+      SlashCmdList["SIGNALFIREDIAG"] = function(input)
+        local suffix = tostring(input or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        return B:SF151_HandleDiagnosticSlash(suffix == "" and "diag" or ("diag " .. suffix))
+      end
+      if ChatFrame_ImportListToHash then pcall(ChatFrame_ImportListToHash, "SIGNALFIREDIAG") end
+      if hash_SlashCmdList then
+        hash_SlashCmdList["/sfdiag"] = SlashCmdList["SIGNALFIREDIAG"]
+        hash_SlashCmdList["/SFDIAG"] = SlashCmdList["SIGNALFIREDIAG"]
+      end
+      if hash_SecureCmdList then
+        hash_SecureCmdList["/sfdiag"] = SlashCmdList["SIGNALFIREDIAG"]
+        hash_SecureCmdList["/SFDIAG"] = SlashCmdList["SIGNALFIREDIAG"]
+      end
+    end
+
+    if B.SF151_RepairReleaseDatabase then B:SF151_RepairReleaseDatabase(BronzeLFG_DB) end
+    s_install_slash()
+    local eventFrame = CreateFrame("Frame")
+    S.eventFrame = eventFrame
+    eventFrame:RegisterEvent("PLAYER_LOGIN")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:SetScript("OnEvent", function()
+      if B.SF151_RepairReleaseDatabase then B:SF151_RepairReleaseDatabase(BronzeLFG_DB) end
+      s_install_slash()
+    end)
+  end
+end
+-- SIGNALFIRE_PHASE10_STABILITY_END

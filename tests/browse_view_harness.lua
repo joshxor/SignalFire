@@ -217,6 +217,37 @@ whisperClick()
 SendChatMessage = oldSendChatMessage
 assert(whisperTarget == "RemoteLeader", "Browse whisper action used a stale listing target")
 
+-- Large deterministic Browse sets must preserve one canonical snapshot per
+-- generation and limit row formatting to the visible row pool.
+for _, amount in ipairs({50, 100, 250, 500}) do
+  B.listings = {}
+  for index = 1, amount do
+    local id = "STRESS-" .. tostring(amount) .. "-" .. tostring(index)
+    local activity = index == amount and ("Unique Browse " .. tostring(amount)) or "Molten Core"
+    B.listings[id] = listing(id, testNow - index, index % 2 == 0 and "Raid" or "Dungeon", activity)
+  end
+  B.filter="All"; B.search.text=""; B.page=1; B.browsePage=1
+  B:SF151_InvalidateBrowseData("stress-" .. tostring(amount), true)
+  local before = B:SF151_GetBrowseViewDiagnostics()
+  B:RefreshBrowse("stress-build"); flushRefresh(false)
+  local after = B:SF151_GetBrowseViewDiagnostics()
+  assert(after.snapshotRows == amount, "large Browse snapshot lost rows")
+  assert((after.rowsConsidered or 0) - (before.rowsConsidered or 0) <= #B.rows,
+    "large Browse render considered off-page rows")
+  local snapshots = after.snapshotsBuilt
+  B.page=2; B.browsePage=2
+  B:RefreshBrowse("stress-page"); flushRefresh(false)
+  assert(B:SF151_GetBrowseViewDiagnostics().snapshotsBuilt == snapshots,
+    "large Browse page change rebuilt the snapshot")
+  B.page=1; B.browsePage=1; B.search.text=string.lower("Unique Browse " .. tostring(amount))
+  B:RefreshBrowse("stress-search"); flushRefresh(false)
+  assert(B.rows[1].key == "STRESS-" .. tostring(amount) .. "-" .. tostring(amount),
+    "large Browse search selected the wrong listing")
+  assert(B:SF151_GetBrowseViewDiagnostics().offPageRowsFormatted == 0,
+    "large Browse formatted off-page rows")
+end
+B.filter="All"; B.search.text=""; B.page=1; B.browsePage=1
+
 -- Nested broadcast/full-group cancellation commits one data generation.
 local own = listing("OWN-1", testNow, "Dungeon", "Wailing Caverns")
 own.leader = UnitName("player")

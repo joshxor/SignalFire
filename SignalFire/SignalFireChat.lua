@@ -1441,22 +1441,31 @@ do
       end
     end
 
+    -- Release-safe Chat Links migration. A stored boolean is an explicit user
+    -- preference and is preserved. Missing or malformed legacy values use the
+    -- safer default without disabling Public Groups parsing.
+    function BLFG:SF151_ApplyChatLinkSafeDefault(db)
+      db = type(db) == "table" and db or BronzeLFG_DB
+      if type(db) ~= "table" then return false end
+      if type(db.options) ~= "table" then db.options = {} end
+      local options = db.options
+      if options.inlineChatLinks ~= true and options.inlineChatLinks ~= false then
+        options.inlineChatLinks = false
+      end
+      options.sf151Phase10ChatLinkDefaultMigrated = true
+      return options.inlineChatLinks == true
+    end
+
     local function sfcp_ensure_options()
       BronzeLFG_DB = BronzeLFG_DB or {}
       BronzeLFG_DB.options = BronzeLFG_DB.options or {}
       local o = BronzeLFG_DB.options
 
+      BLFG:SF151_ApplyChatLinkSafeDefault(BronzeLFG_DB)
+
       if o.publicGroups == nil then o.publicGroups = true end
       if o.publicStrict == nil then o.publicStrict = true end
       if o.parseGuildRecruitment == nil then o.parseGuildRecruitment = true end
-
-      if o.inlineChatLinks == nil then
-        if o.disableInlineChatLinks == true or o.chatLinkSafeMode == true then
-          o.inlineChatLinks = false
-        else
-          o.inlineChatLinks = true
-        end
-      end
 
       local oldScope = tostring(o.chatLinkScope or o.chatLinksMode or o.chatLinkMode or "")
       oldScope = sfcp_lower(oldScope)
@@ -1652,7 +1661,7 @@ do
 
     local function sfcp_links_enabled()
       local o = sfcp_ensure_options()
-      return o.publicGroups ~= false and o.inlineChatLinks ~= false
+      return o.publicGroups ~= false and o.inlineChatLinks == true
     end
 
     local function sfcp_remove_filter(event, fn)
@@ -1911,7 +1920,7 @@ do
         end
 
         check("publicGroups", "Parse Public Groups From Chat", "Builds Public Groups from eligible chat posts. Turning this off stops both background parsing and SignalFire chat links.", -22)
-        check("inlineChatLinks", "Show SignalFire Links in Chat", "Adds clickable SignalFire group/guild links to eligible chat lines. Parsing can remain enabled while links are off.", -78)
+        check("inlineChatLinks", "Show SignalFire Links in Chat", "Off by default for compatibility. Enable manually to add clickable SignalFire group/guild links; Public Groups parsing continues while links are off.", -78)
         check("parseGuildRecruitment", "Parse Guild Recruitment", "Detects guild advertisements and creates Guild Browser links/listings. Personal Kick/Twitch/YouTube promotions remain ignored.", -134)
         check("publicStrict", "Strict Parsing", "Recommended. Requires clear group or guild intent and reduces false positives from ordinary chat.", -190)
 
@@ -1969,7 +1978,7 @@ do
           end
         end)
 
-        local recommendation = sfcp_font(panel, "Complete coverage: all protections On; All Chat Frames.", 9, .45, 1, .45)
+        local recommendation = sfcp_font(panel, "Safer default: Chat Links Off. Enable manually and choose a scope if desired.", 9, .45, 1, .45)
         f.recommendation = recommendation
         recommendation:SetPoint("LEFT", runTests, "RIGHT", 12, 0)
         recommendation:SetWidth(292)
@@ -1995,7 +2004,7 @@ do
         local f = build_panel()
         local o = sfcp_ensure_options()
         f.publicGroups:SetChecked(o.publicGroups ~= false)
-        f.inlineChatLinks:SetChecked(o.inlineChatLinks ~= false)
+        f.inlineChatLinks:SetChecked(o.inlineChatLinks == true)
         f.parseGuildRecruitment:SetChecked(o.parseGuildRecruitment ~= false)
         f.publicStrict:SetChecked(o.publicStrict ~= false)
         UIDropDownMenu_SetSelectedValue(f.scopeDropdown, o.chatLinkScope)
@@ -2103,17 +2112,17 @@ do
       if sfmm_enabled("chatParsing", profile) then
         if saved.chatCaptured then
           o.publicGroups = saved.publicGroups ~= false
-          o.inlineChatLinks = saved.inlineChatLinks ~= false
+          o.inlineChatLinks = saved.inlineChatLinks == true
           saved.chatCaptured = nil
         elseif o.publicGroups == nil then
           o.publicGroups = true
-          o.inlineChatLinks = true
+          o.inlineChatLinks = false
         end
       else
         if not saved.chatCaptured then
           saved.chatCaptured = true
           saved.publicGroups = o.publicGroups ~= false
-          saved.inlineChatLinks = o.inlineChatLinks ~= false
+          saved.inlineChatLinks = o.inlineChatLinks == true
         end
         o.publicGroups = false
         o.inlineChatLinks = false
@@ -2413,7 +2422,7 @@ do
       local o = sfcp_ensure_options()
       return {
         publicGroups = o.publicGroups ~= false,
-        inlineChatLinks = o.inlineChatLinks ~= false,
+        inlineChatLinks = o.inlineChatLinks == true,
         parseGuildRecruitment = o.parseGuildRecruitment ~= false,
         publicStrict = o.publicStrict ~= false,
         chatLinkScope = o.chatLinkScope,

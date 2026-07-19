@@ -4,6 +4,8 @@ SignalFire 1.5.1 is a reliability and performance update for Ascension / Conques
 
 ## Chat and Public Groups
 
+- Chat Links now default to Off on new installations and when an older installation has no saved preference. Existing explicit On or Off choices are preserved.
+- Public Groups parsing remains enabled when Chat Links are off, and links can be enabled manually from Chat & Parsing options.
 - Improved SignalFire activity links across multiple chat windows and tabs.
 - Links now display the recognized activity and required roles instead of a generic label.
 - Clicking a SignalFire link opens and highlights the exact Public Groups listing.

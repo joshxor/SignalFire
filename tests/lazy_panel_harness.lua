@@ -171,6 +171,24 @@ for _, method in ipairs({"ShowCreate","ShowProfile","ShowApplicants","ShowGuildB
 end
 for _, key in ipairs(LP.order) do assert(LP.panels[key].buildCount == 1, key .. " actual build count was not one") end
 
+-- A long navigation cycle must reuse the same shell, controls, registry, and
+-- one-time dropdown registration state.
+local stableBuildCounts = {}
+for key, value in pairs(buildCounts) do stableBuildCounts[key] = value end
+local stablePanelCount = #LP.order
+for _ = 1, 100 do
+  B:ShowBrowse(); B:ShowCreate(); B:ShowProfile(); B:ShowApplicants(); B:ShowPublicGroups()
+  B:ShowGuildBrowser(); B:ShowMyListing(); B:ShowOptions(); B:ShowSFNetwork(); B:ShowFullRoster(); B:ShowInvasions()
+  B:Toggle(); B:Toggle()
+end
+for key, value in pairs(stableBuildCounts) do
+  assert(buildCounts[key] == value, "100-cycle lifecycle rebuilt " .. tostring(key))
+end
+assert(#LP.order == stablePanelCount, "100-cycle lifecycle grew the panel registry")
+for _, key in ipairs(LP.order) do
+  assert(LP.panels[key].buildCount == 1, "100-cycle lifecycle rebuilt " .. key)
+end
+
 -- HidePanels never constructs and only hides existing pages.
 local totalBuilds = 0
 for _, value in pairs(buildCounts) do totalBuilds = totalBuilds + value end
@@ -206,4 +224,3 @@ assert((d.refreshesConvertedToDirty or 0) >= 3, "deferred refresh diagnostics we
 print("lazy panel harness: PASS (shell=" .. tostring(d.shellBuildCount)
   .. ", prevented=" .. tostring(d.backgroundBuildsPrevented)
   .. ", deferred=" .. tostring(d.refreshesConvertedToDirty) .. ")")
-

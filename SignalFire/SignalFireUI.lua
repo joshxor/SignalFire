@@ -1109,12 +1109,15 @@ do
       if o.publicGroups == nil then o.publicGroups = true end
       if o.publicStrict == nil then o.publicStrict = true end
       if o.parseGuildRecruitment == nil then o.parseGuildRecruitment = true end
-      if o.inlineChatLinks == nil then o.inlineChatLinks = true end
+      if B.SF151_ApplyChatLinkSafeDefault then
+        B:SF151_ApplyChatLinkSafeDefault(BronzeLFG_DB)
+      elseif o.inlineChatLinks ~= true and o.inlineChatLinks ~= false then
+        o.inlineChatLinks = false
+      end
       -- Earlier stutter-safety builds could leave this hidden switch disabled
       -- while the visible "Build Public Groups From Chat" option remained on.
       -- Migrate that stale state once; later user changes are still respected.
       if o.sf151Phase3iLinkOptionMigrated ~= true then
-        if o.publicGroups ~= false then o.inlineChatLinks = true end
         o.disableInlineChatLinks = nil
         o.chatLinkSafeMode = nil
         if tostring(o.chatLinksMode or ""):lower() == "off" then o.chatLinksMode = nil end
@@ -1887,7 +1890,7 @@ do
 
     local function p3_links_enabled()
       local o = p3_options()
-      return o.publicGroups ~= false and o.inlineChatLinks ~= false
+      return o.publicGroups ~= false and o.inlineChatLinks == true
     end
 
     local function p3_frame_is_visible(frame)
@@ -2356,7 +2359,7 @@ do
         filterInstalledAt=P3._filterInstalledAt,
         linksEnabled=p3_links_enabled(),
         publicGroupsEnabled=options.publicGroups ~= false,
-        inlineChatLinksEnabled=options.inlineChatLinks ~= false,
+        inlineChatLinksEnabled=options.inlineChatLinks == true,
         chatLinkScope=options.chatLinkScope,
         queueDepth=p3_depth(),
         counters={},

@@ -132,6 +132,33 @@ assert(stats.canonicalSnapshotsBuilt == 3, "presence burst should produce one po
 local transitionChecks = stats.favoriteTransitionChecks or 0
 assert(transitionChecks >= 20, "presence transitions were not checked per changed record")
 
+-- Large roster generations are each built and sorted once, then reused.
+BronzeLFG_DB.options.serverProfile = "Ascension"
+BronzeLFG_DB.whoPlayers = {}
+for _, amount in ipairs({50, 100, 250, 500}) do
+  B.onlineUsers = {}
+  B.sfnStatuses = {}
+  for index = 1, amount do
+    local name = "StressUser" .. tostring(index)
+    B.onlineUsers[name] = {name=name, level=60, className="Mage", classFile="MAGE",
+      role="DPS", zone="Dalaran", seen=testNow}
+    B.sfnStatuses[name] = {name=name, className="Mage", classFile="MAGE",
+      looking="Online", flags="D", zone="Dalaran", seen=testNow}
+  end
+  B:SF151_InvalidateRosterData("stress-" .. tostring(amount))
+  local before = B:SF151_GetRosterSnapshotDiagnostics()
+  local rows = B:GetOnlineUserRows()
+  local after = B:SF151_GetRosterSnapshotDiagnostics()
+  assert(#rows == amount + 1, "large roster snapshot lost users")
+  assert((after.canonicalSnapshotsBuilt or 0) == (before.canonicalSnapshotsBuilt or 0) + 1,
+    "large roster generation built more than one snapshot")
+  assert((after.canonicalSorts or 0) == (before.canonicalSorts or 0) + 1,
+    "large roster generation sorted more than once")
+  assert(B:GetOnlineUserRows() == rows, "large roster snapshot was not reused")
+  assert((B:SF151_GetRosterSnapshotDiagnostics().hiddenPanelUIBuilds or 0) == 0,
+    "large roster caused a hidden panel build")
+end
+
 testNow = testNow + 400
 local generationBeforeExpiry = R.generation
 local expiredRows = B:GetOnlineUserRows()

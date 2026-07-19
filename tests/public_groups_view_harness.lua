@@ -163,6 +163,38 @@ B:SF151_InvalidatePublicGroupsData("invasion", "invasion")
 assert(render() == true, "invasion listing render failed")
 assert(PG.snapshot and PG.snapshot.byId.invasion, "invasion listing was not preserved")
 
+-- Large deterministic datasets must retain canonical identity while rendering
+-- only the eight visible rows. Search and page changes reuse the snapshot.
+for _, amount in ipairs({50, 100, 250, 500}) do
+  B.publicGroups = {}
+  for index = 1, amount do
+    local id = "stress-" .. tostring(amount) .. "-" .. tostring(index)
+    local activity = index == amount and ("Unique Target " .. tostring(amount)) or "Molten Core"
+    B.publicGroups[id] = listing(id, "Player" .. tostring(index), activity,
+      index % 2 == 0 and "Raid" or "Dungeon", time() - index)
+  end
+  B.publicFilter="All"; B.publicRoleFilter="All"; B.publicSearchText=""; B.publicPage=1
+  B:SF151_InvalidatePublicGroupsData("stress-" .. tostring(amount))
+  local before = B:SF151_GetPublicGroupsViewDiagnostics()
+  assert(render() == true, "large Public Groups render failed at " .. tostring(amount))
+  local after = B:SF151_GetPublicGroupsViewDiagnostics()
+  assert(PG.snapshot and #PG.snapshot.rows == amount, "large Public Groups snapshot lost rows")
+  assert((after.rowsConsidered or 0) - (before.rowsConsidered or 0) <= #B.publicRows,
+    "large Public Groups render considered off-page rows")
+  local snapshotBuilds = after.snapshotsBuilt
+  B.publicPage=2
+  assert(render() == true, "large Public Groups page render failed")
+  assert(B:SF151_GetPublicGroupsViewDiagnostics().snapshotsBuilt == snapshotBuilds,
+    "large Public Groups page change rebuilt the snapshot")
+  B.publicPage=1; B.publicSearchText=string.lower("Unique Target " .. tostring(amount))
+  assert(render() == true, "large Public Groups search failed")
+  assert(B.publicRows[1].key == "stress-" .. tostring(amount) .. "-" .. tostring(amount),
+    "large Public Groups search selected the wrong identity")
+  assert((B:SF151_GetPublicGroupsViewDiagnostics().offPageRowsFormatted or 0) == 0,
+    "large Public Groups formatted off-page rows")
+end
+B.publicSearchText=""; B.publicFilter="All"; B.publicPage=1
+
 local function recover(stage)
   B:SF151_InvalidatePublicGroupsData("error-" .. stage)
   PG.testErrorStage=stage
