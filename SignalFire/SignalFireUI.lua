@@ -1054,7 +1054,12 @@ do
 
     local P3 = _G.SignalFireChatRuntime151 or {}
     _G.SignalFireChatRuntime151 = P3
-    P3.generation = "1.5.1-perf-phase5"
+    P3.generation = "1.5.2-phase12b"
+    P3.workerMaximumRecords = 4
+    P3.workerMaximumMs = 0.75
+    P3.renderDecisionMaximum = 256
+    P3.renderDecisionPositiveTTL = 30
+    P3.renderDecisionNegativeTTL = 5
 
     local function p3_now()
       if GetTime then return GetTime() end
@@ -1177,6 +1182,13 @@ do
       return "group\031" .. string.lower(p3_author(author)) .. "\031" .. p3_norm(text)
     end
 
+    -- Render decisions are keyed by the exact event payload. This avoids
+    -- hyperlink/color normalization in every receiving ChatFrame while keeping
+    -- canonical row identity on the normalized p3_key path.
+    local function p3_render_key(author, text)
+      return string.lower(tostring(author or "")) .. "\031" .. tostring(text or "")
+    end
+
     local function p3_source_key(event, channel, author, text)
       return string.lower(tostring(event or "chat")) .. "\031"
         .. p3_norm(channel) .. "\031" .. p3_key(author, text)
@@ -1190,6 +1202,7 @@ do
     local function p3_stats()
       B._sfP3Stats = B._sfP3Stats or {}
       local stats = B._sfP3Stats
+      if stats._schema == P3.generation then return stats end
       local fields = {
         "filterCalls", "wrapperCalls", "eligibleDisplayDecisions", "linksAppended",
         "alreadyLinkedSkips", "linksDisabledSkips", "enqueued", "deduped", "processed", "coreCalls",
@@ -1204,10 +1217,28 @@ do
         "indexRemovals", "indexRebuilds", "indexCollisions", "indexStaleRepairs",
         "indexFullScans", "indexRowsScanned", "refreshDirtyRequests", "alertsEmitted",
         "linksBuilt", "wrapperDuplicateSkips", "processingErrors",
+        "parsingDisabledSourceReturns", "parsingDisabledLegacyQueueReturns",
+        "parsingDisabledFilterReturns", "parsingDisabledCandidateCalls",
+        "parsingDisabledParserCalls", "parsingDisabledQueueCalls",
+        "sourceEventsReceived", "sourceEventsIgnored", "sourceEventsEligible",
+        "sourceEventsIneligible", "sourceDuplicatesSuppressed", "candidateGateCalls",
+        "candidateGateAccepted", "candidateGateRejected", "TestParseCalls",
+        "queueRecordsCreated", "queueRecordsProcessed", "workerFramesActive",
+        "workerRecordsProcessed", "workerBudgetStopsByCount", "workerBudgetStopsByTime",
+        "queueMaximumDepth", "workerMaximumFrameMs", "workerMaximumRecordMs", "workerIdleFrames", "parserErrors",
+        "filtersCurrentlyInstalled", "filterRegistrationCalls", "filterUnregistrationCalls",
+        "duplicateRegistrationsPrevented", "filterReceipts", "filterDecisionHits",
+        "filterDecisionMisses", "chatLinesRewritten", "chatLinesPassedThrough",
+        "filterReceiptsWhileDisabled", "inlineCandidateCalls", "inlineParserCalls",
+        "inlineQueueCalls", "inlineUpsertCalls", "inlineAddPublicGroupCalls",
+        "inlineRefreshCalls", "inlineSavedVariableWrites", "inlineCacheSweepCalls",
+        "canonicalIndexHits", "canonicalIndexMisses", "canonicalIndexRepairs",
+        "historicalFullTableDuplicateScans",
       }
       for _, field in ipairs(fields) do
         if stats[field] == nil then stats[field] = 0 end
       end
+      stats._schema = P3.generation
       return stats
     end
 
@@ -1223,6 +1254,87 @@ do
       local stats = p3_stats()
       stats[field] = (stats[field] or 0) + (amount or 1)
       return stats
+    end
+
+    function P3.Note(field, amount)
+      return p3_note(field, amount)
+    end
+
+    local function p3_parsing_enabled()
+      return BronzeLFG_DB ~= nil and BronzeLFG_DB.options ~= nil
+        and BronzeLFG_DB.options.publicGroups ~= false
+    end
+
+    local function p3_candidate(text)
+      if not p3_parsing_enabled() then
+        p3_note("parsingDisabledCandidateCalls")
+        return false
+      end
+      p3_note("candidateGateCalls")
+      local raw = p3_norm(text)
+      if raw == "" or p3_is_protocol(raw) or p3_has_existing_link(raw) then
+        p3_note("candidateGateRejected")
+        return false
+      end
+      if p3_has_external_noise(" " .. raw .. " ")
+        and not string.find(raw, "discord.gg", 1, true)
+        and not string.find(raw, "discord.com/invite", 1, true) then
+        p3_note("candidateGateRejected")
+        return false
+      end
+      if string.find(raw, "?", 1, true)
+        or string.find(raw, "do i need ", 1, true)
+        or string.find(raw, "does the ", 1, true)
+        or string.find(raw, "which dungeon", 1, true)
+        or string.find(raw, "what tank", 1, true)
+        or string.find(raw, "can dps", 1, true) then
+        p3_note("candidateGateRejected")
+        return false
+      end
+
+      local words = " " .. string.gsub(raw, "[^%w%+<>']", " ") .. " "
+      words = string.gsub(words, "%s+", " ")
+      local role = string.find(words, " tank ", 1, true) or string.find(words, " heal ", 1, true)
+        or string.find(words, " healer ", 1, true) or string.find(words, " heals ", 1, true)
+        or string.find(words, " dps ", 1, true) or string.find(words, " damage ", 1, true)
+      local activity = string.find(words, " dungeon ", 1, true) or string.find(words, " dung ", 1, true)
+        or string.find(words, " raid ", 1, true) or string.find(words, " rdf ", 1, true)
+        or string.find(words, " df ", 1, true) or string.find(words, " heroic ", 1, true)
+        or string.find(words, " mythic ", 1, true) or string.find(words, " keystone ", 1, true)
+        or string.find(words, " key ", 1, true) or string.find(words, " invasion ", 1, true)
+        or string.find(words, " vault ", 1, true) or string.find(words, " mc ", 1, true)
+        or string.find(words, " bwl ", 1, true) or string.find(words, " icc ", 1, true)
+        or string.find(words, " sfk ", 1, true) or string.find(words, " hol ", 1, true)
+        or string.find(words, " zf ", 1, true) or string.find(words, " wc ", 1, true)
+        or string.find(words, " aq40 ", 1, true) or string.find(words, " naxx ", 1, true)
+        or string.find(words, " ony ", 1, true) or string.find(words, " boss ", 1, true)
+        or string.find(raw, "other side", 1, true) or string.find(raw, "otha side", 1, true)
+      local direct = string.find(words, " lfm ", 1, true) or string.find(words, " lfg ", 1, true)
+        or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
+        or string.find(words, " lf3m ", 1, true) or string.find(words, " lf4m ", 1, true)
+        or string.find(words, " lf%d+m ")
+      local recruiting = string.find(words, " recruiting ", 1, true)
+        or string.find(words, " recruitment ", 1, true)
+        or string.find(raw, "looking for members", 1, true)
+        or string.find(raw, "accepting members", 1, true)
+        or string.find(raw, "seeking members", 1, true)
+        or string.find(raw, "join our guild", 1, true)
+        or (string.find(raw, "guild tag", 1, true) and string.find(raw, "<", 1, true))
+      local anchored = direct or recruiting
+        or (string.find(words, " lf ", 1, true) and (role or activity))
+        or (string.find(raw, "looking for", 1, true) and (role or activity))
+        or (string.find(words, " need ", 1, true) and (role or activity))
+        or (string.find(raw, "last spot", 1, true) and (role or activity))
+        or (role and activity and (string.find(words, " spam ", 1, true)
+          or string.find(words, " farm ", 1, true) or string.find(words, " farming ", 1, true)
+          or string.find(words, " grp ", 1, true) or string.find(words, " group ", 1, true)
+          or string.find(words, " aura ", 1, true)))
+      if anchored then
+        p3_note("candidateGateAccepted")
+        return true
+      end
+      p3_note("candidateGateRejected")
+      return false
     end
 
     local function p3_frame_name(frame)
@@ -1284,6 +1396,7 @@ do
       if not item then return false end
       P3._publicIndex[key] = nil
       if P3._publicIndexById and P3._publicIndexById[item.id] == key then P3._publicIndexById[item.id] = nil end
+      P3._renderGeneration = (tonumber(P3._renderGeneration or 0) or 0) + 1
       p3_note("indexRemovals")
       return true
     end
@@ -1347,6 +1460,7 @@ do
           item.stamp = stamp
           item.expires = stamp + p3_index_ttl()
           p3_note("indexHits")
+          p3_note("canonicalIndexHits")
           return row, item.id
         end
         p3_index_remove_key(key)
@@ -1354,11 +1468,13 @@ do
       end
 
       p3_note("indexMisses")
+      p3_note("canonicalIndexMisses")
       local id, row = p3_stable_id(key)
       if row then
         row.sf151CanonicalKey = key
         p3_index_store(key, id, stamp)
         p3_note("indexStaleRepairs")
+        p3_note("canonicalIndexRepairs")
         return row, id
       end
       return nil, id
@@ -1383,8 +1499,11 @@ do
     end
 
     local function p3_parse(text)
+      if not p3_parsing_enabled() then
+        p3_note("parsingDisabledParserCalls")
+        return nil
+      end
       local o = p3_options()
-      if o.publicGroups == false then return nil end
       local raw = p3_trim(text)
       if raw == "" or p3_has_existing_link(raw) then return nil end
       if p3_is_protocol(raw) then p3_note("protocolRejected"); return nil end
@@ -1403,6 +1522,7 @@ do
       end
       if stats then
         stats.testParseCalls = stats.testParseCalls + 1
+        stats.TestParseCalls = stats.TestParseCalls + 1
         stats.parserCalls = stats.parserCalls + 1
       end
       local started = diagnostics and debugprofilestop and debugprofilestop() or nil
@@ -1414,7 +1534,8 @@ do
         stats.testParseMsTotal = stats.testParseMsTotal + elapsed
         if elapsed > stats.testParseMsMax then stats.testParseMsMax = elapsed end
       end
-      if not ok or type(parsed) ~= "table" or parsed.eligible ~= true then return nil end
+      if not ok then p3_note("parserErrors"); return nil end
+      if type(parsed) ~= "table" or parsed.eligible ~= true then return nil end
       if parsed.kind == "guild" and o.parseGuildRecruitment == false then return nil end
       if parsed.kind ~= "guild" and parsed.kind ~= "group" then return nil end
       return parsed
@@ -1479,10 +1600,12 @@ do
       end
     end
 
-    local function p3_enqueue(author, text, channel, event, parsed)
+    local function p3_enqueue(author, text, channel, event)
+      if not p3_parsing_enabled() then
+        p3_note("parsingDisabledQueueCalls")
+        return nil
+      end
       local raw = tostring(text or "")
-      parsed = parsed or p3_parse(raw)
-      if not parsed then return nil end
       if p3_author(author) == p3_author(UnitName and UnitName("player") or "") and not B.SignalFireTestSay then return nil end
 
       local stamp = p3_now()
@@ -1503,16 +1626,11 @@ do
       rec.text = raw
       rec.channel = channel or "Public"
       rec.event = event or "CHAT"
-      rec.kind = parsed.kind
-      rec.parsed = parsed
-      rec.guildName = parsed.guild
       rec.canonicalKey = key
       rec.time = stamp
       rec.done = false
       rec.alerted = false
       rec.isNew = false
-      if parsed.kind == "group" then p3_make_link_row(rec, parsed) end
-
       B._sfP3Records[id] = rec
       B._sfP3ActiveRecords = B._sfP3ActiveRecords or {}
       B._sfP3ActiveRecords[key] = rec
@@ -1550,8 +1668,10 @@ do
       table.insert(B._sfP3Queue, rec)
       P3._enqueueCount = (tonumber(P3._enqueueCount or 0) or 0) + 1
       local stats = p3_note("enqueued")
+      p3_note("queueRecordsCreated")
       local depth = p3_depth()
       if stats and depth > stats.maxDepth then stats.maxDepth = depth end
+      if stats and depth > stats.queueMaximumDepth then stats.queueMaximumDepth = depth end
 
       B._inlinePublicChatEventSeen = B._inlinePublicChatEventSeen or {}
       local inlineKey = p3_public_key(author, raw)
@@ -1607,63 +1727,78 @@ do
       return item.rec, true, key
     end
 
-    local function p3_cache_render_decision(key, rec, stamp, ttl)
+    -- Session-only render decisions. Key: normalized author/message. Maximum:
+    -- 256. TTL: 30s positive/5s negative. Cyclic eviction. Cleared by source
+    -- removal/profile reload; never persisted and never populated by a filter.
+    local function p3_cache_render_decision(key, display, stableId, positive, stamp, ttl)
       if not key or key == "" then return end
       stamp = stamp or p3_now()
       P3._renderDecisionCache = P3._renderDecisionCache or {}
       P3._renderDecisionSlots = P3._renderDecisionSlots or {}
-      P3._renderDecisionCursor = ((tonumber(P3._renderDecisionCursor or 0) or 0) % 256) + 1
+      P3._renderDecisionCursor = ((tonumber(P3._renderDecisionCursor or 0) or 0) % P3.renderDecisionMaximum) + 1
       local old = P3._renderDecisionSlots[P3._renderDecisionCursor]
       if old then
         local current = P3._renderDecisionCache[old.key]
         if current and current.stamp == old.stamp then P3._renderDecisionCache[old.key] = nil end
       end
-      local item = {rec=rec or false, stamp=stamp, expires=stamp + (ttl or 2)}
+      local item = {
+        display=display or false, stableId=stableId, positive=positive == true,
+        generation=tonumber(P3._renderGeneration or 0) or 0,
+        stamp=stamp, expires=stamp + (ttl or (positive and P3.renderDecisionPositiveTTL or P3.renderDecisionNegativeTTL)),
+      }
       P3._renderDecisionCache[key] = item
       P3._renderDecisionSlots[P3._renderDecisionCursor] = {key=key, stamp=stamp}
     end
 
     local function p3_cached_render_decision(author, text)
-      local key = p3_key(author, text)
+      local key = p3_render_key(author, text)
       local item = P3._renderDecisionCache and P3._renderDecisionCache[key] or nil
       if not item then p3_note("renderDecisionMisses"); return nil, false, key end
-      if p3_now() > (tonumber(item.expires or 0) or 0) then
+      if item.generation ~= (tonumber(P3._renderGeneration or 0) or 0)
+        or p3_now() > (tonumber(item.expires or 0) or 0)
+        or (item.stableId and not (B.publicGroups and B.publicGroups[item.stableId])) then
         P3._renderDecisionCache[key] = nil
         p3_note("renderDecisionMisses")
         return nil, false, key
       end
       p3_note("renderDecisionHits")
-      return item.rec ~= false and item.rec or nil, true, key
+      return item.display ~= false and item.display or nil, true, key, item
     end
 
-    -- Chat filters run once per receiving ChatFrame on Wrath clients. Cache the
-    -- decision before classification so hidden tabs reuse both positive and
-    -- negative results instead of invoking TestParse again.
+    -- Source ingestion owns candidate decisions and queue creation. ChatFrame
+    -- filters never call this path.
     local function p3_resolve(author, text, channel, event)
+      if not p3_parsing_enabled() then
+        p3_note("parsingDisabledSourceReturns")
+        return nil
+      end
+      p3_note("sourceEventsReceived")
+      local raw = tostring(text or "")
+      if raw == "" or p3_is_protocol(raw) then
+        if p3_is_protocol(raw) then p3_note("protocolRejected") end
+        p3_note("sourceEventsIgnored")
+        return nil
+      end
       local sourceKey = p3_source_key(event, channel, author, text)
       local cached, found = p3_cached_decision(sourceKey)
-      if found then p3_note("sourceDecisionHits"); return cached end
-
-      local shared, sharedFound, renderKey = p3_cached_render_decision(author, text)
-      if sharedFound then
-        p3_cache_decision(sourceKey, shared, p3_now(), shared and 6 or 2)
+      if found then
         p3_note("sourceDecisionHits")
-        return shared
+        p3_note("sourceDuplicatesSuppressed")
+        return cached
       end
 
       p3_note("decisionCacheMisses")
       p3_note("sourceDecisionMisses")
-      p3_note("sourceEvents")
-      local parsed = p3_parse(text)
-      if not parsed then
+      if not p3_candidate(raw) then
         p3_cache_decision(sourceKey, nil, p3_now(), 2)
-        p3_cache_render_decision(renderKey, nil, p3_now(), 2)
+        p3_note("sourceEventsIneligible")
         return nil
       end
 
-      local rec = p3_enqueue(author, text, channel, event, parsed)
+      p3_note("sourceEvents")
+      p3_note("sourceEventsEligible")
+      local rec = p3_enqueue(author, raw, channel, event)
       p3_cache_decision(sourceKey, rec, p3_now(), rec and 6 or 2)
-      p3_cache_render_decision(renderKey, rec, p3_now(), rec and 6 or 2)
       return rec
     end
 
@@ -1761,12 +1896,14 @@ do
     local function p3_rebuild_public_index()
       B.publicGroups = B.publicGroups or {}
       local winners, remove = {}, {}
+      P3._renderGeneration = (tonumber(P3._renderGeneration or 0) or 0) + 1
       P3._publicIndex = {}
       P3._publicIndexById = {}
       P3._publicIndexSlots = {}
       P3._publicIndexCursor = 0
       p3_note("indexRebuilds")
       p3_note("indexFullScans")
+      p3_note("canonicalIndexRepairs")
       for id, row in pairs(B.publicGroups) do
         p3_note("indexRowsScanned")
         if p3_chat_row(id, row) then
@@ -1825,42 +1962,7 @@ do
       return removed
     end
 
-    local function p3_process(rec)
-      if not rec or rec.done then return end
-      local row = nil
-      B._sfChatQueueProcessing = true
-      B._suppressPublicRefreshInChatLink = true
-      B._sfP3SuppressNotify = true
-      local ok, err = pcall(function()
-        if rec.kind == "group" then
-          p3_note("coreCalls")
-          row = p3_upsert_canonical(rec)
-        elseif rec.kind == "guild" and rec.guildName and B.UpsertGuildBrowserChatListing then
-          B:UpsertGuildBrowserChatListing(rec.guildName, rec.author, rec.text)
-        end
-      end)
-      B._sfP3SuppressNotify = nil
-      B._suppressPublicRefreshInChatLink = nil
-      B._sfChatQueueProcessing = nil
-      rec.done = true
-      if B._sfP3ActiveRecords and B._sfP3ActiveRecords[rec.canonicalKey] == rec then
-        B._sfP3ActiveRecords[rec.canonicalKey] = nil
-      end
-      if P3._pendingByStableId and P3._pendingByStableId[rec.stableId] == rec then
-        P3._pendingByStableId[rec.stableId] = nil
-      end
-      if not ok then
-        rec.error = tostring(err or "unknown processing error")
-        p3_note("processingErrors")
-      elseif rec.kind == "group" and rec.isNew and row and not rec.alerted and B.NotifyForPublicGroup then
-        rec.alerted = true
-        local alertOk = pcall(B.NotifyForPublicGroup, B, row)
-        if alertOk then p3_note("alertsEmitted") else p3_note("processingErrors") end
-        local removed = p3_prune_alert_seen()
-        if removed > 0 then p3_note("entriesPruned", removed) end
-      end
-      p3_note("processed")
-    end
+    local p3_process
 
     local function p3_next()
       local queue = B._sfP3Queue or {}
@@ -1890,8 +1992,8 @@ do
     end
 
     local function p3_links_enabled()
-      local o = p3_options()
-      return o.publicGroups ~= false and o.inlineChatLinks == true
+      local o = BronzeLFG_DB and BronzeLFG_DB.options
+      return o ~= nil and o.publicGroups ~= false and o.inlineChatLinks == true
     end
 
     local function p3_frame_is_visible(frame)
@@ -1901,8 +2003,8 @@ do
       return shown and true or false
     end
 
-    local function p3_frame_allowed(frame)
-      local scope = tostring(p3_options().chatLinkScope or "all")
+    local function p3_frame_allowed(frame, scope)
+      scope = tostring(scope or "all")
       if scope == "all" then return true end
       if scope == "main" then
         return not frame or frame == DEFAULT_CHAT_FRAME or frame == _G.ChatFrame1
@@ -1967,69 +2069,127 @@ do
       return link and (raw .. " " .. link) or raw
     end
 
+    p3_process = function(rec)
+      if not rec or rec.done then return false end
+      local row, parsed = nil, nil
+      local renderKey = p3_render_key(rec.author, rec.text)
+      B._sfChatQueueProcessing = true
+      B._suppressPublicRefreshInChatLink = true
+      B._sfP3SuppressNotify = true
+      local ok, err = pcall(function()
+        parsed = p3_parse(rec.text)
+        rec.parsed = parsed
+        rec.kind = parsed and parsed.kind or nil
+        rec.guildName = parsed and parsed.guildName or nil
+        if rec.kind == "group" then
+          p3_note("coreCalls")
+          rec.linkRow = p3_make_link_row(rec, parsed)
+          row = p3_upsert_canonical(rec)
+        elseif rec.kind == "guild" and rec.guildName and B.UpsertGuildBrowserChatListing then
+          B:UpsertGuildBrowserChatListing(rec.guildName, rec.author, rec.text)
+        end
+      end)
+      B._sfP3SuppressNotify = nil
+      B._suppressPublicRefreshInChatLink = nil
+      B._sfChatQueueProcessing = nil
+      rec.done = true
+      if B._sfP3ActiveRecords and B._sfP3ActiveRecords[rec.canonicalKey] == rec then
+        B._sfP3ActiveRecords[rec.canonicalKey] = nil
+      end
+      if P3._pendingByStableId and P3._pendingByStableId[rec.stableId] == rec then
+        P3._pendingByStableId[rec.stableId] = nil
+      end
+      if not ok then
+        rec.error = tostring(err or "unknown processing error")
+        p3_note("processingErrors")
+        p3_note("parserErrors")
+        p3_cache_render_decision(renderKey, nil, nil, false)
+      elseif not parsed then
+        p3_cache_render_decision(renderKey, nil, nil, false)
+      else
+        local display = p3_render(rec, tostring(rec.text or ""))
+        local positive = display ~= tostring(rec.text or "")
+        p3_cache_render_decision(renderKey, positive and display or nil, rec.stableId, positive)
+        if rec.kind == "group" and rec.isNew and row and not rec.alerted and B.NotifyForPublicGroup then
+          rec.alerted = true
+          local alertOk = pcall(B.NotifyForPublicGroup, B, row)
+          if alertOk then p3_note("alertsEmitted") else p3_note("processingErrors") end
+          local removed = p3_prune_alert_seen()
+          if removed > 0 then p3_note("entriesPruned", removed) end
+        end
+      end
+      p3_note("processed")
+      p3_note("queueRecordsProcessed")
+      return ok
+    end
+
     function P3.Filter(frame, event, msgText, author, ...)
       local diagnostics = p3_diagnostics_enabled()
       local stats = diagnostics and p3_stats() or nil
-      if stats then stats.filterCalls = stats.filterCalls + 1 end
+      if stats then
+        stats.filterCalls = stats.filterCalls + 1
+        stats.filterReceipts = stats.filterReceipts + 1
+      end
       local diag = diagnostics and p3_frame_diag(frame) or nil
       if diagnostics then
         diag.filterCalls = (diag.filterCalls or 0) + 1
         diag.lastFilterEvent = event
         diag.lastFilterText = tostring(msgText or "")
       end
-      local isTestSay = B.SignalFireTestSay and (event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL")
-      if (event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL") and not isTestSay then
+      local options = BronzeLFG_DB and BronzeLFG_DB.options
+      if not options or options.publicGroups == false or options.inlineChatLinks ~= true then
+        if stats then
+          stats.parsingDisabledFilterReturns = stats.parsingDisabledFilterReturns + 1
+          stats.filterReceiptsWhileDisabled = stats.filterReceiptsWhileDisabled + 1
+          stats.chatLinesPassedThrough = stats.chatLinesPassedThrough + 1
+        end
         return false, msgText, author, ...
       end
-      local raw = tostring(msgText or "")
+      if msgText == nil or author == nil then
+        if stats then stats.chatLinesPassedThrough = stats.chatLinesPassedThrough + 1 end
+        return false, msgText, author, ...
+      end
+      if (event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL") and not B.SignalFireTestSay then
+        if stats then stats.chatLinesPassedThrough = stats.chatLinesPassedThrough + 1 end
+        return false, msgText, author, ...
+      end
+      if not p3_frame_allowed(frame, options.chatLinkScope) then
+        if stats then
+          stats.hiddenFrameLinkSkips = stats.hiddenFrameLinkSkips + 1
+          stats.chatLinesPassedThrough = stats.chatLinesPassedThrough + 1
+        end
+        return false, msgText, author, ...
+      end
+      local raw = tostring(msgText)
       if diagnostics then
         diag.lastFilterKey = p3_norm(raw)
         diag.lastFilterAt = p3_now()
       end
 
-      local channel = event
-      if event == "CHAT_MSG_CHANNEL" then
-        channel = tostring(select(8, ...) or select(7, ...) or "Channel")
-      elseif event == "CHAT_MSG_SAY" then
-        channel = "Say"
-      elseif event == "CHAT_MSG_YELL" then
-        channel = "Yell"
-      end
-      local rec = p3_resolve(author, raw, channel, event)
-      if diagnostics and _G.SignalFirePerf151 and _G.SignalFirePerf151.NoteChatReceiver then
-        _G.SignalFirePerf151:NoteChatReceiver(p3_key(author, raw), p3_frame_name(frame))
+      local out, found = p3_cached_render_decision(author, raw)
+      if diagnostics and _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled
+        and _G.SignalFirePerf151.NoteChatReceiver then
+        _G.SignalFirePerf151:NoteChatReceiver(p3_render_key(author, raw), p3_frame_name(frame))
       end
       if diagnostics then
-        diag.lastFilterWasEligible = rec ~= nil
-        diag.lastFilterRec = rec
+        diag.lastFilterWasEligible = found == true
       end
-      if not rec then return false, msgText, author, ... end
-
-      if stats then stats.eligibleDisplayDecisions = stats.eligibleDisplayDecisions + 1 end
-      if diagnostics then
-        diag.eligible = (diag.eligible or 0) + 1
-        diag.lastEligibleText = raw
-        diag.lastFilterSawEligible = true
+      if stats then
+        if found then stats.filterDecisionHits = stats.filterDecisionHits + 1
+        else stats.filterDecisionMisses = stats.filterDecisionMisses + 1 end
       end
-      if not p3_links_enabled() then
-        if stats then stats.linksDisabledSkips = stats.linksDisabledSkips + 1 end
-        return false, msgText, author, ...
-      end
-      if not p3_frame_allowed(frame) then
-        if stats then stats.hiddenFrameLinkSkips = stats.hiddenFrameLinkSkips + 1 end
-        if diagnostics then diag.lastFilterRewritten = false end
-        return false, msgText, author, ...
-      end
-
-      local out = p3_render(rec, raw)
       if out and out ~= raw then
-        if stats then stats.linksAppended = stats.linksAppended + 1 end
+        if stats then
+          stats.linksAppended = stats.linksAppended + 1
+          stats.chatLinesRewritten = stats.chatLinesRewritten + 1
+        end
         if diagnostics then
           diag.rewritten = (diag.rewritten or 0) + 1
           diag.lastFilterRewritten = true
         end
         return false, out, author, ...
       end
+      if stats then stats.chatLinesPassedThrough = stats.chatLinesPassedThrough + 1 end
       if diagnostics then diag.lastFilterRewritten = false end
       return false, msgText, author, ...
     end
@@ -2046,6 +2206,12 @@ do
 
     local function p3_restore_chat_frames()
       p3_each_chat_frame(function(frame)
+        if frame.AddMessage == frame._sfP3CustomAddMessageHook and frame._sfP3CustomBaseAddMessage then
+          frame.AddMessage = frame._sfP3CustomBaseAddMessage
+        end
+        frame._sfP3CustomAddMessageHook = nil
+        frame._sfP3CustomBaseAddMessage = nil
+        frame._sfP3WrapperGeneration = nil
         local base = frame._sffclOldAddMessage or frame._sfcpBaseAddMessage
         -- Only unwind a legacy wrapper when it still owns the method. Phase 3g
         -- restored this stale base unconditionally, clobbering later chat addons
@@ -2139,8 +2305,9 @@ do
       if author ~= "" and body ~= "" then
         rec = select(1, p3_cached_render_decision(author, body))
       end
-      if diagnostics and rec and _G.SignalFirePerf151 and _G.SignalFirePerf151.NoteChatReceiver then
-        _G.SignalFirePerf151:NoteChatReceiver(p3_key(rec.author or author, rec.text or body), p3_frame_name(frame))
+      if diagnostics and rec and _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled
+        and _G.SignalFirePerf151.NoteChatReceiver then
+        _G.SignalFirePerf151:NoteChatReceiver(p3_render_key(rec.author or author, rec.text or body), p3_frame_name(frame))
       end
       if not rec then
         if author == "" or body == "" then
@@ -2240,25 +2407,55 @@ do
       p3_restore_chat_frames()
     end
 
-    local function p3_add_filter()
-      if not ChatFrame_AddMessageEventFilter then return end
-      -- Reconcile ownership instead of trusting a one-time boolean. Options and
-      -- late chat addons can legitimately rebuild the filter chain after login.
-      if ChatFrame_RemoveMessageEventFilter then
-        pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_CHANNEL", P3.Filter)
-        pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_SAY", P3.Filter)
-        pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_YELL", P3.Filter)
-      elseif P3._filterInstalled then
-        return
+    function P3.ReconcileFilterRegistration()
+      local wanted = p3_links_enabled()
+      if wanted == (P3._filterInstalled == true) then
+        p3_note("duplicateRegistrationsPrevented")
+        local stats = p3_diagnostics_enabled() and p3_stats() or nil
+        if stats then stats.filtersCurrentlyInstalled = wanted and 3 or 0 end
+        return wanted
       end
-      ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", P3.Filter)
-      ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", P3.Filter)
-      ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", P3.Filter)
-      P3._filterInstalled = true
-      P3._filterInstalledAt = p3_now()
+      if wanted then
+        if not ChatFrame_AddMessageEventFilter then return false end
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", P3.Filter)
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", P3.Filter)
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", P3.Filter)
+        P3._filterInstalled = true
+        P3._filterInstalledAt = p3_now()
+        p3_note("filterRegistrationCalls", 3)
+      else
+        if P3._filterInstalled and ChatFrame_RemoveMessageEventFilter then
+          pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_CHANNEL", P3.Filter)
+          pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_SAY", P3.Filter)
+          pcall(ChatFrame_RemoveMessageEventFilter, "CHAT_MSG_YELL", P3.Filter)
+          p3_note("filterUnregistrationCalls", 3)
+        end
+        P3._filterInstalled = false
+        P3._filterInstalledAt = nil
+      end
+      local stats = p3_diagnostics_enabled() and p3_stats() or nil
+      if stats then stats.filtersCurrentlyInstalled = wanted and 3 or 0 end
+      return wanted
     end
 
     B._sfP3CoreAddPublicGroup = B._sfChatQueueOldAddPublicGroup or B.AddPublicGroup
+
+    if not P3._sourceGateWrapped then
+      P3._sourceGateWrapped = true
+      P3._oldShouldSkipPublicChatEvent = B.SignalFireShouldSkipPublicChatEvent
+      function B:SignalFireShouldSkipPublicChatEvent(author, text)
+        if not p3_parsing_enabled() then
+          p3_note("parsingDisabledSourceReturns")
+          return true
+        end
+        if p3_is_protocol(text) then
+          p3_note("protocolRejected")
+          return true
+        end
+        return P3._oldShouldSkipPublicChatEvent
+          and P3._oldShouldSkipPublicChatEvent(self, author, text) or false
+      end
+    end
 
     if not P3._notifyWrapped then
       P3._notifyWrapped = true
@@ -2270,11 +2467,17 @@ do
     end
 
     local function p3_add_public(self, author, text, channel)
+      if not p3_parsing_enabled() then
+        p3_note("parsingDisabledSourceReturns")
+        return nil
+      end
       if self._sfP3Processing then
         local core = self._sfP3CoreAddPublicGroup
         return core and core(self, author, text, channel) or nil
       end
-      p3_resolve(author, text, channel, "ADD_PUBLIC_GROUP")
+      local event = channel == "Say" and "CHAT_MSG_SAY"
+        or (channel == "Yell" and "CHAT_MSG_YELL" or "CHAT_MSG_CHANNEL")
+      p3_resolve(author, text, channel, event)
       return nil
     end
 
@@ -2294,6 +2497,17 @@ do
       end
     end
 
+    if not P3._clearWrapped then
+      P3._clearWrapped = true
+      P3._oldClearPublicGroups = B.ClearPublicGroups
+      function B:ClearPublicGroups(...)
+        local results = {pcall(P3._oldClearPublicGroups, self, ...)}
+        if not results[1] then error(results[2], 0) end
+        p3_rebuild_public_index()
+        return unpack(results, 2)
+      end
+    end
+
     -- Pending click targets are session-only, keyed by stable row ID, capped by
     -- the 40-record queue, and removed on process/drop. A click may finish the
     -- already-classified record before the next queue tick without reparsing.
@@ -2301,8 +2515,6 @@ do
       P3._publicLinkWrapped = true
       P3._oldOpenPublicGroupLink = B.OpenPublicGroupLink
       function B:OpenPublicGroupLink(id, title)
-        local rec = P3._pendingByStableId and P3._pendingByStableId[tostring(id or "")] or nil
-        if rec and not rec.done then p3_process(rec) end
         return P3._oldOpenPublicGroupLink and P3._oldOpenPublicGroupLink(self, id, title) or nil
       end
     end
@@ -2311,25 +2523,86 @@ do
       p3_disable_old_runtime()
       B.AddPublicGroup = p3_add_public
       B.InlinePublicChatLinkForMessage = p3_inline
-      p3_add_filter()
-      p3_hook_custom_chat_frames()
+      p3_restore_chat_frames()
+      P3.ReconcileFilterRegistration()
+      if not p3_parsing_enabled() then
+        B._sfP3Queue = {}
+        B._sfP3ActiveRecords = {}
+        P3._decisionCache = {}
+        P3._decisionSlots = {}
+        P3._renderDecisionCache = {}
+        P3._renderDecisionSlots = {}
+        P3._pendingByStableId = {}
+        if B._sfP3Frame then B._sfP3Frame:Hide() end
+      end
       if not P3._canonicalIndexBuilt then
         P3._canonicalIndexBuilt = true
         p3_rebuild_public_index()
       end
     end
 
+    function P3.ClearRuntimeCaches()
+      B._sfP3Queue = {}
+      B._sfP3ActiveRecords = {}
+      B._sfP3Seen = {}
+      B._sfP3SeenSlots = {}
+      B._sfP3Records = {}
+      B._sfP3RecordSlots = {}
+      B._inlinePublicChatEventSeen = {}
+      B._sfP3InlineSeenSlots = {}
+      P3._decisionCache = {}
+      P3._decisionSlots = {}
+      P3._renderDecisionCache = {}
+      P3._renderDecisionSlots = {}
+      P3._pendingByStableId = {}
+      P3._renderGeneration = (tonumber(P3._renderGeneration or 0) or 0) + 1
+      if B._sfP3Frame then B._sfP3Frame:Hide() end
+      return true
+    end
+
+    function P3.IngestSource(author, text, channel, event)
+      return p3_resolve(author, text, channel, event)
+    end
+
+    function P3.Candidate(text)
+      return p3_candidate(text)
+    end
+
     B._sfP3Frame = B._sfP3Frame or (CreateFrame and CreateFrame("Frame") or nil)
     if B._sfP3Frame then
       B._sfP3Frame:Hide()
-      B._sfP3Frame.elapsed = 0
       B._sfP3Frame:SetScript("OnUpdate", function(frame, elapsed)
-        frame.elapsed = (frame.elapsed or 0) + (elapsed or 0)
-        if frame.elapsed < 0.06 then return end
-        frame.elapsed = 0
-        local rec = p3_next()
-        if not rec then frame:Hide(); return end
-        p3_process(rec)
+        if p3_depth() <= 0 then frame:Hide(); p3_note("workerIdleFrames"); return end
+        p3_note("workerFramesActive")
+        local frameStarted = debugprofilestop and debugprofilestop() or nil
+        local processed = 0
+        local stoppedByTime = false
+        while processed < P3.workerMaximumRecords do
+          local rec = p3_next()
+          if not rec then break end
+          local recordStarted = debugprofilestop and debugprofilestop() or nil
+          p3_process(rec)
+          processed = processed + 1
+          p3_note("workerRecordsProcessed")
+          if recordStarted and debugprofilestop then
+            local recordMs = math.max(0, debugprofilestop() - recordStarted)
+            local stats = p3_diagnostics_enabled() and p3_stats() or nil
+            if stats and recordMs > stats.workerMaximumRecordMs then stats.workerMaximumRecordMs = recordMs end
+          end
+          if frameStarted and debugprofilestop and (debugprofilestop() - frameStarted) >= P3.workerMaximumMs then
+            if p3_depth() > 0 then p3_note("workerBudgetStopsByTime") end
+            stoppedByTime = true
+            break
+          end
+        end
+        if not stoppedByTime and processed >= P3.workerMaximumRecords and p3_depth() > 0 then
+          p3_note("workerBudgetStopsByCount")
+        end
+        if frameStarted and debugprofilestop then
+          local frameMs = math.max(0, debugprofilestop() - frameStarted)
+          local stats = p3_diagnostics_enabled() and p3_stats() or nil
+          if stats and frameMs > stats.workerMaximumFrameMs then stats.workerMaximumFrameMs = frameMs end
+        end
         if p3_depth() <= 0 then frame:Hide() end
       end)
     end
@@ -2417,9 +2690,10 @@ do
 
     function B:SF151_GetChatFilterState()
       local stats = p3_stats()
+      stats.filtersCurrentlyInstalled = P3._filterInstalled == true and 3 or 0
       return {
         generation=P3.generation,
-        expectedSignalFireFilters=3,
+        expectedSignalFireFilters=p3_links_enabled() and 3 or 0,
         knownSignalFireRegistrations=P3._filterInstalled == true and 3 or 0,
         registrationKnown=P3._filterInstalled == true,
         introspection="WoW 3.3.5 does not expose the live filter list",
@@ -2430,13 +2704,27 @@ do
         logicalRecordsQueued=stats.enqueued or 0,
         logicalRecordsProcessed=stats.processed or 0,
         drops=stats.queueDrops or 0,
+        candidateGateCalls=stats.candidateGateCalls or 0,
+        candidateGateAccepted=stats.candidateGateAccepted or 0,
+        candidateGateRejected=stats.candidateGateRejected or 0,
+        TestParseCalls=stats.TestParseCalls or 0,
+        filterReceipts=stats.filterReceipts or 0,
+        filterDecisionHits=stats.filterDecisionHits or 0,
+        filterDecisionMisses=stats.filterDecisionMisses or 0,
+        chatLinesRewritten=stats.chatLinesRewritten or 0,
+        workerFramesActive=stats.workerFramesActive or 0,
+        workerRecordsProcessed=stats.workerRecordsProcessed or 0,
+        workerBudgetStopsByCount=stats.workerBudgetStopsByCount or 0,
+        workerBudgetStopsByTime=stats.workerBudgetStopsByTime or 0,
+        historicalFullTableDuplicateScans=stats.historicalFullTableDuplicateScans or 0,
       }
     end
 
     function B:SF151_ResetChatRuntimeStats()
       self._sfP3Stats = {}
       P3._frameDiagnostics = {}
-      p3_stats()
+      local stats = p3_stats()
+      stats.filtersCurrentlyInstalled = P3._filterInstalled == true and 3 or 0
       return true
     end
 
@@ -2459,7 +2747,9 @@ do
         counters={},
         frames={},
       }
-      for key, value in pairs(p3_stats()) do result.counters[key] = value end
+      local liveStats = p3_stats()
+      liveStats.filtersCurrentlyInstalled = P3._filterInstalled == true and 3 or 0
+      for key, value in pairs(liveStats) do result.counters[key] = value end
       result.counters.heavyJobsQueued = result.counters.enqueued or 0
       result.counters.heavyJobsDeduplicated = result.counters.deduped or 0
 
@@ -2477,8 +2767,42 @@ do
         item.wrapperGeneration = frame._sfP3WrapperGeneration
         item.currentAddMessage = tostring(frame.AddMessage)
         item.signalFireAddMessage = tostring(frame._sfP3CustomAddMessageHook)
+        if type(FCF_IsDocked) == "function" then
+          local ok, value = pcall(FCF_IsDocked, frame)
+          item.docked = ok and (value and true or false) or "unavailable"
+        else
+          item.docked = "unavailable"
+        end
+        item.messageCategories = {}
+        if type(frame.GetMessageTypeList) == "function" then
+          local values = {pcall(frame.GetMessageTypeList, frame)}
+          if values[1] then
+            for index = 2, #values do table.insert(item.messageCategories, tostring(values[index])) end
+          end
+        end
+        item.displayedChannels = {}
+        if type(frame.GetChannelList) == "function" then
+          local values = {pcall(frame.GetChannelList, frame)}
+          if values[1] then
+            for index = 2, #values do table.insert(item.displayedChannels, tostring(values[index])) end
+          end
+        end
         table.insert(result.frames, item)
       end)
+      local channelCounts = {}
+      for _, item in ipairs(result.frames) do
+        if item.visible then
+          for _, channel in ipairs(item.displayedChannels or {}) do
+            channelCounts[channel] = (channelCounts[channel] or 0) + 1
+          end
+        end
+      end
+      for _, item in ipairs(result.frames) do
+        item.duplicatedPublicRouting = false
+        for _, channel in ipairs(item.displayedChannels or {}) do
+          if (channelCounts[channel] or 0) > 1 then item.duplicatedPublicRouting = true; break end
+        end
+      end
       table.sort(result.frames, function(a, b) return tostring(a.name) < tostring(b.name) end)
       return result
     end
@@ -2509,6 +2833,10 @@ do
         .. ", linkCache=" .. tostring(stats.linkCacheHits or 0) .. "/" .. tostring(stats.linkCacheMisses or 0))
       for _, item in ipairs(report.frames or {}) do
         emit(tostring(item.name) .. ": visible=" .. tostring(item.visible)
+          .. ", docked=" .. tostring(item.docked)
+          .. ", categories=" .. tostring(#(item.messageCategories or {}))
+          .. ", channels=" .. tostring(#(item.displayedChannels or {}))
+          .. ", duplicateRoute=" .. tostring(item.duplicatedPublicRouting)
           .. ", state=" .. tostring(item.ownershipState)
           .. ", outermost=" .. tostring(item.signalFireOutermostIdentity)
           .. ", differentOutermost=" .. tostring(item.differentOutermostIdentity)

@@ -8,8 +8,8 @@ local migrate = assert(B.SF151_RepairReleaseDatabase, "release migration is unav
 local chat = assert(SignalFireChatRuntime151, "chat runtime is unavailable")
 
 assert(SignalFire_VERSION == "1.5.2", "global version is not 1.5.2")
-assert(SignalFire_RELEASE_CHANNEL == "release-candidate", "release channel is not RC")
-assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2 Phase 12A RC", "release name is inconsistent")
+assert(SignalFire_RELEASE_CHANNEL == "rc", "release channel is not RC")
+assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2 Phase 12B RC", "release name is inconsistent")
 assert(SignalFire_GetVersion() == "1.5.2", "authoritative version getter is inconsistent")
 assert(SignalFire_GetTitleText() == "SignalFire v1.5.2", "production title is inconsistent")
 assert(SignalFirePerf151 and SignalFirePerf151.enabled == false,
@@ -96,6 +96,7 @@ BronzeLFG_DB, GetRealmName = originalDB, originalRealm
 
 BronzeLFG_DB.options.inlineChatLinks = false
 BronzeLFG_DB.options.publicGroups = true
+chat.Apply()
 local settings = assert(B:SFCP_GetSettings(), "effective chat settings are unavailable")
 assert(settings.inlineChatLinks == false and settings.publicGroups == true,
   "effective options do not reflect Chat Links Off")
@@ -110,6 +111,7 @@ local nativeLinks = {
 }
 for index, nativeLink in ipairs(nativeLinks) do
   local message = "LFM MC need healer " .. nativeLink
+  chat.IngestSource("Native" .. tostring(index), message, "3. Newcomers", "CHAT_MSG_CHANNEL")
   local _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", message,
     "Native" .. tostring(index), nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
   assert(string.find(rendered or "", nativeLink, 1, true), "native hyperlink was changed")
@@ -134,6 +136,9 @@ assert(parsed, "Chat Links Off disabled Public Groups parsing")
 BronzeLFG_DB.options.inlineChatLinks = true
 BronzeLFG_DB.options.chatLinkScope = "all"
 repair(BronzeLFG_DB)
+chat.Apply()
+chat.IngestSource("ExplicitOn", "LFM MC need healer", "3. Newcomers", "CHAT_MSG_CHANNEL")
+while #(B._sfP3Queue or {}) > 0 do updateQueue(B._sfP3Frame, .1) end
 local _, linked = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC need healer",
   "ExplicitOn", nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
 assert(string.find(linked or "", "bronzelfgpub:", 1, true),

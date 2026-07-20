@@ -6,7 +6,7 @@ dofile(addonLoader)
 local B = assert(BronzeLFG, "SignalFire did not load from " .. tostring(addonRoot))
 local CL = assert(SignalFireCacheLifecycle151, "Phase 9 cache lifecycle owner did not load")
 local P3 = assert(SignalFireChatRuntime151, "Phase 5 chat owner did not load")
-assert(P3.generation == "1.5.1-perf-phase5", "unexpected chat owner")
+assert(P3.generation == "1.5.2-phase12b", "unexpected chat owner")
 
 local testNow = 1000000
 function time() return math.floor(testNow) end
@@ -57,12 +57,13 @@ local mixedMessages = {
 for index = 1, 50000 do
   testNow = testNow + .01
   -- Every event reaches the lifecycle owner. One in ten also traverses the real
-  -- source filter because the JavaScript-hosted Lua emulator is substantially
+  -- source owner because the JavaScript-hosted Lua emulator is substantially
   -- slower than WoW's native Lua 5.1 runtime.
   if index % 10 == 0 then
     local text = mixedMessages[((index / 10 - 1) % #mixedMessages) + 1] .. " " .. tostring(index)
     local event = index % 70 == 0 and "CHAT_MSG_YELL" or index % 50 == 0 and "CHAT_MSG_SAY" or "CHAT_MSG_CHANNEL"
     local channel = event == "CHAT_MSG_CHANNEL" and (index % 30 == 0 and "4. Zone" or "3. Newcomers") or nil
+    P3.IngestSource("Player" .. tostring(index % 700), text, channel, event)
     local receipts = index % 100 == 0 and 10 or 1
     for frameIndex = 1, receipts do
       filter(_G["ChatFrame" .. tostring(frameIndex)] or ChatFrame1, event, text,

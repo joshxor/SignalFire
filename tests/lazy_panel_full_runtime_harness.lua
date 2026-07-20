@@ -28,10 +28,11 @@ end
 
 -- Incoming chat updates the canonical model before Public Groups exists.
 local chat = assert(SignalFireChatRuntime151, "chat owner missing")
+chat.IngestSource("LazyTester", "LFM MC 1 HEALER", "3. Newcomers", "CHAT_MSG_CHANNEL")
 local _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC 1 HEALER", "LazyTester",
   nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
-local linkedId = string.match(rendered or "", "bronzelfgpub:([^|]+)")
-assert(linkedId, "background chat did not create a canonical link identity")
+assert(not string.find(rendered or "", "bronzelfgpub:", 1, true),
+  "uncached first display unexpectedly performed parser work")
 local queueFrame = assert(B._sfP3Frame, "chat queue frame missing")
 local update = assert(queueFrame:GetScript("OnUpdate"), "chat queue owner missing")
 local guard = 0
@@ -40,6 +41,10 @@ while #(B._sfP3Queue or {}) > 0 do
   guard = guard + 1
   assert(guard < 100, "chat queue did not drain")
 end
+_, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC 1 HEALER", "LazyTester",
+  nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
+local linkedId = string.match(rendered or "", "bronzelfgpub:([^|]+)")
+assert(linkedId, "completed background parse did not cache a canonical link identity")
 assert(B.publicGroups and B.publicGroups[linkedId], "background chat did not update Public Groups data")
 assert(not B.publicPanel, "chat traffic constructed Public Groups")
 

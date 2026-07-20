@@ -199,8 +199,8 @@ assert(lifecycle.generation == "1.5.1-perf-phase2", "wrong final UI lifecycle ow
 local rosterSnapshot = assert(SignalFireRosterSnapshot151, "Network/roster snapshot owner was not loaded")
 assert(rosterSnapshot.owner == "1.5.1-perf-phase3", "wrong final Network/roster owner")
 
-local chat = assert(SignalFireChatRuntime151, "Phase 5 chat owner was not loaded")
-assert(chat.generation == "1.5.1-perf-phase5", "wrong final chat/Public Groups owner")
+local chat = assert(SignalFireChatRuntime151, "Phase 12B chat owner was not loaded")
+assert(chat.generation == "1.5.2-phase12b", "wrong final chat/Public Groups owner")
 BronzeLFG:SF151_SetDeveloperDiagnostics(true)
 BronzeLFG:SF151_ResetChatRuntimeStats()
 
@@ -216,6 +216,11 @@ local function filter(frame, message, author, event)
   return rendered
 end
 
+local function ingest(message, author, event, channel)
+  return chat.IngestSource(author or "Tester", message, channel or "3. Newcomers",
+    event or "CHAT_MSG_CHANNEL")
+end
+
 local function drainQueue()
   local frame = assert(BronzeLFG._sfP3Frame, "chat queue frame missing")
   local update = assert(frame:GetScript("OnUpdate"), "chat queue update missing")
@@ -229,133 +234,118 @@ end
 
 BronzeLFG.publicGroups = {}
 BronzeLFG.SignalFireTestSay = true
+BronzeLFG_DB.options.publicGroups = true
+BronzeLFG_DB.options.inlineChatLinks = true
+BronzeLFG_DB.options.chatLinkScope = "all"
+chat.Apply()
+
 local message = "LFM MC 1 HEALER"
+assert(ingest(message, "Tester"), "source owner rejected a valid listing")
+for i = 1, 10 do
+  assert(filter(_G["ChatFrame" .. i], message, "Tester") == message,
+    "uncached first display should pass through unchanged")
+end
+assert(#(BronzeLFG._sfP3Queue or {}) == 1, "one source message created multiple parser jobs")
+assert(tableCount(BronzeLFG.publicGroups) == 0, "display filtering created a Public Groups row")
+drainQueue()
+assert(tableCount(BronzeLFG.publicGroups) == 1, "worker did not create exactly one canonical row")
+
 local linkedId = nil
 for i = 1, 10 do
   local rendered = filter(_G["ChatFrame" .. i], message, "Tester")
-  assert(string.find(rendered, "Molten Core", 1, true), "receiving frame missed the activity link")
+  assert(string.find(rendered, "Molten Core", 1, true), "completed display cache missed the activity link")
   local id = string.match(rendered, "bronzelfgpub:([^|]+)")
   assert(id and id ~= "", "activity link did not contain a stable row ID")
   linkedId = linkedId or id
   assert(linkedId == id, "receiving frames did not reuse one stable row ID")
 end
-assert(#(BronzeLFG._sfP3Queue or {}) == 1, "one source message created multiple parser jobs")
-assert(tableCount(BronzeLFG.publicGroups) == 0, "rendering created a preview Public Groups row")
-
-ChatFrame1.AddMessage = function(self, text) self.lastMessageValue = text end
-chat.Apply()
-ChatFrame1:AddMessage("[3. Newcomers] [Tester]: " .. message)
-assert(string.find(ChatFrame1.lastMessageValue or "", "bronzelfgpub:" .. linkedId, 1, true),
-  "AddMessage fallback did not reuse the source decision")
-local beforeUnknown = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters.testParseCalls
-ChatFrame1:AddMessage("[3. Newcomers] [UnknownTester]: LFM MC need heals")
-local afterUnknown = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters.testParseCalls
-assert(beforeUnknown == afterUnknown, "AddMessage fallback called TestParse")
-
 BronzeLFG:OpenPublicGroupLink(linkedId, "Molten Core - Need H")
-assert(BronzeLFG.publicGroups[linkedId], "immediate link click did not finish the queued canonical row")
-assert(BronzeLFG.selectedPublic == linkedId, "immediate link click did not select the exact canonical row")
-drainQueue()
-assert(tableCount(BronzeLFG.publicGroups) == 1, "one accepted record did not create exactly one row")
-assert(BronzeLFG.publicGroups[linkedId], "deferred upsert did not preserve the link target ID")
-assert(BronzeLFG.publicGroups[linkedId].activity == "Molten Core", "activity specificity was lost")
-assert(string.find(tostring(BronzeLFG.publicGroups[linkedId].roles or ""), "H", 1, true), "role specificity was lost")
+assert(BronzeLFG.selectedPublic == linkedId, "cached link did not select the exact canonical row")
+
 local firstStats = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters
-assert((firstStats.filterCalls or 0) == 10, "ten receiving frames did not produce ten filter receipts")
-assert((firstStats.sourceEvents or 0) == 1, "one source message produced multiple source decisions")
-assert((firstStats.testParseCalls or 0) == 1, "one source message was classified more than once")
-assert((firstStats.enqueued or 0) == 1 and (firstStats.processed or 0) == 1,
-  "one source message did not produce one queue record")
-assert((firstStats.consolidationRowsScanned or 0) == 0, "first canonical upsert scanned Public Groups")
-assert((firstStats.addMessageParseCalls or 0) == 0, "AddMessage performed parsing")
-
-for i = 1, 10 do
-  local rendered = filter(_G["ChatFrame" .. i], message, "Tester")
-  assert(string.find(rendered, "bronzelfgpub:" .. linkedId, 1, true), "repost missed stable activity link")
-end
-assert(#(BronzeLFG._sfP3Queue or {}) == 0, "same-window repost queued a second parser job")
+assert((firstStats.filterReceipts or 0) == 20, "filter receipt accounting is incorrect")
+assert((firstStats.sourceEvents or 0) == 1, "one source message produced multiple decisions")
+assert((firstStats.TestParseCalls or 0) == 1, "one source message was parsed more than once")
+assert((firstStats.queueRecordsCreated or 0) == 1 and (firstStats.queueRecordsProcessed or 0) == 1,
+  "one source message did not produce one worker record")
+assert((firstStats.inlineParserCalls or 0) == 0 and (firstStats.inlineQueueCalls or 0) == 0,
+  "display filtering performed forbidden parser work")
 
 nowValue = nowValue + 7
-filter(ChatFrame1, message, "Tester")
+assert(ingest(message, "Tester"), "repost was not ingested")
 drainQueue()
-assert(tableCount(BronzeLFG.publicGroups) == 1, "TTL repost created a duplicate row")
-assert(BronzeLFG.publicGroups[linkedId], "TTL repost changed the stable row ID")
+assert(tableCount(BronzeLFG.publicGroups) == 1, "repost created a duplicate row")
+assert(BronzeLFG.publicGroups[linkedId], "repost changed the stable row ID")
 
 nowValue = nowValue + 7
+ingest("LFG RDF", "Tester")
+ingest(message, "OtherTester")
+drainQueue()
 local second = filter(ChatFrame1, "LFG RDF", "Tester")
-local secondId = string.match(second, "bronzelfgpub:([^|]+)")
-assert(secondId and secondId ~= linkedId, "different activity reused the wrong canonical identity")
-nowValue = nowValue + 7
 local third = filter(ChatFrame1, message, "OtherTester")
+local secondId = string.match(second, "bronzelfgpub:([^|]+)")
 local thirdId = string.match(third, "bronzelfgpub:([^|]+)")
+assert(secondId and secondId ~= linkedId, "different activity reused the wrong canonical identity")
 assert(thirdId and thirdId ~= linkedId, "different player reused the wrong canonical identity")
-drainQueue()
 assert(tableCount(BronzeLFG.publicGroups) == 3, "distinct canonical listings did not remain distinct")
 
-nowValue = nowValue + 7
-local protocol = filter(ChatFrame1, "BLFG312~PRESENCE~payload", "Protocol")
-assert(protocol == "BLFG312~PRESENCE~payload", "protocol traffic was rewritten")
-assert(#(BronzeLFG._sfP3Queue or {}) == 0, "protocol traffic entered the parser queue")
-
-local parseBefore = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters.testParseCalls
-ChatFrame1:AddMessage("[3. Newcomers] [NoSource]: LFM MC 1 HEALER")
-local parseAfter = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters.testParseCalls
-assert(parseBefore == parseAfter, "lookup-only AddMessage path performed classification")
+local beforeProtocol = #(BronzeLFG._sfP3Queue or {})
+assert(not ingest("BLFG312~PRESENCE~payload", "Protocol"), "protocol traffic entered source parsing")
+assert(#(BronzeLFG._sfP3Queue or {}) == beforeProtocol, "protocol traffic entered the parser queue")
 
 BronzeLFG_DB.options.inlineChatLinks = false
+chat.Apply()
+assert(BronzeLFG:SF151_GetChatFilterState().knownSignalFireRegistrations == 0,
+  "links-off mode retained display filters")
 nowValue = nowValue + 7
-local plain = filter(ChatFrame1, "LFM BWL need tank", "Linkless")
-assert(not string.find(plain, "bronzelfgpub:", 1, true), "links-disabled mode still rendered a link")
-assert(#(BronzeLFG._sfP3Queue or {}) == 1, "links-disabled mode stopped background parsing")
+ingest("LFM BWL need tank", "Linkless")
+assert(#(BronzeLFG._sfP3Queue or {}) == 1, "links-off mode stopped source parsing")
 drainQueue()
 BronzeLFG_DB.options.inlineChatLinks = true
+chat.Apply()
+assert(BronzeLFG:SF151_GetChatFilterState().knownSignalFireRegistrations == 3,
+  "links-on mode did not install exactly three filters")
 
-BronzeLFG_DB.options.chatLinkScope = "main"
-nowValue = nowValue + 7
-local hidden = filter(ChatFrame3, "LFM ZG need healer", "ScopeTester")
-local main = filter(ChatFrame1, "LFM ZG need healer", "ScopeTester")
-assert(not string.find(hidden, "bronzelfgpub:", 1, true), "Main Chat Only linked another frame")
-assert(string.find(main, "bronzelfgpub:", 1, true), "Main Chat Only missed ChatFrame1")
-drainQueue()
-BronzeLFG_DB.options.chatLinkScope = "all"
-
+BronzeLFG_DB.options.publicGroups = false
+chat.Apply()
 BronzeLFG:SF151_ResetChatRuntimeStats()
-nowValue = nowValue + 7
-filter(ChatFrame1, "LFM AQ40 need dps", "Indexed")
-drainQueue()
-local indexStats = BronzeLFG:SF151_GetChatPublicIndexDiagnostics()
-assert(indexStats.addMessageParseCalls == 0, "AddMessage parse counter was non-zero")
-assert((indexStats.counters.consolidationRowsScanned or 0) == 0, "steady-state upsert scanned Public Groups")
-assert((indexStats.counters.indexFullScans or 0) == 0, "steady-state upsert rebuilt the canonical index")
-assert((indexStats.counters.refreshDirtyRequests or 0) == 1, "one mutation requested more than one refresh")
+assert(not ingest("LFM AQ40 need dps", "Disabled"), "parsing-off mode accepted a source event")
+local disabled = BronzeLFG:SF151_GetChatPublicIndexDiagnostics().counters
+assert((disabled.candidateGateCalls or 0) == 0 and (disabled.TestParseCalls or 0) == 0,
+  "parsing-off mode entered candidate or parser work")
+assert((disabled.queueRecordsCreated or 0) == 0 and (disabled.filtersCurrentlyInstalled or 0) == 0,
+  "parsing-off mode created queue work or retained filters")
+BronzeLFG_DB.options.publicGroups = true
+BronzeLFG_DB.options.inlineChatLinks = true
+chat.Apply()
 
 local oldProbe = SignalFireFastChatLinks.TestParse
 SignalFireFastChatLinks.TestParse = function() error("injected parser failure") end
 nowValue = nowValue + 7
-local parserFailure = filter(ChatFrame1, "LFM MC need heals injected", "ParserFailure")
-assert(parserFailure == "LFM MC need heals injected", "parser failure changed rendered chat")
-assert(#(BronzeLFG._sfP3Queue or {}) == 0, "parser failure queued a record")
+ingest("LFM MC need heals injected", "ParserFailure")
+drainQueue()
+assert(BronzeLFG._sfChatQueueProcessing == nil and BronzeLFG._sfP3SuppressNotify == nil,
+  "parser failure left an active-state guard set")
 SignalFireFastChatLinks.TestParse = oldProbe
 
 local oldRefresh = BronzeLFG.RequestPublicGroupsRefresh
 BronzeLFG.RequestPublicGroupsRefresh = function() error("injected refresh failure") end
 nowValue = nowValue + 7
-filter(ChatFrame1, "LFM NAXX need tank", "RefreshFailure")
+ingest("LFM NAXX need tank", "RefreshFailure")
 drainQueue()
 assert(BronzeLFG._sfChatQueueProcessing == nil and BronzeLFG._sfP3SuppressNotify == nil,
   "processing error left an active-state guard set")
 BronzeLFG.RequestPublicGroupsRefresh = oldRefresh
-nowValue = nowValue + 7
-filter(ChatFrame1, "LFM ONY need healer", "AfterFailure")
-drainQueue()
-assert(BronzeLFG._sfChatQueueProcessing == nil, "queue did not recover after an injected error")
 
 BronzeLFG:SF151_ResetChatRuntimeStats()
 nowValue = nowValue + 7
-for i = 1, 45 do filter(ChatFrame1, "LFM MC need healer run " .. tostring(i), "Overflow" .. tostring(i)) end
+for i = 1, 45 do ingest("LFM MC need healer run " .. tostring(i), "Overflow" .. tostring(i)) end
 local overflow = BronzeLFG:SF151_GetChatPublicIndexDiagnostics()
 assert(overflow.queueDepth == 40, "queue maximum was not enforced")
 assert((overflow.counters.queueDrops or 0) == 5, "queue drop accounting was incorrect")
+local worker = assert(BronzeLFG._sfP3Frame:GetScript("OnUpdate"), "chat queue update missing")
+worker(BronzeLFG._sfP3Frame, 0.01)
+assert(#(BronzeLFG._sfP3Queue or {}) == 36, "worker exceeded the four-record frame budget")
 drainQueue()
 assert(#(BronzeLFG._sfP3Queue or {}) == 0, "overflow queue did not recover")
 

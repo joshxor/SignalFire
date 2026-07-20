@@ -1,4 +1,20 @@
-# SignalFire 1.5.2 Phase 12A RC
+# SignalFire 1.5.2 Phase 12B RC
+
+This combined test candidate preserves the Phase 12A cache-lifecycle hotfix and restructures Public Groups chat parsing so one logical source message produces at most one bounded parser job, regardless of how many chat frames receive it.
+
+- Added an immediate Public Groups option gate before candidate, parser, queue, and cache work.
+- Added a strict low-cost candidate gate that rejects ordinary role, guild, queue, dungeon, raid, and Mythic conversation without recruitment context.
+- Moved `TestParse` into a sleeping worker limited to four records and 0.75 ms per active frame.
+- Kept accepted chat updates on the canonical indexed Public Groups path.
+- Removed parser, queue, listing mutation, refresh, and cache-maintenance work from ChatFrame filters.
+- Registers zero Public Groups display filters while parsing is Off or Chat Links are Off; links-on mode owns exactly three display-only filters.
+- Removed SignalFire's active ChatFrame `AddMessage` wrappers from the final chat path.
+- Added bounded render-decision caching and Phase 12B source, worker, filter, and index diagnostics.
+- Preserved all 33 parser regression cases and the Phase 12A cache-maintenance correction.
+
+An affected-player test of the separate Phase 12A partial hotfix improved performance from approximately 19 FPS to 35-38 FPS, but did not restore normal performance. That is external field evidence that cache cleanup was one significant component; it is not confirmation that the combined Phase 12B architecture fixes the remaining loss. Comparable affected-player testing is still required.
+
+## Phase 12A Foundation
 
 This test candidate removes a cache-maintenance path that could perform broad cleanup during sustained public chat. Automatic cleanup now runs through the existing lifecycle scheduler with a minimum 30-second interval, while `/sf perf cleanup` remains available as an immediate developer command.
 

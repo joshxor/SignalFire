@@ -116,7 +116,9 @@ assert(BronzeLFG_DB.options.inlineChatLinks == true, "reload migration disabled 
 local chat = assert(SignalFireChatRuntime151, "chat runtime is unavailable")
 BronzeLFG_DB.options.inlineChatLinks = false
 BronzeLFG_DB.options.publicGroups = true
+chat.Apply()
 local native = "LFM MC need healer |Hitem:12345:0:0:0|h[Native Item]|h"
+chat.IngestSource("MigrationTester", native, "3. Newcomers", "CHAT_MSG_CHANNEL")
 local _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", native, "MigrationTester",
   nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
 assert(not string.find(rendered or "", "bronzelfgpub:", 1, true),

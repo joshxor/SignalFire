@@ -6,7 +6,7 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 
 **Current release: 1.5.1**
 
-**Current test candidate: 1.5.2 Phase 12A** removes chat-triggered cache maintenance and consolidates automatic cleanup behind the existing lifecycle scheduler.
+**Current test candidate: 1.5.2 Phase 12B** preserves the Phase 12A cache-maintenance correction and moves Public Groups parsing out of ChatFrame display filters into one source-event queue with a strict worker budget.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
@@ -40,6 +40,8 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 SignalFire continues to parse eligible chat and populate Public Groups while Chat Links are Off. Enable links manually under **Options > Chat & Parsing** when you want clickable activity and guild links.
 
 Available scopes are Main Chat Only, Visible Chat Frames, and All Chat Frames. All Chat Frames provides the broadest coverage; lighter scopes may reduce custom-link rendering work on affected Ascension clients.
+
+In the 1.5.2 candidate, Public Groups source parsing no longer scales with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Those filters perform completed cache lookups only; an uncached first occurrence may appear without a SignalFire link.
 
 ## Commands
 

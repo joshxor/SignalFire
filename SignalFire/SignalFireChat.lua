@@ -508,6 +508,12 @@ do
 
     local function sfcq_enqueue(B, author, text, channelName)
       if not B then return nil end
+      if not BronzeLFG_DB or not BronzeLFG_DB.options
+        or BronzeLFG_DB.options.publicGroups == false then
+        local runtime = _G.SignalFireChatRuntime151
+        if runtime and runtime.Note then runtime.Note("parsingDisabledLegacyQueueReturns") end
+        return nil
+      end
       local raw = tostring(text or "")
       if raw == "" or sfcq_has_signalfire_link(raw) then return nil end
       if not sfcq_public_signal(raw) then return nil end
@@ -669,7 +675,8 @@ do
     end
 
     local function sffcl_public_enabled()
-      return not (BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.publicGroups == false)
+      return BronzeLFG_DB and BronzeLFG_DB.options
+        and BronzeLFG_DB.options.publicGroups ~= false
     end
 
     local function sffcl_is_ascension()
@@ -1330,6 +1337,7 @@ do
     function SignalFireFastChatLinks.Filter(frame, event, msgText, author, ...)
       local B = BLFG or (_G and _G.BronzeLFG)
       if not B then return false, msgText, author, ... end
+      if _G.SignalFireChatRuntime151 then return false, msgText, author, ... end
       if (event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL") and not B.SignalFireTestSay then return false, msgText, author, ... end
 
       local channelName = event
@@ -1367,6 +1375,14 @@ do
     local function sffcl_install()
       local B = BLFG or (_G and _G.BronzeLFG)
       if not B then return end
+      if _G.SignalFireChatRuntime151 then
+        sffcl_disable_old_filters()
+        sffcl_remove_filter("CHAT_MSG_CHANNEL", SignalFireFastChatLinks.Filter)
+        sffcl_remove_filter("CHAT_MSG_SAY", SignalFireFastChatLinks.Filter)
+        sffcl_remove_filter("CHAT_MSG_YELL", SignalFireFastChatLinks.Filter)
+        B._sffclFilterInstalled = nil
+        return
+      end
       sffcl_disable_old_filters()
       sffcl_hook_chat_frames()
       sffcl_remove_bad_fast_rows(B)
@@ -1690,6 +1706,7 @@ do
     end
 
     function SFCP.Filter(frame, event, msgText, author, ...)
+      if _G.SignalFireChatRuntime151 then return false, msgText, author, ... end
       if not sfcp_links_enabled() then return false, msgText, author, ... end
       if not sfcp_frame_allowed(frame) then return false, msgText, author, ... end
       if not sfcp_should_handle(msgText) then return false, msgText, author, ... end
@@ -1701,6 +1718,16 @@ do
 
     local function sfcp_install_filter()
       if not ChatFrame_AddMessageEventFilter then return end
+
+      if _G.SignalFireChatRuntime151 then
+        sfcp_remove_filter("CHAT_MSG_CHANNEL", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_SAY", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_YELL", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_CHANNEL", SFCP.fastFilter)
+        sfcp_remove_filter("CHAT_MSG_SAY", SFCP.fastFilter)
+        sfcp_remove_filter("CHAT_MSG_YELL", SFCP.fastFilter)
+        return
+      end
 
       if SignalFireFastChatLinks and type(SignalFireFastChatLinks.Filter) == "function"
         and SignalFireFastChatLinks.Filter ~= SFCP.Filter then
@@ -1761,6 +1788,7 @@ do
 
     local function sfcp_apply_runtime()
       sfcp_ensure_options()
+      if _G.SignalFireChatRuntime151 then return end
       sfcp_restore_chat_addmessage()
       sfcp_install_filter()
       sfcp_wrap_inline()
@@ -1839,10 +1867,15 @@ do
       BLFG._sffclFilterCache = {}
       BLFG._sffclDisplayCache = {}
       if SignalFireChatRuntime151 then
-        SignalFireChatRuntime151._decisionCache = {}
-        SignalFireChatRuntime151._decisionSlots = {}
-        SignalFireChatRuntime151._decisionCursor = 0
+        if SignalFireChatRuntime151.ClearRuntimeCaches then
+          SignalFireChatRuntime151.ClearRuntimeCaches()
+        else
+          SignalFireChatRuntime151._decisionCache = {}
+          SignalFireChatRuntime151._decisionSlots = {}
+          SignalFireChatRuntime151._decisionCursor = 0
+        end
       end
+      if BLFG.SF151_DedupePublicGroups then BLFG:SF151_DedupePublicGroups() end
       if BLFG.RefreshPublicGroups then pcall(function() BLFG:RefreshPublicGroups() end) end
       sfcp_set_status("Public Groups cache cleared.")
     end

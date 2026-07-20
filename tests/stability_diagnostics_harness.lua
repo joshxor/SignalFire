@@ -33,40 +33,35 @@ local networkSends = 0
 local savedSendAddonMessage = SendAddonMessage
 SendAddonMessage = function() networkSends = networkSends + 1 end
 local visibleBeforeProbe = ChatFrame1.lastMessage
+local originalChatAddMessage = ChatFrame1.AddMessage
 local ownership = B:SF151_ProbeChatFrameOwnership()
-assert((ownership.totals.signalFireOutermost or 0) == 10,
-  "outermost chat wrappers were not identified")
+assert((ownership.totals.signalFireMissing or 0) == 10,
+  "Phase 12B incorrectly retained SignalFire AddMessage wrappers")
+assert(ChatFrame1.AddMessage == originalChatAddMessage,
+  "ownership diagnostics changed AddMessage ownership")
 assert(ChatFrame1.lastMessage == visibleBeforeProbe, "ownership probe produced visible chat output")
 local publicCountAfterProbe = 0
 for _ in pairs(B.publicGroups or {}) do publicCountAfterProbe = publicCountAfterProbe + 1 end
 assert(publicCountAfterProbe == publicCountBeforeProbe, "ownership probe created a fake listing")
 assert(networkSends == 0, "ownership probe generated network traffic")
 
-local signalFireAddMessage = ChatFrame1.AddMessage
 ChatFrame1.AddMessage = function(self, text, ...)
   assert(type(text) == "string", "later chat wrapper requires a string payload")
   string.lower(text)
-  return signalFireAddMessage(self, text, ...)
+  return originalChatAddMessage(self, text, ...)
 end
 local chained = B:SF151_ProbeChatFrameOwnership()
-assert(frame_state(chained, "ChatFrame1") == "signalFireChained",
-  "later chat wrapper was not reported as chained")
+assert(frame_state(chained, "ChatFrame1") == "signalFireMissing",
+  "foreign AddMessage wrapper was incorrectly attributed to SignalFire")
 ChatFrame1.AddMessage = function() end
 local missing = B:SF151_ProbeChatFrameOwnership()
 assert(frame_state(missing, "ChatFrame1") == "signalFireMissing",
   "missing chat wrapper was not detected")
-ChatFrame1.AddMessage = function(self, ...)
-  signalFireAddMessage(self, ...)
-  return signalFireAddMessage(self, ...)
-end
-local duplicated = B:SF151_ProbeChatFrameOwnership()
-assert(frame_state(duplicated, "ChatFrame1") == "signalFireDuplicated",
-  "duplicated chat wrapper execution was not detected")
 ChatFrame1.AddMessage = function() error("outer chat owner rejected diagnostic payload") end
 local unknown = B:SF151_ProbeChatFrameOwnership()
 assert(frame_state(unknown, "ChatFrame1") == "unknown",
-  "uncertain chat ownership was not reported honestly")
-ChatFrame1.AddMessage = signalFireAddMessage
+  "foreign failing AddMessage ownership was not reported honestly")
+ChatFrame1.AddMessage = originalChatAddMessage
 SendAddonMessage = savedSendAddonMessage
 
 local signalFireSetItemRef = SetItemRef
@@ -97,17 +92,24 @@ SetItemRef = signalFireSetItemRef
 local filterBefore = S:GetChatFilterReport().filterCalls
 BronzeLFG_DB.options.inlineChatLinks = false
 B.SignalFireTestSay = true
-SignalFireChatRuntime151.Filter(ChatFrame1, "CHAT_MSG_SAY", "LFM MC 1 HEALER", "Harness")
+SignalFireChatRuntime151.Apply()
 local filterAfter = S:GetChatFilterReport()
-assert(filterAfter.expectedSignalFireFilters == 3 and filterAfter.knownSignalFireRegistrations == 3,
+assert(filterAfter.expectedSignalFireFilters == 0 and filterAfter.knownSignalFireRegistrations == 0,
   "filter registration state is incorrect")
-assert(filterAfter.filterCalls == filterBefore + 1, "filter interval activity was not measured")
+assert(filterAfter.filterCalls == filterBefore, "links-off mode received display-filter traffic")
 assert(BronzeLFG_DB.options.inlineChatLinks == false, "Chat Links Off changed during diagnostics")
 BronzeLFG_DB.options.inlineChatLinks = true
 local repaired, migration = B:SF151_RepairReleaseDatabase(BronzeLFG_DB)
 assert(repaired and migration.chatLinks == true and BronzeLFG_DB.options.inlineChatLinks == true,
   "explicit Chat Links On preference was not preserved")
+SignalFireChatRuntime151.Apply()
+SignalFireChatRuntime151.Filter(ChatFrame1, "CHAT_MSG_SAY", "LFM MC 1 HEALER", "Harness")
+filterAfter = S:GetChatFilterReport()
+assert(filterAfter.expectedSignalFireFilters == 3 and filterAfter.knownSignalFireRegistrations == 3,
+  "links-on mode did not own exactly three display filters")
+assert(filterAfter.filterCalls == filterBefore + 1, "links-on filter activity was not measured")
 BronzeLFG_DB.options.inlineChatLinks = false
+SignalFireChatRuntime151.Apply()
 
 local savedFrame = B.frame
 B.frame = CreateFrame("Frame", "Phase10ScaleHarness")
