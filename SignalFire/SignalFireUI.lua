@@ -1054,8 +1054,8 @@ do
 
     local P3 = _G.SignalFireChatRuntime151 or {}
     _G.SignalFireChatRuntime151 = P3
-    P3.generation = "1.5.2-phase12b"
-    P3.workerGeneration = "1.5.2-phase12b"
+    P3.generation = "1.5.2-phase12c"
+    P3.workerGeneration = "1.5.2-phase12c"
     P3.workerMaximumRecords = 4
     P3.workerMaximumMs = 0.75
     P3.renderDecisionMaximum = 256
@@ -1183,16 +1183,13 @@ do
       return "group\031" .. string.lower(p3_author(author)) .. "\031" .. p3_norm(text)
     end
 
-    -- Render decisions are keyed by the exact event payload. This avoids
-    -- hyperlink/color normalization in every receiving ChatFrame while keeping
-    -- canonical row identity on the normalized p3_key path.
+    -- Source and display paths deliberately share one semantic identity.
     local function p3_render_key(author, text)
-      return string.lower(tostring(author or "")) .. "\031" .. tostring(text or "")
+      return P3.SemanticKey and P3.SemanticKey(author, text) or p3_key(author, text)
     end
 
     local function p3_source_key(event, channel, author, text)
-      return string.lower(tostring(event or "chat")) .. "\031"
-        .. p3_norm(channel) .. "\031" .. p3_key(author, text)
+      return P3.SemanticKey and P3.SemanticKey(author, text) or p3_key(author, text)
     end
 
     local function p3_public_key(author, text)
@@ -1234,7 +1231,13 @@ do
         "inlineQueueCalls", "inlineUpsertCalls", "inlineAddPublicGroupCalls",
         "inlineRefreshCalls", "inlineSavedVariableWrites", "inlineCacheSweepCalls",
         "canonicalIndexHits", "canonicalIndexMisses", "canonicalIndexRepairs",
-        "historicalFullTableDuplicateScans",
+        "historicalFullTableDuplicateScans", "exactResolverCalls",
+        "exactResolverCacheHits", "exactResolverCacheMisses", "exactResolverFilterFallbacks",
+        "exactResolverSourceOwners", "exactResolverFilterOwners", "exactResolverReentryPrevented",
+        "canonicalUpserts", "exactLinksBuilt", "eligibleMessagesWithoutLinks", "genericLinksBuilt",
+        "normalizationCalls", "normalizationMsTotal", "normalizationMsMax",
+        "candidateMsTotal", "candidateMsMax", "canonicalUpsertMsTotal", "canonicalUpsertMsMax",
+        "linkTitleMsTotal", "linkTitleMsMax", "exactResolverMsTotal", "exactResolverMsMax",
       }
       for _, field in ipairs(fields) do
         if stats[field] == nil then stats[field] = 0 end
@@ -1249,6 +1252,7 @@ do
         or (_G.SignalFirePerf151 and _G.SignalFirePerf151.enabled == true)
         or P3._stabilityDiagnosticsEnabled == true
         or P3._canaryDiagnosticsEnabled == true
+        or P3._traceDiagnosticsEnabled == true
     end
 
     local function p3_note(field, amount)
@@ -1261,6 +1265,45 @@ do
     function P3.Note(field, amount)
       return p3_note(field, amount)
     end
+
+    -- Session-only semantic-key cache. Owner: SignalFireChatRuntime151.
+    -- Key: realm-stripped lowercase author plus the unmodified event text.
+    -- Value: normalized semantic key. Maximum: 256 entries. TTL: 30 seconds.
+    -- Eviction: cyclic oldest-slot replacement. Cleanup: replacement, runtime
+    -- cache clear, or session end. It is never persisted.
+    local function p3_semantic_key(author, text)
+      local stamp = p3_now()
+      local rawKey = string.lower(p3_author(author)) .. "\031" .. tostring(text or "")
+      P3._semanticKeyCache = P3._semanticKeyCache or {}
+      local cached = P3._semanticKeyCache[rawKey]
+      if cached and stamp <= (tonumber(cached.expires or 0) or 0) then
+        return cached.key, rawKey
+      end
+      local diagnostics = p3_diagnostics_enabled()
+      local started = diagnostics and debugprofilestop and debugprofilestop() or nil
+      local key = p3_key(author, text)
+      if diagnostics then
+        local stats = p3_stats()
+        stats.normalizationCalls = stats.normalizationCalls + 1
+        if started and debugprofilestop then
+          local elapsed = math.max(0, debugprofilestop() - started)
+          stats.normalizationMsTotal = stats.normalizationMsTotal + elapsed
+          if elapsed > stats.normalizationMsMax then stats.normalizationMsMax = elapsed end
+        end
+      end
+      P3._semanticKeySlots = P3._semanticKeySlots or {}
+      P3._semanticKeyCursor = ((tonumber(P3._semanticKeyCursor or 0) or 0) % 256) + 1
+      local old = P3._semanticKeySlots[P3._semanticKeyCursor]
+      if old then
+        local current = P3._semanticKeyCache[old.rawKey]
+        if current and current.stamp == old.stamp then P3._semanticKeyCache[old.rawKey] = nil end
+      end
+      P3._semanticKeyCache[rawKey] = {key=key, stamp=stamp, expires=stamp + 30}
+      P3._semanticKeySlots[P3._semanticKeyCursor] = {rawKey=rawKey, stamp=stamp}
+      return key, rawKey
+    end
+
+    P3.SemanticKey = p3_semantic_key
 
     local function p3_canary_owner()
       local owner = _G.SignalFireParserCanary151
@@ -1295,7 +1338,7 @@ do
       return p3_option_parsing_enabled() and P3._parserSuspended ~= true
     end
 
-    local function p3_candidate(text)
+    local function p3_candidate_raw(text)
       if not p3_parsing_enabled() then
         p3_note("parsingDisabledCandidateCalls")
         return false
@@ -1326,6 +1369,7 @@ do
       words = string.gsub(words, "%s+", " ")
       local role = string.find(words, " tank ", 1, true) or string.find(words, " heal ", 1, true)
         or string.find(words, " healer ", 1, true) or string.find(words, " heals ", 1, true)
+        or string.find(words, " heasl ", 1, true)
         or string.find(words, " dps ", 1, true) or string.find(words, " damage ", 1, true)
       local activity = string.find(words, " dungeon ", 1, true) or string.find(words, " dung ", 1, true)
         or string.find(words, " raid ", 1, true) or string.find(words, " rdf ", 1, true)
@@ -1338,6 +1382,9 @@ do
         or string.find(words, " zf ", 1, true) or string.find(words, " wc ", 1, true)
         or string.find(words, " aq40 ", 1, true) or string.find(words, " naxx ", 1, true)
         or string.find(words, " ony ", 1, true) or string.find(words, " boss ", 1, true)
+        or string.find(words, " snowgrave ", 1, true) or string.find(words, " kaldros ", 1, true)
+        or string.find(words, " soggoth ", 1, true) or string.find(words, " sogoth ", 1, true)
+        or string.find(words, " kazzak ", 1, true)
         or string.find(raw, "other side", 1, true) or string.find(raw, "otha side", 1, true)
       local direct = string.find(words, " lfm ", 1, true) or string.find(words, " lfg ", 1, true)
         or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
@@ -1365,6 +1412,19 @@ do
       end
       p3_note("candidateGateRejected")
       return false
+    end
+
+    local function p3_candidate(text)
+      local diagnostics = p3_diagnostics_enabled()
+      local started = diagnostics and debugprofilestop and debugprofilestop() or nil
+      local accepted, reason = p3_candidate_raw(text)
+      if started and debugprofilestop then
+        local elapsed = math.max(0, debugprofilestop() - started)
+        local stats = p3_stats()
+        stats.candidateMsTotal = stats.candidateMsTotal + elapsed
+        if elapsed > stats.candidateMsMax then stats.candidateMsMax = elapsed end
+      end
+      return accepted, reason
     end
 
     local function p3_frame_name(frame)
@@ -1590,6 +1650,7 @@ do
       row.channel = rec.channel or row.channel or "Public"
       row.type = parsed.type or row.type or "Dungeon"
       row.activity = parsed.activity or row.activity or "Group Listing"
+      row.activities = parsed.activities or row.activities
       row.roles = parsed.roles or row.roles or ""
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
@@ -1635,7 +1696,7 @@ do
       end
     end
 
-    local function p3_enqueue(author, text, channel, event)
+    local function p3_enqueue(author, text, channel, event, semanticKey, prepare)
       if not p3_parsing_enabled() then
         p3_note("parsingDisabledQueueCalls")
         return nil
@@ -1645,13 +1706,17 @@ do
       if p3_author(author) == p3_author(UnitName and UnitName("player") or "") and not B.SignalFireTestSay then return nil end
 
       local stamp = p3_now()
-      local key = p3_key(author, raw)
+      local key = semanticKey or p3_key(author, raw)
       B._sfP3Seen = B._sfP3Seen or {}
       B._sfP3Records = B._sfP3Records or {}
       local last = tonumber(B._sfP3Seen[key] or 0) or 0
       local existing = B._sfP3ActiveRecords and B._sfP3ActiveRecords[key] or nil
       if existing and (stamp - last) <= 5 then
         p3_note("deduped")
+        if type(prepare) == "function" then
+          local prepared, prepareError = pcall(prepare, existing)
+          if not prepared then error(prepareError, 0) end
+        end
         return existing
       end
 
@@ -1670,8 +1735,6 @@ do
       B._sfP3Records[id] = rec
       B._sfP3ActiveRecords = B._sfP3ActiveRecords or {}
       B._sfP3ActiveRecords[key] = rec
-      P3._pendingByStableId = P3._pendingByStableId or {}
-      if rec.stableId then P3._pendingByStableId[rec.stableId] = rec end
       B._sfP3Seen[key] = stamp
       B._sfP3SeenSlots = B._sfP3SeenSlots or {}
       B._sfP3SeenCursor = ((tonumber(B._sfP3SeenCursor or 0) or 0) % 256) + 1
@@ -1687,6 +1750,20 @@ do
         if oldRec and oldRec.time == oldRecord.stamp then B._sfP3Records[oldRecord.id] = nil end
       end
       B._sfP3RecordSlots[B._sfP3RecordCursor] = {id=id, stamp=stamp}
+
+      -- Complete the exact display decision before this record becomes visible
+      -- to the deferred worker. The protected cleanup prevents a failed prepare
+      -- from leaving an active record that can never be processed.
+      if type(prepare) == "function" then
+        local prepared, prepareError = pcall(prepare, rec)
+        if not prepared then
+          if B._sfP3ActiveRecords[key] == rec then B._sfP3ActiveRecords[key] = nil end
+          if B._sfP3Records[id] == rec then B._sfP3Records[id] = nil end
+          error(prepareError, 0)
+        end
+      end
+      P3._pendingByStableId = P3._pendingByStableId or {}
+      if rec.stableId then P3._pendingByStableId[rec.stableId] = rec end
 
       if B._sfP3Queue ~= nil and type(B._sfP3Queue) ~= "table" then
         p3_canary_abort("queue corruption")
@@ -1772,10 +1849,12 @@ do
       return item.rec, true, key
     end
 
-    -- Session-only render decisions. Key: normalized author/message. Maximum:
-    -- 256. TTL: 30s positive/5s negative. Cyclic eviction. Cleared by source
-    -- removal/profile reload; never persisted and never populated by a filter.
-    local function p3_cache_render_decision(key, display, stableId, positive, stamp, ttl)
+    -- Session-only exact decisions. Owner: SignalFireChatRuntime151. Key:
+    -- normalized author plus complete normalized message. Value: one completed
+    -- parser record or a conclusive negative. Maximum: 256 entries. TTL: 30s
+    -- positive/5s negative. Eviction: cyclic oldest-slot replacement. Cleanup:
+    -- replacement, runtime cache clear, profile reload, or session end.
+    local function p3_cache_render_decision(key, rec, positive, stamp, ttl, rejection, origin)
       if not key or key == "" then return end
       stamp = stamp or p3_now()
       P3._renderDecisionCache = P3._renderDecisionCache or {}
@@ -1787,16 +1866,17 @@ do
         if current and current.stamp == old.stamp then P3._renderDecisionCache[old.key] = nil end
       end
       local item = {
-        display=display or false, stableId=stableId, positive=positive == true,
-        generation=tonumber(P3._renderGeneration or 0) or 0,
-        stamp=stamp, expires=stamp + (ttl or (positive and P3.renderDecisionPositiveTTL or P3.renderDecisionNegativeTTL)),
+        rec=rec or false, stableId=rec and rec.stableId or nil, positive=positive == true,
+         generation=tonumber(P3._renderGeneration or 0) or 0,
+         stamp=stamp, expires=stamp + (ttl or (positive and P3.renderDecisionPositiveTTL or P3.renderDecisionNegativeTTL)),
+         rejection=rejection, ownerOrigin=origin or "source", sourceConsumed=origin ~= "filter",
       }
       P3._renderDecisionCache[key] = item
       P3._renderDecisionSlots[P3._renderDecisionCursor] = {key=key, stamp=stamp}
     end
 
-    local function p3_cached_render_decision(author, text)
-      local key = p3_render_key(author, text)
+    local function p3_cached_render_decision(author, text, preparedKey)
+      local key = preparedKey or p3_render_key(author, text)
       local item = P3._renderDecisionCache and P3._renderDecisionCache[key] or nil
       if not item then p3_note("renderDecisionMisses"); return nil, false, key end
       if item.generation ~= (tonumber(P3._renderGeneration or 0) or 0)
@@ -1807,50 +1887,150 @@ do
         return nil, false, key
       end
       p3_note("renderDecisionHits")
-      return item.display ~= false and item.display or nil, true, key, item
+      return item.rec ~= false and item.rec or nil, true, key, item
     end
 
-    -- Source ingestion owns candidate decisions and queue creation. ChatFrame
-    -- filters never call this path.
-    local function p3_resolve(author, text, channel, event)
+    local p3_render
+    local p3_upsert_canonical
+
+    -- Session-only re-entry guard. Owner: SignalFireChatRuntime151. Key: the
+    -- semantic message key. Maximum: 64 simultaneously resolving messages.
+    -- There is no TTL because each entry is removed by the protected-call
+    -- cleanup before ResolveExactMessage returns. It is never persisted.
+    local function p3_resolve(author, text, channel, event, origin)
       if not p3_parsing_enabled() then
         p3_note("parsingDisabledSourceReturns")
-        return nil
+        return tostring(text or ""), nil
       end
       if not p3_canary_check("before source candidate") then return nil end
       p3_note("sourceEventsReceived")
+      p3_note("exactResolverCalls")
       local raw = tostring(text or "")
       if raw == "" or p3_is_protocol(raw) then
         if p3_is_protocol(raw) then p3_note("protocolRejected") end
         p3_note("sourceEventsIgnored")
-        return nil
+        return raw, nil
       end
+      if p3_author(author) == p3_author(UnitName and UnitName("player") or "") and not B.SignalFireTestSay then
+        p3_note("sourceEventsIgnored")
+        return raw, nil
+      end
+
+      local diagnostics = p3_diagnostics_enabled()
+      local resolverStarted = diagnostics and debugprofilestop and debugprofilestop() or nil
       local sourceKey = p3_source_key(event, channel, author, text)
-      local cached, found = p3_cached_decision(sourceKey)
+      local cached, found, _, cachedItem = p3_cached_render_decision(author, raw, sourceKey)
+      if found and origin == "source" and cachedItem and cachedItem.sourceConsumed == true then
+        -- A new source event with identical text is a new logical occurrence.
+        -- Filters may reuse the previous exact result before this point, but the
+        -- source owner must refresh canonical time and deferred side effects once.
+        P3._renderDecisionCache[sourceKey] = nil
+        cached, found, cachedItem = nil, false, nil
+      elseif found and origin == "source" and cachedItem then
+        cachedItem.sourceConsumed = true
+      end
       if found then
         p3_note("sourceDecisionHits")
         p3_note("sourceDuplicatesSuppressed")
-        return cached
+        p3_note("exactResolverCacheHits")
+        local display = cached and p3_options().inlineChatLinks == true and p3_render
+          and p3_render(cached, raw) or raw
+        return display, cached, sourceKey, cachedItem and cachedItem.rejection or nil
       end
 
       p3_note("decisionCacheMisses")
       p3_note("sourceDecisionMisses")
-      if not p3_candidate(raw) then
-        p3_cache_decision(sourceKey, nil, p3_now(), 2)
-        p3_note("sourceEventsIneligible")
-        return nil
-      end
+      p3_note("exactResolverCacheMisses")
+      if origin == "filter" then p3_note("exactResolverFilterFallbacks") end
 
-      p3_note("sourceEvents")
-      p3_note("sourceEventsEligible")
-      local rec = p3_enqueue(author, raw, channel, event)
-      p3_cache_decision(sourceKey, rec, p3_now(), rec and 6 or 2)
-      return rec
+      P3._exactInFlight = P3._exactInFlight or {}
+      P3._exactInFlightCount = tonumber(P3._exactInFlightCount or 0) or 0
+      if P3._exactInFlight[sourceKey] or P3._exactInFlightCount >= 64 then
+        p3_note("exactResolverReentryPrevented")
+        return raw, nil, sourceKey
+      end
+      P3._exactInFlight[sourceKey] = true
+      P3._exactInFlightCount = P3._exactInFlightCount + 1
+
+      local display, decision, rejection = raw, nil, nil
+      local ok, err = pcall(function()
+        local accepted, candidateReason = p3_candidate(raw)
+        if not accepted then
+          rejection = candidateReason or "Cheap candidate gate rejected"
+          p3_cache_render_decision(sourceKey, nil, false, nil, nil, rejection, origin)
+          p3_note("sourceEventsIneligible")
+          return
+        end
+
+        local parsed = p3_parse(raw)
+        if not parsed then
+          rejection = "Authoritative parser rejected the candidate"
+          p3_cache_render_decision(sourceKey, nil, false, nil, nil, rejection, origin)
+          p3_note("sourceEventsIneligible")
+          return
+        end
+
+        p3_note("sourceEvents")
+        p3_note("sourceEventsEligible")
+        local rec = p3_enqueue(author, raw, channel, event, sourceKey, function(prepared)
+          prepared.parsed = parsed
+          prepared.kind = parsed.kind
+          prepared.guildName = parsed.guildName or parsed.guild
+          prepared.semanticKey = sourceKey
+          prepared.candidateAccepted = true
+          prepared.rejectionReason = nil
+          if prepared.kind == "group" then
+            p3_note("coreCalls")
+            prepared.linkRow = p3_make_link_row(prepared, parsed)
+            p3_upsert_canonical(prepared)
+            p3_note("canonicalUpserts")
+          end
+
+          -- A positive decision is cached only after its canonical group row
+          -- exists and its exact hyperlink has been constructed.
+          if prepared.kind == "group" and not (prepared.stableId and B.publicGroups
+            and B.publicGroups[prepared.stableId]) then
+            error("Canonical row was not created", 0)
+          end
+          decision = prepared
+          if p3_options().inlineChatLinks == true and p3_render then
+            display = p3_render(prepared, raw)
+            if display == raw then p3_note("eligibleMessagesWithoutLinks") end
+          end
+          p3_cache_render_decision(sourceKey, prepared, true, nil, nil, nil, origin)
+        end)
+        if not rec then
+          rejection = "Deferred side-effect queue unavailable"
+          return
+        end
+      end)
+      P3._exactInFlight[sourceKey] = nil
+      P3._exactInFlightCount = math.max(0, P3._exactInFlightCount - 1)
+      if not ok then
+        p3_note("processingErrors")
+        p3_note("parserErrors")
+        rejection = tostring(err or "exact resolver error")
+        display, decision = raw, nil
+      end
+      if decision then
+        if origin == "filter" then p3_note("exactResolverFilterOwners")
+        else p3_note("exactResolverSourceOwners") end
+      end
+      if decision then decision.rejectionReason = rejection end
+      if diagnostics and resolverStarted and debugprofilestop then
+        local elapsed = math.max(0, debugprofilestop() - resolverStarted)
+        local stats = p3_stats()
+        stats.exactResolverMsTotal = stats.exactResolverMsTotal + elapsed
+        if elapsed > stats.exactResolverMsMax then stats.exactResolverMsMax = elapsed end
+      end
+      return display, decision, sourceKey, rejection
     end
+
+    P3.ResolveExactMessage = p3_resolve
 
     local function p3_copy_authoritative(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "difficulty", "key", "keyLevel", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "key", "keyLevel", "ilevel", "score"}
       local function genericActivity(value)
         local v = tostring(value or "")
         return v == "" or v == "Group Listing" or v == "Looking For Group"
@@ -1868,8 +2048,10 @@ do
       if ss > ds then dst.seen = ss end
     end
 
-    local function p3_upsert_canonical(rec)
+    p3_upsert_canonical = function(rec)
       if not rec or rec.kind ~= "group" then return nil end
+      local diagnostics = p3_diagnostics_enabled()
+      local started = diagnostics and debugprofilestop and debugprofilestop() or nil
       B.publicGroups = B.publicGroups or {}
       local key = rec.canonicalKey or p3_key(rec.author, rec.text)
       local row, id = p3_index_lookup(key)
@@ -1885,6 +2067,7 @@ do
       row.channel = rec.channel or row.channel or "Public"
       row.type = parsed.type or row.type or "Dungeon"
       row.activity = parsed.activity or row.activity or "Group Listing"
+      row.activities = parsed.activities or row.activities
       row.roles = parsed.roles or row.roles or ""
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
@@ -1904,6 +2087,15 @@ do
         local ok = pcall(_G.BLFG_570b1c_ApplyPublicParserFix, row)
         if not ok then p3_note("processingErrors") end
       end
+      -- Compatibility layers may enrich tags or scores, but the one exact parser
+      -- result remains authoritative for fields used by identity and link titles.
+      row.type = parsed.type or row.type
+      row.activity = parsed.activity or row.activity
+      row.activities = parsed.activities or row.activities
+      row.roles = parsed.roles or row.roles
+      row.intent = parsed.intent or row.intent
+      row.difficulty = parsed.difficulty or row.difficulty
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
 
       local stamp = p3_epoch_now()
       if isNew then
@@ -1918,13 +2110,17 @@ do
       rec.resolvedId = id
       rec.linkRow = row
       rec.isNew = isNew
+      rec.shouldAlert = rec.shouldAlert or isNew
       B._lastPublicGroupTouched = row
       B._lastPublicGroupTouchedKey = id
-      if B.SF151_InvalidatePublicGroupsData then
-        B:SF151_InvalidatePublicGroupsData(isNew and "chat-insert" or "chat-update", id)
+      rec.publicDirtyReason = isNew and "chat-insert" or "chat-update"
+      rec.needsPublicRefresh = true
+      if diagnostics and started and debugprofilestop then
+        local elapsed = math.max(0, debugprofilestop() - started)
+        local stats = p3_stats()
+        stats.canonicalUpsertMsTotal = stats.canonicalUpsertMsTotal + elapsed
+        if elapsed > stats.canonicalUpsertMsMax then stats.canonicalUpsertMsMax = elapsed end
       end
-      p3_note("refreshDirtyRequests")
-      if B.RequestPublicGroupsRefresh then B:RequestPublicGroupsRefresh() end
       return row
     end
 
@@ -2058,20 +2254,70 @@ do
       return p3_frame_is_visible(frame)
     end
 
-    local function p3_render(rec, raw)
+    local function p3_role_summary(row)
+      local roles = string.lower(tostring(row and row.roles or ""))
+      local out = {}
+      if string.find(roles, "tank", 1, true) then table.insert(out, "T") end
+      if string.find(roles, "heal", 1, true) then table.insert(out, "H") end
+      if string.find(roles, "dps", 1, true) or string.find(roles, "damage", 1, true) then
+        table.insert(out, "D")
+      end
+      return table.concat(out, "/")
+    end
+
+    local function p3_exact_link_title(row)
+      local diagnostics = p3_diagnostics_enabled()
+      local started = diagnostics and debugprofilestop and debugprofilestop() or nil
+      local activity = tostring(row and row.activity or "")
+      if activity == "" or activity == "Unknown" then activity = tostring(row and row.type or "") end
+      local intent = tostring(row and row.intent or "")
+      local applicant = intent == "Applicant" or tostring(row and row.type or "") == "LFG"
+      local roles = p3_role_summary(row)
+      local suffix = applicant and "LFG" or "LFM"
+      if roles ~= "" then suffix = (applicant and "LFG " or "Need ") .. roles end
+      local title = activity ~= "" and (activity .. " - " .. suffix) or suffix
+      title = string.gsub(title, "|", "")
+      title = string.gsub(title, "%[", "(")
+      title = string.gsub(title, "%]", ")")
+      if string.len(title) > 72 then title = string.sub(title, 1, 69) .. "..." end
+      if diagnostics and started and debugprofilestop then
+        local elapsed = math.max(0, debugprofilestop() - started)
+        local stats = p3_stats()
+        stats.linkTitleMsTotal = stats.linkTitleMsTotal + elapsed
+        if elapsed > stats.linkTitleMsMax then stats.linkTitleMsMax = elapsed end
+      end
+      return title
+    end
+
+    P3.BuildExactLinkTitle = p3_exact_link_title
+
+    local function p3_insert_guild_link(raw, guild, link)
+      local low = string.lower(tostring(raw or ""))
+      local name = string.lower(tostring(guild or ""))
+      if name == "" or not link then return raw end
+      for _, wrapped in ipairs({"<" .. name .. ">", "[" .. name .. "]", name}) do
+        local first, last = string.find(low, wrapped, 1, true)
+        if first then return string.sub(raw, 1, first - 1) .. link .. string.sub(raw, last + 1) end
+      end
+      return raw .. " " .. link
+    end
+
+    p3_render = function(rec, raw)
       if not rec then return raw end
       if rec.kind == "guild" then
         local guild = tostring(rec.guildName or "")
         if guild == "" then return raw end
-        if B.InsertGuildLinkInText then
-          local ok, out = pcall(B.InsertGuildLinkInText, B, raw, guild)
-          if ok and out and out ~= "" and out ~= raw then return out end
+        if not rec._sfP3CachedLink and B.GuildChatLink then
+          local ok, link = pcall(B.GuildChatLink, B, guild)
+          if ok and link then
+            rec._sfP3CachedLink = link
+            p3_note("linksBuilt")
+            p3_note("exactLinksBuilt")
+          end
         end
-        local link = B.GuildChatLink and B:GuildChatLink(guild) or nil
-        return link and (raw .. " " .. link) or raw
+        return p3_insert_guild_link(raw, guild, rec._sfP3CachedLink)
       end
-      local row = rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or rec.linkRow
-      if not row and rec.kind == "group" and rec.parsed then row = p3_make_link_row(rec, rec.parsed) end
+      local row = rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or nil
       if row and rec.stableId and not row.id then row.id = rec.stableId end
 
       local link = nil
@@ -2085,30 +2331,21 @@ do
           p3_note("linkCacheHits")
         else
           p3_note("linkCacheMisses")
-          if B.PublicChatLink then
-            local ok, value = pcall(B.PublicChatLink, B, row)
-            if ok then link = value end
-          end
-          -- The stable row ID is the actual hyperlink contract. Keep a direct
-          -- fallback so a replaced/legacy PublicChatLink method cannot suppress
-          -- a valid display decision.
-          if not link and row.id then
-            local title = tostring(row.activity or (rec.parsed and rec.parsed.activity) or "")
-            if B.PublicLinkTitle then
-              local ok, value = pcall(B.PublicLinkTitle, B, row)
-              if ok and value and tostring(value) ~= "" then title = tostring(value) end
-            end
-            title = string.gsub(title, "|", "")
-            title = string.gsub(title, "%[", "(")
-            title = string.gsub(title, "%]", ")")
-            if title ~= "" then
-              link = "|cffd4a017|Hbronzelfgpub:" .. tostring(row.id) .. "|h[" .. title .. "]|h|r"
-            end
+          local activity = tostring(row.activity or "")
+          local generic = activity == "" or activity == "Group Listing"
+            or activity == "Looking For Group" or activity == "SignalFire Group"
+            or activity == "Open Group"
+          if generic then
+            p3_note("genericLinksBuilt")
+          elseif row.id then
+            local title = p3_exact_link_title(row)
+            link = "|cffd4a017|Hbronzelfgpub:" .. tostring(row.id) .. "|h[" .. title .. "]|h|r"
           end
           if link then
             rec._sfP3CachedLinkSignature = signature
             rec._sfP3CachedLink = link
             p3_note("linksBuilt")
+            p3_note("exactLinksBuilt")
           end
         end
       end
@@ -2117,20 +2354,20 @@ do
 
     p3_process = function(rec)
       if not rec or rec.done then return false end
-      local row, parsed = nil, nil
-      local renderKey = p3_render_key(rec.author, rec.text)
+      local row = rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or rec.linkRow
       B._sfChatQueueProcessing = true
       B._suppressPublicRefreshInChatLink = true
       B._sfP3SuppressNotify = true
       local ok, err = pcall(function()
-        parsed = p3_parse(rec.text)
-        rec.parsed = parsed
-        rec.kind = parsed and parsed.kind or nil
-        rec.guildName = parsed and parsed.guildName or nil
         if rec.kind == "group" then
-          p3_note("coreCalls")
-          rec.linkRow = p3_make_link_row(rec, parsed)
-          row = p3_upsert_canonical(rec)
+          if rec.needsPublicRefresh then
+            if B.SF151_InvalidatePublicGroupsData then
+              B:SF151_InvalidatePublicGroupsData(rec.publicDirtyReason or "chat-update", rec.stableId)
+            end
+            p3_note("refreshDirtyRequests")
+            if B.RequestPublicGroupsRefresh then B:RequestPublicGroupsRefresh() end
+            rec.needsPublicRefresh = nil
+          end
         elseif rec.kind == "guild" and rec.guildName and B.UpsertGuildBrowserChatListing then
           B:UpsertGuildBrowserChatListing(rec.guildName, rec.author, rec.text)
         end
@@ -2148,21 +2385,12 @@ do
       if not ok then
         rec.error = tostring(err or "unknown processing error")
         p3_note("processingErrors")
-        p3_note("parserErrors")
-        p3_cache_render_decision(renderKey, nil, nil, false)
-      elseif not parsed then
-        p3_cache_render_decision(renderKey, nil, nil, false)
-      else
-        local display = p3_render(rec, tostring(rec.text or ""))
-        local positive = display ~= tostring(rec.text or "")
-        p3_cache_render_decision(renderKey, positive and display or nil, rec.stableId, positive)
-        if rec.kind == "group" and rec.isNew and row and not rec.alerted and B.NotifyForPublicGroup then
-          rec.alerted = true
-          local alertOk = pcall(B.NotifyForPublicGroup, B, row)
-          if alertOk then p3_note("alertsEmitted") else p3_note("processingErrors") end
-          local removed = p3_prune_alert_seen()
-          if removed > 0 then p3_note("entriesPruned", removed) end
-        end
+      elseif rec.kind == "group" and rec.shouldAlert and row and not rec.alerted and B.NotifyForPublicGroup then
+        rec.alerted = true
+        local alertOk = pcall(B.NotifyForPublicGroup, B, row)
+        if alertOk then p3_note("alertsEmitted") else p3_note("processingErrors") end
+        local removed = p3_prune_alert_seen()
+        if removed > 0 then p3_note("entriesPruned", removed) end
       end
       p3_note("processed")
       p3_note("queueRecordsProcessed")
@@ -2208,17 +2436,21 @@ do
       end
       local raw = tostring(msgText)
       if diagnostics then
-        diag.lastFilterKey = p3_norm(raw)
         diag.lastFilterAt = p3_now()
       end
 
-      local out, found = p3_cached_render_decision(author, raw)
+      local rec, found, semanticKey = p3_cached_render_decision(author, raw)
+      local out = rec and p3_render(rec, raw) or raw
+      if not found then
+        out, rec, semanticKey = p3_resolve(author, raw, select(2, ...), event, "filter")
+      end
       if diagnostics and _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled
         and _G.SignalFirePerf151.NoteChatReceiver then
-        _G.SignalFirePerf151:NoteChatReceiver(p3_render_key(author, raw), p3_frame_name(frame))
+        _G.SignalFirePerf151:NoteChatReceiver(semanticKey or p3_render_key(author, raw), p3_frame_name(frame))
       end
       if diagnostics then
-        diag.lastFilterWasEligible = found == true
+        diag.lastFilterKey = semanticKey
+        diag.lastFilterWasEligible = rec ~= nil
       end
       if stats then
         if found then stats.filterDecisionHits = stats.filterDecisionHits + 1
@@ -2268,8 +2500,8 @@ do
     end
 
     -- Some custom 3.3.5 chat UIs discard the rewritten filter result. AddMessage
-    -- may only reuse a source-event decision; it never parses, queues, mutates a
-    -- listing, alerts, or requests a refresh.
+    -- reuses a completed decision or invokes the same exact resolver as the
+    -- source/filter path. It has no independent parser, upsert, or side effects.
     local function p3_display_plain(value)
       local text = tostring(value or "")
       text = string.gsub(text, "|c%x%x%x%x%x%x%x%x", "")
@@ -2346,14 +2578,19 @@ do
         or string.find(plain, "SignalFire:", 1, true)
         or string.find(plain, "SignalFire Alert:", 1, true) then return value end
 
-      local author, body = p3_display_parts(displayed, plain)
-      local rec = nil
+      local author, body, channel = p3_display_parts(displayed, plain)
+      local rec, found, semanticKey = nil, false, nil
       if author ~= "" and body ~= "" then
-        rec = select(1, p3_cached_render_decision(author, body))
+        rec, found, semanticKey = p3_cached_render_decision(author, body)
+        if not found then
+          local _, resolved
+          _, resolved, semanticKey = p3_resolve(author, body, channel, "CHAT", "filter")
+          rec = resolved
+        end
       end
       if diagnostics and rec and _G.SignalFirePerf151 and _G.SignalFirePerf151.enabled
         and _G.SignalFirePerf151.NoteChatReceiver then
-        _G.SignalFirePerf151:NoteChatReceiver(p3_render_key(rec.author or author, rec.text or body), p3_frame_name(frame))
+        _G.SignalFirePerf151:NoteChatReceiver(semanticKey or p3_render_key(rec.author or author, rec.text or body), p3_frame_name(frame))
       end
       if not rec then
         if author == "" or body == "" then
@@ -2583,6 +2820,8 @@ do
       P3._decisionCache = {}
       P3._decisionSlots = {}
       P3._pendingByStableId = {}
+      P3._exactInFlight = {}
+      P3._exactInFlightCount = 0
       return dropped
     end
 
@@ -2603,6 +2842,10 @@ do
       p3_disable_old_runtime()
       B.AddPublicGroup = p3_add_public
       B.InlinePublicChatLinkForMessage = p3_inline
+      P3.PublicLinkTitle = P3.PublicLinkTitle or function(_, row)
+        return p3_exact_link_title(row)
+      end
+      B.PublicLinkTitle = P3.PublicLinkTitle
       p3_restore_chat_frames()
       P3.ReconcileFilterRegistration()
       if not p3_parsing_enabled() then
@@ -2629,6 +2872,11 @@ do
       P3._renderDecisionCache = {}
       P3._renderDecisionSlots = {}
       P3._pendingByStableId = {}
+      P3._exactInFlight = {}
+      P3._exactInFlightCount = 0
+      P3._semanticKeyCache = {}
+      P3._semanticKeySlots = {}
+      P3._semanticKeyCursor = 0
       P3._renderGeneration = (tonumber(P3._renderGeneration or 0) or 0) + 1
       if B._sfP3Frame then
         B._sfP3Frame:SetScript("OnUpdate", nil)
@@ -2638,11 +2886,91 @@ do
     end
 
     function P3.IngestSource(author, text, channel, event)
-      return p3_resolve(author, text, channel, event)
+      local display, rec = p3_resolve(author, text, channel, event, "source")
+      return rec, display
     end
 
     function P3.Candidate(text)
       return p3_candidate(text)
+    end
+
+    function P3.GetExactDiagnostics()
+      local stats = p3_stats()
+      return {
+        generation=P3.generation,
+        exactResolverCalls=stats.exactResolverCalls or 0,
+        exactResolverCacheHits=stats.exactResolverCacheHits or 0,
+        exactResolverCacheMisses=stats.exactResolverCacheMisses or 0,
+        exactResolverFilterFallbacks=stats.exactResolverFilterFallbacks or 0,
+        exactResolverSourceOwners=stats.exactResolverSourceOwners or 0,
+        exactResolverFilterOwners=stats.exactResolverFilterOwners or 0,
+        exactResolverReentryPrevented=stats.exactResolverReentryPrevented or 0,
+        parserCalls=stats.parserCalls or 0,
+        canonicalUpserts=stats.canonicalUpserts or 0,
+        exactLinksBuilt=stats.exactLinksBuilt or 0,
+        eligibleMessagesWithoutLinks=stats.eligibleMessagesWithoutLinks or 0,
+        genericLinksBuilt=stats.genericLinksBuilt or 0,
+        candidateMsTotal=stats.candidateMsTotal or 0,
+        candidateMsMax=stats.candidateMsMax or 0,
+        normalizationMsTotal=stats.normalizationMsTotal or 0,
+        normalizationMsMax=stats.normalizationMsMax or 0,
+        testParseMsTotal=stats.testParseMsTotal or 0,
+        testParseMsMax=stats.testParseMsMax or 0,
+        canonicalUpsertMsTotal=stats.canonicalUpsertMsTotal or 0,
+        canonicalUpsertMsMax=stats.canonicalUpsertMsMax or 0,
+        linkTitleMsTotal=stats.linkTitleMsTotal or 0,
+        linkTitleMsMax=stats.linkTitleMsMax or 0,
+        exactResolverMsTotal=stats.exactResolverMsTotal or 0,
+        exactResolverMsMax=stats.exactResolverMsMax or 0,
+      }
+    end
+
+    function P3.TraceMessage(message)
+      local raw = p3_trim(message)
+      local sourceKey = p3_source_key("CHAT_MSG_CHANNEL", "Trace", "SignalFireTrace", raw)
+      local filterKey = p3_render_key("SignalFireTrace", raw)
+      local before = p3_stats()
+      local parserBefore = tonumber(before.parserCalls or 0) or 0
+      local upsertBefore = tonumber(before.canonicalUpserts or 0) or 0
+      local linkBefore = tonumber(before.exactLinksBuilt or 0) or 0
+      P3._traceDiagnosticsEnabled = true
+      local ok, display, rec, semanticKey, rejection = pcall(
+        p3_resolve, "SignalFireTrace", raw, "Trace", "CHAT_MSG_CHANNEL", "source")
+      P3._traceDiagnosticsEnabled = false
+      if not ok then
+        return {message=raw, sourceCacheKey=sourceKey, filterCacheKey=filterKey,
+          keyMatches=sourceKey == filterKey, candidateAccepted=false,
+          rejectionReason=tostring(display or "trace resolver error"), exactParserResult="error",
+          parserCallCount=0, upsertCount=0, linkBuildCount=0}
+      end
+      local after = p3_stats()
+      local parsed = rec and rec.parsed or nil
+      local row = rec and rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or nil
+      local title = row and p3_exact_link_title(row) or nil
+      local hyperlink = rec and rec._sfP3CachedLink or nil
+      return {
+        message=raw,
+        semanticKey=semanticKey or sourceKey,
+        sourceCacheKey=sourceKey,
+        filterCacheKey=filterKey,
+        keyMatches=sourceKey == filterKey,
+        candidateAccepted=rec and rec.candidateAccepted == true or false,
+        rejectionReason=rejection,
+        exactParserResult=parsed and "eligible" or "ineligible",
+        kind=parsed and parsed.kind or nil,
+        intent=parsed and parsed.intent or nil,
+        activity=parsed and parsed.activity or nil,
+        activities=parsed and parsed.activities or nil,
+        roles=parsed and parsed.roles or nil,
+        stableId=rec and rec.stableId or nil,
+        canonicalRowExists=row ~= nil,
+        linkTitle=title,
+        finalHyperlink=hyperlink,
+        finalDisplay=display,
+        parserCallCount=(tonumber(after.parserCalls or 0) or 0) - parserBefore,
+        upsertCount=(tonumber(after.canonicalUpserts or 0) or 0) - upsertBefore,
+        linkBuildCount=(tonumber(after.exactLinksBuilt or 0) or 0) - linkBefore,
+      }
     end
 
     local function p3_worker_update(frame, elapsed)
@@ -2970,6 +3298,21 @@ do
         .. ", maxMs=" .. string.format("%.3f", tonumber(stats.testParseMsMax or 0) or 0)
         .. ", hiddenLinkSkips=" .. tostring(stats.hiddenFrameLinkSkips or 0)
         .. ", linkCache=" .. tostring(stats.linkCacheHits or 0) .. "/" .. tostring(stats.linkCacheMisses or 0))
+      emit("exact=" .. tostring(stats.exactResolverCalls or 0)
+        .. ", cache=" .. tostring(stats.exactResolverCacheHits or 0) .. "/" .. tostring(stats.exactResolverCacheMisses or 0)
+        .. ", owner=" .. tostring(stats.exactResolverSourceOwners or 0) .. "/" .. tostring(stats.exactResolverFilterOwners or 0)
+        .. ", fallback=" .. tostring(stats.exactResolverFilterFallbacks or 0)
+        .. ", reentry=" .. tostring(stats.exactResolverReentryPrevented or 0)
+        .. ", upsert=" .. tostring(stats.canonicalUpserts or 0)
+        .. ", links=" .. tostring(stats.exactLinksBuilt or 0)
+        .. ", missing=" .. tostring(stats.eligibleMessagesWithoutLinks or 0)
+        .. ", generic=" .. tostring(stats.genericLinksBuilt or 0))
+      emit("exact ms: candidate=" .. string.format("%.3f/%.3f", tonumber(stats.candidateMsTotal or 0) or 0, tonumber(stats.candidateMsMax or 0) or 0)
+        .. ", normalize=" .. string.format("%.3f/%.3f", tonumber(stats.normalizationMsTotal or 0) or 0, tonumber(stats.normalizationMsMax or 0) or 0)
+        .. ", parse=" .. string.format("%.3f/%.3f", tonumber(stats.testParseMsTotal or 0) or 0, tonumber(stats.testParseMsMax or 0) or 0)
+        .. ", upsert=" .. string.format("%.3f/%.3f", tonumber(stats.canonicalUpsertMsTotal or 0) or 0, tonumber(stats.canonicalUpsertMsMax or 0) or 0)
+        .. ", title=" .. string.format("%.3f/%.3f", tonumber(stats.linkTitleMsTotal or 0) or 0, tonumber(stats.linkTitleMsMax or 0) or 0)
+        .. ", resolver=" .. string.format("%.3f/%.3f", tonumber(stats.exactResolverMsTotal or 0) or 0, tonumber(stats.exactResolverMsMax or 0) or 0))
       for _, item in ipairs(report.frames or {}) do
         emit(tostring(item.name) .. ": visible=" .. tostring(item.visible)
           .. ", docked=" .. tostring(item.docked)

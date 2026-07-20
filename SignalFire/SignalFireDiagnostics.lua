@@ -275,6 +275,9 @@ do
       {"session.chatDecisionSlots", p3._decisionSlots, false},
       {"session.chatRenderDecisions", p3._renderDecisionCache, false},
       {"session.chatRenderDecisionSlots", p3._renderDecisionSlots, false},
+      {"session.chatSemanticKeys", p3._semanticKeyCache, false},
+      {"session.chatSemanticKeySlots", p3._semanticKeySlots, false},
+      {"session.chatExactInFlight", p3._exactInFlight, false},
       {"session.chatPendingLinkTargets", p3._pendingByStableId, false},
       {"session.publicCanonicalIndex", p3._publicIndex, false},
       {"session.publicCanonicalIds", p3._publicIndexById, false},
@@ -1089,7 +1092,9 @@ do
       {name="session.chatRecords", owner="Phase 5", key="stable record id", maximum=256, ttl="30s", cleanup="ring replacement/prune", persistence="session"},
       {name="session.chatQueue", owner="Phase 5", key="FIFO index", maximum=40, ttl="until processed/dropped", cleanup="queue owner", persistence="session"},
       {name="session.chatDecisions", owner="Phase 5", key="source event", maximum=256, ttl="2-6s", cleanup="ring replacement/lookup", persistence="session"},
-      {name="session.chatRenderDecisions", owner="Phase 5", key="sender/message", maximum=256, ttl="2-6s", cleanup="ring replacement/lookup", persistence="session"},
+      {name="session.chatRenderDecisions", owner="Phase 12C", key="normalized sender/message", maximum=256, ttl="5s negative/30s positive", cleanup="ring replacement/lookup/runtime clear", persistence="session"},
+      {name="session.chatSemanticKeys", owner="Phase 12C", key="realm-stripped sender/raw message", maximum=256, ttl="30s", cleanup="ring replacement/runtime clear", persistence="session"},
+      {name="session.chatExactInFlight", owner="Phase 12C", key="semantic sender/message", maximum=64, ttl="resolver call lifetime", cleanup="protected resolver cleanup", persistence="session"},
       {name="session.publicCanonicalIndex", owner="Phase 5", key="canonical sender/message", maximum=512, ttl="public expiry + 30s", cleanup="index ring/row expiry", persistence="session"},
       {name="session.timerTasks", owner="Phase 4b", key="task key", maximum=128, ttl="deadline", cleanup="execute/cancel/replace", persistence="session"},
       {name="session.lazyPanels", owner="Phase 7", key="fixed panel id", maximum=13, ttl="session", cleanup="reload", persistence="session"},
@@ -2231,7 +2236,7 @@ do
 end
 -- SIGNALFIRE_PHASE10_STABILITY_END
 
--- Phase 12B affected-player parser safety canary. Session-only state; the
+-- Phase 12C affected-player parser safety canary. Session-only state; the
 -- temporary timer has no OnUpdate script while inactive and retains one report.
 -- SIGNALFIRE_PHASE12B_PARSER_CANARY_BEGIN
 do
@@ -2241,7 +2246,7 @@ do
   if B and P and CreateFrame then
     local C = _G.SignalFireParserCanary151 or {}
     _G.SignalFireParserCanary151 = C
-    C.generation = "1.5.2-phase12b-canary"
+    C.generation = "1.5.2-phase12c-canary"
     C.maximumDuration = 120
     C.active = false
     C.shuttingDown = false
@@ -2492,13 +2497,13 @@ do
       end
       require_match(row.version == "1.5.2", "version")
       require_match(row.releaseChannel == "rc", "release channel")
-      require_match(row.releaseName == "SignalFire 1.5.2 Phase 12B Canary RC", "release name")
+      require_match(row.releaseName == "SignalFire 1.5.2 Phase 12C Exact Links RC", "release name")
       require_match(row.diagnosticGeneration == "1.5.1-phase10b", "diagnostic generation")
-      require_match(string.find(row.chatRuntimeGeneration, "phase12b", 1, true) ~= nil,
+      require_match(string.find(row.chatRuntimeGeneration, "phase12c", 1, true) ~= nil,
         "chat runtime generation")
-      require_match(string.find(row.parserWorkerGeneration, "phase12b", 1, true) ~= nil,
+      require_match(string.find(row.parserWorkerGeneration, "phase12c", 1, true) ~= nil,
         "parser worker generation")
-      require_match(row.canaryGeneration == "1.5.2-phase12b-canary", "canary generation")
+      require_match(row.canaryGeneration == "1.5.2-phase12c-canary", "canary generation")
       require_match(row.sourceOwnerActive, "source owner")
       require_match(row.workerOwnerActive, "worker owner")
       require_match(row.shutdownOwnerActive, "shutdown owner")
@@ -2683,9 +2688,44 @@ do
     end
 
     function B:SF152_HandleParserSlash(command)
-      local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      local rawCommand = tostring(command or ""):gsub("^%s+", ""):gsub("%s+$", "")
+      local cmd = string.lower(rawCommand)
       if cmd == "parser identity" then
         C:PrintIdentity()
+        return true
+      elseif string.sub(cmd, 1, 13) == "parser trace " then
+        local message = string.sub(rawCommand, 14):gsub("^%s+", ""):gsub("%s+$", "")
+        if message == "" then
+          c_emit("Usage: /sf parser trace <message>")
+          return true
+        end
+        local runtime = _G.SignalFireChatRuntime151
+        local row = runtime and runtime.TraceMessage and runtime.TraceMessage(message) or nil
+        if not row then
+          c_emit("Exact-link trace is unavailable in the installed runtime.")
+          return true
+        end
+        local activities = row.activities
+        if type(activities) == "table" then activities = table.concat(activities, " / ") end
+        c_emit("trace key: semantic=" .. tostring(row.semanticKey or "none"))
+        c_emit("trace candidate=" .. tostring(row.candidateAccepted)
+          .. ", rejection=" .. tostring(row.rejectionReason or "none")
+          .. ", parser=" .. tostring(row.exactParserResult or "none"))
+        c_emit("trace result: kind=" .. tostring(row.kind or "none")
+          .. ", intent=" .. tostring(row.intent or "none")
+          .. ", activity=" .. tostring(row.activity or "none")
+          .. ", activities=" .. tostring(activities or "none")
+          .. ", roles=" .. tostring(row.roles or "none"))
+        c_emit("trace row: id=" .. tostring(row.stableId or "none")
+          .. ", exists=" .. tostring(row.canonicalRowExists)
+          .. ", title=" .. tostring(row.linkTitle or "none"))
+        c_emit("trace link: " .. tostring(row.finalHyperlink or "none"))
+        c_emit("trace keys: source=" .. tostring(row.sourceCacheKey or "none")
+          .. ", filter=" .. tostring(row.filterCacheKey or "none")
+          .. ", match=" .. tostring(row.keyMatches))
+        c_emit("trace work: parser=" .. tostring(row.parserCallCount or 0)
+          .. ", upsert=" .. tostring(row.upsertCount or 0)
+          .. ", linkBuild=" .. tostring(row.linkBuildCount or 0))
         return true
       elseif string.sub(cmd, 1, 13) == "parser canary" then
         local suffix = cmd:gsub("^parser%s+canary", ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -2712,7 +2752,7 @@ do
         C:PrintReport()
         return true
       elseif cmd == "parser" then
-        c_emit("Commands: /sf parser identity, canary [1-120], abort, off, status, report")
+        c_emit("Commands: /sf parser identity, trace <message>, canary [1-120], abort, off, status, report")
         return true
       end
       return false

@@ -4,11 +4,11 @@ local addonLoader = assert(arg and arg[2], "addon loader path is required")
 dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load")
-local P3 = assert(SignalFireChatRuntime151, "Phase 12B parser owner did not load")
+local P3 = assert(SignalFireChatRuntime151, "Phase 12C parser owner did not load")
 local C = assert(SignalFireParserCanary151, "parser canary owner did not load")
 local perf = assert(SignalFirePerf151, "final slash owner did not load")
-assert(P3.generation == "1.5.2-phase12b", "unexpected parser owner")
-assert(C.generation == "1.5.2-phase12b-canary", "unexpected canary owner")
+assert(P3.generation == "1.5.2-phase12c", "unexpected parser owner")
+assert(C.generation == "1.5.2-phase12c-canary", "unexpected canary owner")
 
 local testNow = 2100000
 local profileClock = 1000
@@ -75,11 +75,11 @@ local identity = C:GetIdentity()
 assert(identity.matchesExpected == true, "current canary identity did not match")
 assert(identity.version == "1.5.2" and identity.releaseChannel == "rc",
   "release identity did not match")
-assert(identity.releaseName == "SignalFire 1.5.2 Phase 12B Canary RC",
+assert(identity.releaseName == "SignalFire 1.5.2 Phase 12C Exact Links RC",
   "release name did not match")
-assert(identity.chatRuntimeGeneration == "1.5.2-phase12b"
-  and identity.parserWorkerGeneration == "1.5.2-phase12b"
-  and identity.canaryGeneration == "1.5.2-phase12b-canary",
+assert(identity.chatRuntimeGeneration == "1.5.2-phase12c"
+  and identity.parserWorkerGeneration == "1.5.2-phase12c"
+  and identity.canaryGeneration == "1.5.2-phase12c-canary",
   "runtime generations did not match")
 assert(identity.sourceOwnerActive and identity.workerOwnerActive and identity.shutdownOwnerActive,
   "final parser owners were not active")
@@ -136,7 +136,7 @@ for _, bad in ipairs({"0", "-1", "2.5", "121", "invalid"}) do
   assert(C.active == false, "invalid duration started a canary: " .. bad)
 end
 
--- Test 2: a five-second canary parses in the budgeted worker and stops itself.
+-- Test 2: a five-second canary resolves exactly, defers side effects, and stops itself.
 start(5)
 assert(ingest(1), "eligible source was not queued")
 local update = assert(worker(), "worker did not install OnUpdate for queued work")
@@ -164,7 +164,7 @@ local parserCallsBeforeAbort = (B._sfP3Stats or {}).TestParseCalls or 0
 local staleWorker = assert(worker(), "worker missing before abort")
 parser_command("parser abort")
 assert_off("manual abort")
-assert(count(B.publicGroups) == completedRows, "manual abort removed completed listings")
+assert(count(B.publicGroups) >= completedRows, "manual abort removed completed exact listings")
 staleWorker(B._sfP3Frame, .01)
 assert(((B._sfP3Stats or {}).TestParseCalls or 0) == parserCallsBeforeAbort,
   "TestParse ran after manual abort")
@@ -186,8 +186,7 @@ assert(((B._sfP3Stats or {}).TestParseCalls or 0) == beforeExpiryCalls,
 local originalProbe = SignalFireFastChatLinks.TestParse
 start(60)
 SignalFireFastChatLinks.TestParse = function() error("injected parser failure") end
-assert(ingest(50), "parser-error source was not queued")
-assert(worker(), "worker missing for parser-error test")(B._sfP3Frame, .01)
+assert(not ingest(50), "parser-error source returned an exact record")
 SignalFireFastChatLinks.TestParse = originalProbe
 assert_off("parser error")
 assert(C.lastAbortReason == "parser error", "parser-error reason was not retained")
@@ -258,9 +257,9 @@ for index = 1, 100 do
   assert_off("lifecycle " .. tostring(index))
 end
 
--- Test 7: Phase 12B ownership and worker budgets remain unchanged.
+-- Test 7: Phase 12C ownership and worker budgets remain unchanged.
 assert(P3.workerMaximumRecords == 4 and P3.workerMaximumMs == .75, "worker budget changed")
-assert(P3.generation == "1.5.2-phase12b", "source owner changed")
+assert(P3.generation == "1.5.2-phase12c", "source owner changed")
 assert(((B._sfP3Stats or {}).historicalFullTableDuplicateScans or 0) == 0,
   "historical live-chat scan returned")
 assert_off("final state")

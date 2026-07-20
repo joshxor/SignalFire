@@ -34,8 +34,11 @@ chat.Apply()
 chat.IngestSource("LazyTester", "LFM MC 1 HEALER", "3. Newcomers", "CHAT_MSG_CHANNEL")
 local _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC 1 HEALER", "LazyTester",
   nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
-assert(not string.find(rendered or "", "bronzelfgpub:", 1, true),
-  "uncached first display unexpectedly performed parser work")
+assert(string.find(rendered or "", "Molten Core - Need H", 1, true),
+  "first display missed the exact contextual link")
+local immediateId = string.match(rendered or "", "bronzelfgpub:([^|]+)")
+assert(immediateId and B.publicGroups and B.publicGroups[immediateId],
+  "exact resolver did not create canonical data before display")
 local queueFrame = assert(B._sfP3Frame, "chat queue frame missing")
 local update = assert(queueFrame:GetScript("OnUpdate"), "chat queue owner missing")
 local guard = 0
@@ -47,8 +50,8 @@ end
 _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC 1 HEALER", "LazyTester",
   nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")
 local linkedId = string.match(rendered or "", "bronzelfgpub:([^|]+)")
-assert(linkedId, "completed background parse did not cache a canonical link identity")
-assert(B.publicGroups and B.publicGroups[linkedId], "background chat did not update Public Groups data")
+assert(linkedId == immediateId, "deferred worker changed the canonical link identity")
+assert(B.publicGroups and B.publicGroups[linkedId], "canonical chat data disappeared after deferred work")
 assert(not B.publicPanel, "chat traffic constructed Public Groups")
 
 -- First main open builds only shell and Browse.

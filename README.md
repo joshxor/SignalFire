@@ -6,7 +6,7 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 
 **Current release: 1.5.1**
 
-**Current test candidate: 1.5.2 Phase 12B Canary RC** preserves the Phase 12A cache-maintenance correction and moves Public Groups parsing out of ChatFrame display filters into one source-event queue with a strict worker budget. Run `/sf parser identity` before testing; its temporary `/sf parser canary [1-120]` command automatically returns parsing and Chat Links to Off.
+**Current test candidate: 1.5.2 Phase 12C Exact Links RC** preserves the Phase 12A and 12B performance corrections while guaranteeing an exact activity, intent, and role link on the first eligible chat occurrence. Run `/sf parser identity` before testing; `/sf parser trace <message>` reports the exact decision without retaining chat history.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 

@@ -6,7 +6,7 @@ dofile(addonLoader)
 local B = assert(BronzeLFG, "SignalFire did not load from " .. tostring(addonRoot))
 local CL = assert(SignalFireCacheLifecycle151, "Phase 9 cache lifecycle owner did not load")
 local P3 = assert(SignalFireChatRuntime151, "Phase 5 chat owner did not load")
-assert(P3.generation == "1.5.2-phase12b", "unexpected chat owner")
+assert(P3.generation == "1.5.2-phase12c", "unexpected chat owner")
 
 local testNow = 1000000
 function time() return math.floor(testNow) end

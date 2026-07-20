@@ -8,7 +8,7 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12B Canary RC"', "canary release name");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12C Exact Links RC"', "canary release name");
 requireText(ui, "function P3.StopParserWork(reason)", "shared parser shutdown owner");
 requireText(ui, 'B._sfP3Frame:SetScript("OnUpdate", nil)', "sleeping parser worker");
 requireText(ui, 'p3_canary_check("before source candidate")', "source deadline check");
@@ -22,7 +22,7 @@ const filterStart = ui.indexOf("function P3.Filter(");
 const filterEnd = ui.indexOf("\n    local function p3_remove_filter", filterStart);
 if (filterStart < 0 || filterEnd < 0) throw new Error("P3.Filter body not found");
 const filter = ui.slice(filterStart, filterEnd);
-for (const forbidden of ["TestParse", "p3_parse(", "p3_resolve(", "p3_enqueue(", "p3_process(",
+for (const forbidden of ["TestParse", "p3_parse(", "p3_enqueue(", "p3_process(",
   "p3_upsert_canonical(", "ClearRuntimeCaches", "CacheLifecycle", "RequestPublicGroupsRefresh"]) {
   if (filter.includes(forbidden)) throw new Error(`display filter contains forbidden work: ${forbidden}`);
 }
@@ -33,14 +33,14 @@ requireText(diagnostics, "function C:CheckSafety()", "automatic safety owner");
 requireText(diagnostics, "function C:GetIdentity()", "build identity owner");
 requireText(diagnostics, "function C:PrintIdentity(row)", "build identity printer");
 requireText(diagnostics, "function B:SF152_HandleParserSlash(command)", "final parser slash handler");
-for (const command of ["parser identity", "parser canary", "parser abort", "parser off", "parser status", "parser report"]) {
+for (const command of ["parser identity", "parser trace ", "parser canary", "parser abort", "parser off", "parser status", "parser report"]) {
   requireText(diagnostics, command, `${command} command`);
 }
 requireText(diagnostics, 'row.version == "1.5.2"', "exact version identity gate");
 requireText(diagnostics, 'row.diagnosticGeneration == "1.5.1-phase10b"',
   "diagnostic identity gate");
-requireText(diagnostics, 'string.find(row.chatRuntimeGeneration, "phase12b", 1, true)',
-  "Phase 12B runtime identity gate");
+requireText(diagnostics, 'string.find(row.chatRuntimeGeneration, "phase12c", 1, true)',
+  "Phase 12C runtime identity gate");
 requireText(diagnostics, 'row.installedFilters == 0', "zero-filter identity gate");
 requireText(diagnostics, "The installed SignalFire files do not match the canary build. Canary not started.",
   "mixed-install refusal");

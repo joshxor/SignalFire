@@ -11,11 +11,11 @@ if (start < 0 || end <= start) throw new Error("Phase 5 source markers were not 
 const block = source.slice(start, end);
 
 for (const required of [
-  'P3.generation = "1.5.2-phase12b"',
+  'P3.generation = "1.5.2-phase12c"',
   "local function p3_source_key",
   "local function p3_cached_render_decision",
   "local function p3_index_lookup",
-  "local function p3_upsert_canonical",
+  "p3_upsert_canonical = function",
   "local function p3_rebuild_public_index",
   "function B:SF151_GetChatPublicIndexDiagnostics()",
   'local P3_INDEX_MAX = 512',
@@ -36,12 +36,13 @@ const rewriteStart = block.indexOf("local function p3_rewrite_rendered_message")
 const rewriteEnd = block.indexOf("local function p3_hook_custom_chat_frame", rewriteStart);
 if (rewriteStart < 0 || rewriteEnd <= rewriteStart) throw new Error("AddMessage fallback block was not found");
 const rewrite = block.slice(rewriteStart, rewriteEnd);
-for (const forbidden of ["p3_parse(", "p3_resolve(", "p3_enqueue(", "p3_upsert_canonical(", "RequestPublicGroupsRefresh", "NotifyForPublicGroup"] ) {
-  if (rewrite.includes(forbidden)) throw new Error(`AddMessage fallback is not lookup-only: ${forbidden}`);
+for (const forbidden of ["p3_parse(", "p3_enqueue(", "p3_upsert_canonical(", "RequestPublicGroupsRefresh", "NotifyForPublicGroup"] ) {
+  if (rewrite.includes(forbidden)) throw new Error(`AddMessage fallback duplicates exact-resolver work: ${forbidden}`);
 }
 if (!rewrite.includes("p3_cached_render_decision")) throw new Error("AddMessage fallback does not reuse source decisions");
+if (!rewrite.includes("p3_resolve")) throw new Error("AddMessage fallback lacks the shared resolver fallback");
 
-const upsertStart = block.indexOf("local function p3_upsert_canonical");
+const upsertStart = block.indexOf("p3_upsert_canonical = function");
 const upsertEnd = block.indexOf("local function p3_row_quality", upsertStart);
 const upsert = block.slice(upsertStart, upsertEnd);
 if (upsert.includes("for id, row in pairs(B.publicGroups)")) throw new Error("steady-state upsert scans Public Groups");

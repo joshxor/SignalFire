@@ -1,4 +1,19 @@
-# SignalFire 1.5.2 Phase 12B Canary RC
+# SignalFire 1.5.2 Phase 12C Exact Links RC
+
+This unpublished test candidate keeps the Phase 12A cache correction and Phase 12B bounded chat architecture while restoring exact contextual links on the first eligible chat occurrence.
+
+- Added one shared exact resolver for source-first and ChatFrame-first delivery.
+- Builds canonical Public Groups identity before caching the completed activity link.
+- Uses recruiter-aware `Need T/H/D` and applicant-aware `LFG T/H/D` titles.
+- Added Ascension aliases for Snowgrave, Kaldros, Soggoth, Lord Kazzak, Vaults of Inquisition, BFD, RDF, and MC.
+- Added multi-activity world-boss route links such as `Snowgrave / Kaldros / Soggoth - LFG D`.
+- Added narrow `Heasl` healer typo handling from field chat.
+- Repurposed the sleeping worker for refreshes, alerts, and guild updates; it no longer repeats exact parsing or canonical upserts.
+- Added `/sf parser trace <message>` and bounded exact-resolver timing and ownership counters.
+- Expanded the parser regression suite from 33 to 48 cases.
+- Preserved zero Public Groups filters while parsing or Chat Links are Off.
+
+## Phase 12B Canary Foundation
 
 This unpublished affected-player build adds a bounded parser safety canary. `/sf parser canary 5` temporarily enables Public Groups parsing with Chat Links forced Off, then automatically disables parsing and clears unfinished parser work. Emergency abort, status, and bounded session-report commands are included without changing parser classification or Public Groups identity.
 

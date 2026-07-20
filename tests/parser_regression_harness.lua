@@ -158,9 +158,14 @@ end
 assert(SignalFireParserRegression and SignalFireParserRegression.Run,
   "parser regression suite was not loaded")
 local result = SignalFireParserRegression.Run()
-assert(result.total == 33, "expected 33 parser tests, got " .. tostring(result.total))
+assert(result.total == 48, "expected 48 parser tests, got " .. tostring(result.total))
+if result.failed > 0 then
+  for _, item in ipairs(result.results or {}) do
+    if item.status == "FAIL" then print("parser fixture failed: " .. tostring(item.detail)) end
+  end
+end
 assert(result.failed == 0, "parser regressions failed: " .. tostring(result.failed))
-assert(result.passed + result.skipped == 33, "parser result count mismatch")
+assert(result.passed + result.skipped == 48, "parser result count mismatch")
 
 local perf = assert(SignalFirePerf151, "performance diagnostics were not loaded")
 assert(SlashCmdList["SIGNALFIRE"] == perf.slashWrapper, "diagnostics are not the final slash owner")
@@ -199,8 +204,8 @@ assert(lifecycle.generation == "1.5.1-perf-phase2", "wrong final UI lifecycle ow
 local rosterSnapshot = assert(SignalFireRosterSnapshot151, "Network/roster snapshot owner was not loaded")
 assert(rosterSnapshot.owner == "1.5.1-perf-phase3", "wrong final Network/roster owner")
 
-local chat = assert(SignalFireChatRuntime151, "Phase 12B chat owner was not loaded")
-assert(chat.generation == "1.5.2-phase12b", "wrong final chat/Public Groups owner")
+local chat = assert(SignalFireChatRuntime151, "Phase 12C chat owner was not loaded")
+assert(chat.generation == "1.5.2-phase12c", "wrong final chat/Public Groups owner")
 BronzeLFG:SF151_SetDeveloperDiagnostics(true)
 BronzeLFG:SF151_ResetChatRuntimeStats()
 
@@ -241,16 +246,21 @@ chat.Apply()
 
 local message = "LFM MC 1 HEALER"
 assert(ingest(message, "Tester"), "source owner rejected a valid listing")
+local linkedId = nil
 for i = 1, 10 do
-  assert(filter(_G["ChatFrame" .. i], message, "Tester") == message,
-    "uncached first display should pass through unchanged")
+  local rendered = filter(_G["ChatFrame" .. i], message, "Tester")
+  assert(string.find(rendered, "Molten Core - Need H", 1, true),
+    "first display did not receive the exact activity link")
+  local id = string.match(rendered, "bronzelfgpub:([^|]+)")
+  assert(id and id ~= "", "first display link did not contain a stable row ID")
+  linkedId = linkedId or id
+  assert(linkedId == id, "first receiving frames did not reuse one stable row ID")
 end
 assert(#(BronzeLFG._sfP3Queue or {}) == 1, "one source message created multiple parser jobs")
-assert(tableCount(BronzeLFG.publicGroups) == 0, "display filtering created a Public Groups row")
+assert(tableCount(BronzeLFG.publicGroups) == 1, "exact resolver did not create one canonical row before display")
 drainQueue()
-assert(tableCount(BronzeLFG.publicGroups) == 1, "worker did not create exactly one canonical row")
+assert(tableCount(BronzeLFG.publicGroups) == 1, "worker changed canonical row ownership")
 
-local linkedId = nil
 for i = 1, 10 do
   local rendered = filter(_G["ChatFrame" .. i], message, "Tester")
   assert(string.find(rendered, "Molten Core", 1, true), "completed display cache missed the activity link")
@@ -323,9 +333,10 @@ local oldProbe = SignalFireFastChatLinks.TestParse
 SignalFireFastChatLinks.TestParse = function() error("injected parser failure") end
 nowValue = nowValue + 7
 ingest("LFM MC need heals injected", "ParserFailure")
-drainQueue()
 assert(BronzeLFG._sfChatQueueProcessing == nil and BronzeLFG._sfP3SuppressNotify == nil,
   "parser failure left an active-state guard set")
+assert((SignalFireChatRuntime151._exactInFlightCount or 0) == 0,
+  "parser failure left the exact resolver guard set")
 SignalFireFastChatLinks.TestParse = oldProbe
 
 local oldRefresh = BronzeLFG.RequestPublicGroupsRefresh

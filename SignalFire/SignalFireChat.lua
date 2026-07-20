@@ -803,10 +803,39 @@ do
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       local out = {}
       if s:find("tank", 1, true) or s:find("prot", 1, true) then table.insert(out, roleText and roleText("Tank") or "Tank") end
-      if s:find("heal", 1, true) or s:find("heals", 1, true) or s:find("healer", 1, true) or s:find("resto", 1, true) then table.insert(out, roleText and roleText("Healer") or "Healer") end
+      if s:find("heal", 1, true) or s:find("heals", 1, true) or s:find("healer", 1, true)
+        or s:find("heasl", 1, true) or s:find("resto", 1, true) then
+        table.insert(out, roleText and roleText("Healer") or "Healer")
+      end
       if s:find("dps", 1, true) or s:find("damage", 1, true) then table.insert(out, roleText and roleText("DPS") or "DPS") end
       if #out == 0 and (s:find("need", 1, true) or s:find("lfm", 1, true)) then return "Needed" end
       return table.concat(out, "  ")
+    end
+
+    local function sffcl_intent(text)
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      if s:find(" lfg ", 1, true) or s:find(" looking for group", 1, true)
+        or s:find(" looking for grp", 1, true) or s:find(" looking for party", 1, true) then
+        return "Applicant"
+      end
+      if s:find(" lfm ", 1, true) or s:find(" lf%d+m") or s:find(" need ", 1, true)
+        or s:find(" lf %d+ tank") or s:find(" lf %d+ heal") or s:find(" lf %d+ dps")
+        or s:find(" lf tank", 1, true) or s:find(" lf heal", 1, true)
+        or s:find(" lf dps", 1, true) then
+        return "Recruiter"
+      end
+      local lfAt = s:find(" lf ", 1, true)
+      if lfAt then
+        local before = string.sub(s, 1, lfAt - 1)
+        if before:find("tank", 1, true) or before:find("heal", 1, true)
+          or before:find("heasl", 1, true) or before:find("dps", 1, true) then
+          return "Applicant"
+        end
+      end
+      if sffcl_role_signal(s) and (s:find(" aura", 1, true) or s:find(" spam", 1, true)) then
+        return "Applicant"
+      end
+      return "Recruiter"
     end
 
     local function sffcl_guild_name(text)
@@ -920,6 +949,21 @@ do
       return nil
     end
 
+    local function sffcl_world_activities(text)
+      if not sffcl_is_ascension() then return nil end
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      local out = {}
+      if sffcl_word(s, "snowgrave") then table.insert(out, "Snowgrave") end
+      if sffcl_word(s, "kaldros depthbreaker") then
+        table.insert(out, "Kaldros Depthbreaker")
+      elseif sffcl_word(s, "kaldros") then
+        table.insert(out, "Kaldros")
+      end
+      if sffcl_word(s, "soggoth") or sffcl_word(s, "sogoth") then table.insert(out, "Soggoth") end
+      if sffcl_word(s, "lord kazzak") or sffcl_word(s, "kazzak") then table.insert(out, "Lord Kazzak") end
+      return #out > 0 and out or nil
+    end
+
     local function sffcl_specific_dungeon(text)
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       -- On Ascension/CoA, players commonly shorten Vaults of Inquisition to just
@@ -1014,6 +1058,8 @@ do
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       if s:find("invasion", 1, true) then return "Event", "Invasion" end
       if s:find("boss blitz", 1, true) or s:find("hcbb", 1, true) or s:find("bbhc", 1, true) then return "Event", "Boss Blitz" end
+      local worldActivities = sffcl_world_activities(text)
+      if worldActivities then return "World Boss", table.concat(worldActivities, " / "), worldActivities end
       local randomFinder = s:find(" rdf ", 1, true) or s:find("random dungeon", 1, true)
         or s:find("random mythic dungeon", 1, true)
       local mythicFinder = s:find(" mythic ", 1, true) or s:find("mythic+", 1, true)
@@ -1072,13 +1118,15 @@ do
         return result
       end
 
-      local publicType, activity = sffcl_activity_type(raw)
+      local publicType, activity, activities = sffcl_activity_type(raw)
       if not sffcl_public_signal(raw, publicType, activity) then return result end
 
       result.eligible = true
       result.kind = "group"
       result.type = publicType
       result.activity = activity
+      result.activities = activities
+      result.intent = sffcl_intent(raw)
       result.roles = sffcl_roles(raw)
       result.reason = nil
       return result
@@ -2514,6 +2562,21 @@ do
       {name="Vault numbered singular shorthand", text="LF3M VAULT", type="Dungeon", activity="Vaults of Inquisition", profile="Ascension"},
       {name="Dungeon abbreviation LFG", text="lvl 53Big aoe Star caller LFG Dung spam hat has aura", type="Dungeon", activity="Random Dungeon Finder"},
       {name="DF role-first shorthand", text="Stormbringer dps LF DF farming grp", type="Dungeon", activity="Random Dungeon Finder"},
+      {name="Kazzak typo roles", text="LFM Kazzak | Heasl and dps no HR PST", type="World Boss", activity="Lord Kazzak", intent="Recruiter", roles={"Healer","DPS"}, profile="Ascension"},
+      {name="RDF healer recruiter", text="LFM HEAL RDF SPAM WE HAVE AURA", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Healer"}},
+      {name="Ascension multi boss route", text="Mythic geared dps LFG Snowgrave/Kaldros/Soggoth", type="World Boss", activity="Snowgrave / Kaldros / Soggoth", intent="Applicant", roles={"DPS"}, profile="Ascension"},
+      {name="RDF numbered recruiter", text="lf 1 tank 1 healer 20+ we have aura rdf spam", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","Healer"}},
+      {name="Vault tank recruiter", text="LFM Vault need tank then gtg", type="Dungeon", activity="Vaults of Inquisition", intent="Recruiter", roles={"Tank"}, profile="Ascension"},
+      {name="RDF tank applicant", text="48 tank LFG RDF group with aura", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"Tank"}},
+      {name="RDF DPS team applicant", text="lvl 22 dps LF team with aura RDF spam", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"DPS"}},
+      {name="RDF aura applicant", text="lvl 56 DPS with exp aura | RDF spam 50+ grp", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"DPS"}},
+      {name="BFD healer applicant", text="Healer LFG BFD", type="Dungeon", activity="Blackfathom Deeps", intent="Applicant", roles={"Healer"}},
+      {name="Generic dungeon DPS recruiter", text="LFM good Dps 1k+ Dungeon farm 35+", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"DPS"}},
+      {name="RDF tank LF applicant", text="TANK LF GRP WITH AURA TO RDF SPAM", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"Tank"}},
+      {name="RDF tank DPS recruiter", text="LFM RDF NEED TANK / DPS", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","DPS"}},
+      {name="RDF all roles recruiter", text="LFM SPAM RDF Need Tank Healer DPS WITH HAVE AURAS 40+", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","Healer","DPS"}},
+      {name="Ignore guild applicant question", text="any lvling guilds recruiting?", ignore=true},
+      {name="Ignore Portuguese dungeon announcement", text="Massmorra aleatoria disponivel hoje, confira as novidades!", ignore=true},
     }
 
     local function sfpr_profile()
@@ -2553,6 +2616,13 @@ do
       end
       if test.type and not sfpr_same(result.type, test.type) then return false end
       if test.activity and not sfpr_same(result.activity, test.activity) then return false end
+      if test.intent and not sfpr_same(result.intent, test.intent) then return false end
+      if test.roles then
+        local roles = sfpr_lower(result.roles)
+        for _, role in ipairs(test.roles) do
+          if not string.find(roles, sfpr_lower(role), 1, true) then return false end
+        end
+      end
       return true
     end
 
@@ -2865,6 +2935,11 @@ do
       end
       if not guildPos then return false end
 
+      -- A question asking whether any guild is recruiting is still a player
+      -- seeking a guild, not a recruitment advertisement by a named guild.
+      local anyPos = string.find(s, " any ", 1, true)
+      if string.find(raw, "?", 1, true) and anyPos and anyPos < guildPos then return true end
+
       -- Real recruitment language wins. This keeps posts such as
       -- "Guild LF members" and "<Guild> is recruiting" valid.
       local recruiting = string.find(s, " recruit", 1, true) or string.find(s, " recrutement", 1, true)
@@ -3066,6 +3141,8 @@ do
         result.type = fast.type
         result.activity = fast.activity
         result.roles = fast.roles
+        result.intent = fast.intent or result.intent
+        result.activities = fast.activities or result.activities
         if fast.guild and fast.guild ~= "" then result.guild = fast.guild end
         result.reason = nil
       end
