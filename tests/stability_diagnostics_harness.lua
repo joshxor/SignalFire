@@ -90,6 +90,7 @@ assert(setItem.state == "unknown", "uncertain SetItemRef ownership was not repor
 SetItemRef = signalFireSetItemRef
 
 local filterBefore = S:GetChatFilterReport().filterCalls
+BronzeLFG_DB.options.publicGroups = true
 BronzeLFG_DB.options.inlineChatLinks = false
 B.SignalFireTestSay = true
 SignalFireChatRuntime151.Apply()

@@ -16,8 +16,10 @@ SignalFirePerf151.enabled = true
 B:SF151_ResetCacheLifecycleStats()
 B:SF151_ResetChatRuntimeStats()
 BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+BronzeLFG_DB.options.publicGroups = true
 BronzeLFG_DB.options.inlineChatLinks = true
 BronzeLFG_DB.options.chatLinkScope = "all"
+P3.Apply()
 B.onlineUsers = B.onlineUsers or {}
 B.sfnStatuses = B.sfnStatuses or {}
 B._notifySeen569 = B._notifySeen569 or {}
@@ -28,13 +30,17 @@ local function count(values)
   return total
 end
 
-local queueScript = assert(B._sfP3Frame:GetScript("OnUpdate"), "chat queue owner missing")
+assert(B._sfP3Frame:GetScript("OnUpdate") == nil, "idle chat queue owner did not sleep")
 local filter = assert(P3.Filter, "source chat filter missing")
 local milestones = {[5000]=true, [10000]=true, [25000]=true, [50000]=true}
 local samples = {}
 
 local function drain()
-  while #(B._sfP3Queue or {}) > 0 do queueScript(B._sfP3Frame, .1) end
+  while #(B._sfP3Queue or {}) > 0 do
+    local queueScript = assert(B._sfP3Frame:GetScript("OnUpdate"), "active chat queue owner missing")
+    queueScript(B._sfP3Frame, .1)
+  end
+  assert(B._sfP3Frame:GetScript("OnUpdate") == nil, "drained chat queue owner did not sleep")
 end
 
 local function memorySample()

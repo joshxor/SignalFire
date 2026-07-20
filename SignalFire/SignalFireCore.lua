@@ -6,7 +6,7 @@ do
   repeat
     SignalFire_VERSION = "1.5.2"
     SignalFire_RELEASE_CHANNEL = "rc"
-    SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12B RC"
+    SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12B Canary RC"
 
     function SignalFire_GetVersion()
       return tostring(SignalFire_VERSION or "1.5.2")

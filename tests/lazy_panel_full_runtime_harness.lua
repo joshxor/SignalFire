@@ -28,6 +28,9 @@ end
 
 -- Incoming chat updates the canonical model before Public Groups exists.
 local chat = assert(SignalFireChatRuntime151, "chat owner missing")
+BronzeLFG_DB.options.publicGroups = true
+BronzeLFG_DB.options.inlineChatLinks = true
+chat.Apply()
 chat.IngestSource("LazyTester", "LFM MC 1 HEALER", "3. Newcomers", "CHAT_MSG_CHANNEL")
 local _, rendered = chat.Filter(ChatFrame1, "CHAT_MSG_CHANNEL", "LFM MC 1 HEALER", "LazyTester",
   nil, nil, nil, nil, nil, nil, nil, "3. Newcomers")

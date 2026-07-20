@@ -6,7 +6,7 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 
 **Current release: 1.5.1**
 
-**Current test candidate: 1.5.2 Phase 12B** preserves the Phase 12A cache-maintenance correction and moves Public Groups parsing out of ChatFrame display filters into one source-event queue with a strict worker budget.
+**Current test candidate: 1.5.2 Phase 12B Canary RC** preserves the Phase 12A cache-maintenance correction and moves Public Groups parsing out of ChatFrame display filters into one source-event queue with a strict worker budget. Run `/sf parser identity` before testing; its temporary `/sf parser canary [1-120]` command automatically returns parsing and Chat Links to Off.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
@@ -53,6 +53,10 @@ In the 1.5.2 candidate, Public Groups source parsing no longer scales with the n
 - `/sf diag report` prints a diagnostic report.
 - `/sf diag stop` disables diagnostics.
 - `/sf diag` lists the remaining diagnostic commands.
+- `/sf parser canary 5` runs a five-second parser-only safety test with Chat Links Off.
+- `/sf parser abort` immediately stops an active canary and discards unfinished parser work.
+- `/sf parser off` is the emergency parser and Chat Links shutdown command.
+- `/sf parser status` and `/sf parser report` show bounded session-only canary results.
 
 Diagnostics and deep traces are disabled by default and are not saved between sessions.
 

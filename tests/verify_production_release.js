@@ -32,7 +32,7 @@ const workflow = fs.readFileSync(path.join(root, ".github/workflows/release.yml"
 
 requireText(core, 'SignalFire_VERSION = "1.5.2"', "authoritative version");
 requireText(core, 'SignalFire_RELEASE_CHANNEL = "rc"', "release channel");
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12B RC"', "release name");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12B Canary RC"', "release name");
 requireText(core, 'return "SignalFire v" .. SignalFire_GetVersion()', "stable title composition");
 requireText(chat, "options.inlineChatLinks = false", "safe Chat Links default");
 requireText(chat, "options.inlineChatLinks ~= true and options.inlineChatLinks ~= false",

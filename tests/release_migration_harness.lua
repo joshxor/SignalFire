@@ -95,10 +95,12 @@ assert(B.frame == frameBefore, "release migration constructed UI")
 assert(not timer or not timer.delayedFrame or timer.delayedFrame:IsShown() == timerActiveBefore,
   "release migration changed timer state")
 
-assert(BronzeLFG_DB.options.inlineChatLinks == true,
-  "the harness's explicit installed Chat Links setting was overwritten")
+assert(BronzeLFG_DB.options.inlineChatLinks == false,
+  "the canary startup did not force the installed Chat Links setting Off")
 local globalReport = migrate(BronzeLFG_DB)
-assert(globalReport.chatLinks == true, "global migration report lost explicit Chat Links state")
+assert(globalReport.chatLinks == false, "global migration report lost the canary startup state")
+
+BronzeLFG_DB.options.inlineChatLinks = true
 
 if B.SF143_SetServerProfile then
   B:SF143_SetServerProfile("Triumvirate", true)

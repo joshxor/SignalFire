@@ -2230,3 +2230,520 @@ do
   end
 end
 -- SIGNALFIRE_PHASE10_STABILITY_END
+
+-- Phase 12B affected-player parser safety canary. Session-only state; the
+-- temporary timer has no OnUpdate script while inactive and retains one report.
+-- SIGNALFIRE_PHASE12B_PARSER_CANARY_BEGIN
+do
+  local B = _G.BronzeLFG
+  local P = _G.SignalFirePerf151
+  local P3 = _G.SignalFireChatRuntime151 or {}
+  if B and P and CreateFrame then
+    local C = _G.SignalFireParserCanary151 or {}
+    _G.SignalFireParserCanary151 = C
+    C.generation = "1.5.2-phase12b-canary"
+    C.maximumDuration = 120
+    C.active = false
+    C.shuttingDown = false
+
+    local function c_now()
+      if GetTime then return tonumber(GetTime() or 0) or 0 end
+      if time then return tonumber(time() or 0) or 0 end
+      return 0
+    end
+
+    local function c_fps()
+      if not GetFramerate then return nil end
+      local ok, value = pcall(GetFramerate)
+      value = ok and tonumber(value) or nil
+      return value and value >= 0 and value or nil
+    end
+
+    local function c_emit(message)
+      local text = "|cffffd100SignalFire>|r " .. tostring(message or "")
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(text)
+      elseif print then
+        print("SignalFire> " .. tostring(message or ""))
+      end
+    end
+
+    local function c_number(value)
+      return tonumber(value or 0) or 0
+    end
+
+    local function c_options()
+      BronzeLFG_DB = BronzeLFG_DB or {}
+      BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+      return BronzeLFG_DB.options
+    end
+
+    local function c_sync_options()
+      local options = c_options()
+      local function set_checked(control, value)
+        if control and control.SetChecked then pcall(control.SetChecked, control, value) end
+      end
+      set_checked(B.optPublic, options.publicGroups ~= false)
+      local panel = B.sfcpPanel
+      if panel then
+        set_checked(panel.publicGroups, options.publicGroups ~= false)
+        set_checked(panel.inlineChatLinks, options.inlineChatLinks == true)
+      end
+    end
+
+    local function c_stats()
+      return B._sfP3Stats or {}
+    end
+
+    local function c_runtime_state()
+      if type(P3.GetParserRuntimeState) ~= "function" then return {} end
+      local ok, state = pcall(P3.GetParserRuntimeState)
+      return ok and type(state) == "table" and state or {}
+    end
+
+    local function c_installed_filter_count(runtime)
+      if type(B.SF151_GetChatFilterState) == "function" then
+        local ok, state = pcall(B.SF151_GetChatFilterState, B)
+        if ok and type(state) == "table" then
+          return c_number(state.knownSignalFireRegistrations)
+        end
+      end
+      return c_number(runtime and runtime.filtersInstalled)
+    end
+
+    local function c_forbidden_calls(stats)
+      local total = 0
+      for _, field in ipairs({
+        "inlineCandidateCalls", "inlineParserCalls", "inlineQueueCalls",
+        "inlineUpsertCalls", "inlineAddPublicGroupCalls", "inlineRefreshCalls",
+        "inlineSavedVariableWrites", "inlineCacheSweepCalls",
+      }) do
+        total = total + c_number(stats[field])
+      end
+      return total
+    end
+
+    function C:SampleFPS()
+      local value = c_fps()
+      if not value then return nil end
+      if not self.startingFPS then self.startingFPS = value end
+      if not self.minimumFPS or value < self.minimumFPS then self.minimumFPS = value end
+      self.endingFPS = value
+      return value
+    end
+
+    function C:CheckSafety()
+      if not self.active or self.shuttingDown then return self.active end
+      local stats = c_stats()
+      if c_number(stats.parserErrors) > 0 then return self:AbortSafety("parser error") end
+      if type(B._sfP3Queue) ~= "table" then return self:AbortSafety("queue corruption") end
+      if #B._sfP3Queue > 40 then return self:AbortSafety("hard queue bound exceeded") end
+      if c_number(stats.workerMaximumFrameMs) > 10 then
+        return self:AbortSafety("worker frame exceeded 10 ms")
+      end
+      if c_forbidden_calls(stats) > 0 then
+        return self:AbortSafety("forbidden ChatFrame render work")
+      end
+      if P3._filterInstalled == true then
+        return self:AbortSafety("Public Groups render filters appeared while Chat Links were Off")
+      end
+      if c_number(self.chatMaintenanceRuns) > 0 then
+        return self:AbortSafety("chat-triggered cache maintenance")
+      end
+      return true
+    end
+
+    function C:CheckRuntime(stage)
+      if not self.active or self.shuttingDown then return false end
+      if c_now() >= c_number(self.deadline) then
+        self:Shutdown("completed", "deadline reached")
+        return false
+      end
+      return self:CheckSafety()
+    end
+
+    local function c_build_report(self, outcome, reason, stoppedAt)
+      local stats = c_stats()
+      local runtime = c_runtime_state()
+      local actual = math.max(0, c_number(stoppedAt) - c_number(self.startedAt))
+      return {
+        generation=self.generation,
+        runtimeGeneration=P3.generation,
+        requestedDuration=c_number(self.requestedDuration),
+        actualDuration=actual,
+        outcome=tostring(outcome or "aborted"),
+        abortReason=tostring(reason or "none"),
+        parserEnabled=c_options().publicGroups ~= false,
+        chatLinksEnabled=c_options().inlineChatLinks == true,
+        sourceEventsReceived=c_number(stats.sourceEventsReceived),
+        candidateGateCalls=c_number(stats.candidateGateCalls),
+        candidatesAccepted=c_number(stats.candidateGateAccepted),
+        candidatesRejected=c_number(stats.candidateGateRejected),
+        TestParseCalls=c_number(stats.TestParseCalls),
+        queueRecordsCreated=c_number(stats.queueRecordsCreated),
+        queueRecordsProcessed=c_number(stats.queueRecordsProcessed),
+        queueMaximumDepth=c_number(stats.queueMaximumDepth),
+        queueDrops=c_number(stats.queueDrops),
+        workerActiveFrames=c_number(stats.workerFramesActive),
+        workerBudgetStopsByCount=c_number(stats.workerBudgetStopsByCount),
+        workerBudgetStopsByTime=c_number(stats.workerBudgetStopsByTime),
+        workerMaximumFrameMs=c_number(stats.workerMaximumFrameMs),
+        workerMaximumRecordMs=c_number(stats.workerMaximumRecordMs),
+        filtersInstalled=c_number(runtime.filtersInstalled),
+        filterReceipts=c_number(stats.filterReceipts),
+        forbiddenRenderPathCalls=c_forbidden_calls(stats),
+        chatMaintenanceRuns=c_number(self.chatMaintenanceRuns),
+        startingFPS=self.startingFPS,
+        minimumFPS=self.minimumFPS,
+        endingFPS=self.endingFPS,
+      }
+    end
+
+    function C:Shutdown(outcome, reason)
+      if self.shuttingDown then return false end
+      if not self.active then return false end
+      self.shuttingDown = true
+      local stoppedAt = c_now()
+      self:SampleFPS()
+      local options = c_options()
+      options.publicGroups = false
+      options.inlineChatLinks = false
+      P3._canaryDeadline = nil
+      if type(P3.StopParserWork) == "function" then
+        pcall(P3.StopParserWork, tostring(reason or outcome or "canary stopped"))
+      end
+      if type(P3.ReconcileFilterRegistration) == "function" then
+        pcall(P3.ReconcileFilterRegistration)
+      end
+      c_sync_options()
+      self.active = false
+      if self.frame then
+        self.frame:SetScript("OnUpdate", nil)
+        self.frame:Hide()
+      end
+      P3._canaryDiagnosticsEnabled = false
+      self.lastReport = c_build_report(self, outcome, reason, stoppedAt)
+      if outcome == "completed" then
+        c_emit("SignalFire parser canary completed.")
+        c_emit("Parsing and Chat Links are now Off.")
+      else
+        self.lastAbortReason = tostring(reason or "manual abort")
+        c_emit("SignalFire parser canary aborted" .. (reason and (": " .. tostring(reason)) or "") .. ".")
+        c_emit("Parsing and Chat Links are Off.")
+      end
+      self.shuttingDown = false
+      return true
+    end
+
+    function C:AbortSafety(reason)
+      if not self.active then return false end
+      return self:Shutdown("aborted", tostring(reason or "runtime safety trigger"))
+    end
+
+    function C:ForceOff(reason, quiet)
+      if self.active then return self:Shutdown("aborted", tostring(reason or "parser off")) end
+      local options = c_options()
+      options.publicGroups = false
+      options.inlineChatLinks = false
+      P3._canaryDeadline = nil
+      P3._canaryDiagnosticsEnabled = false
+      if type(P3.StopParserWork) == "function" then
+        pcall(P3.StopParserWork, tostring(reason or "parser off"))
+      end
+      if type(P3.ReconcileFilterRegistration) == "function" then
+        pcall(P3.ReconcileFilterRegistration)
+      end
+      c_sync_options()
+      if self.frame then
+        self.frame:SetScript("OnUpdate", nil)
+        self.frame:Hide()
+      end
+      if not quiet then c_emit("Parsing and Chat Links are Off.") end
+      return true
+    end
+
+    function C:GetIdentity()
+      local runtime = c_runtime_state()
+      local stability = _G.SignalFireStability151 or {}
+      local version = SignalFire_GetVersion and SignalFire_GetVersion()
+        or tostring(SignalFire_VERSION or "missing")
+      local row = {
+        version=tostring(version or "missing"),
+        releaseChannel=tostring(SignalFire_RELEASE_CHANNEL or "missing"),
+        releaseName=tostring(SignalFire_RELEASE_NAME or "missing"),
+        chatRuntimeGeneration=tostring(P3.generation or "missing"),
+        diagnosticGeneration=tostring(stability.generation or "missing"),
+        parserWorkerGeneration=tostring(runtime.workerGeneration or P3.workerGeneration or "missing"),
+        canaryGeneration=tostring(self.generation or "missing"),
+        sourceOwnerActive=runtime.sourceOwnerActive == true,
+        workerOwnerActive=runtime.workerOwnerActive == true,
+        shutdownOwnerActive=runtime.shutdownOwnerActive == true
+          and type(P3.StopParserWork) == "function",
+        sourceProcessingActive=runtime.sourceActive == true,
+        workerRunning=runtime.workerActive == true or runtime.workerScript == true,
+        queueDepth=c_number(runtime.queueDepth),
+        parserEnabled=c_options().publicGroups ~= false,
+        chatLinksEnabled=c_options().inlineChatLinks == true,
+        installedFilters=c_installed_filter_count(runtime),
+        mismatches={},
+      }
+      local function require_match(ok, label)
+        if not ok then row.mismatches[#row.mismatches + 1] = label end
+      end
+      require_match(row.version == "1.5.2", "version")
+      require_match(row.releaseChannel == "rc", "release channel")
+      require_match(row.releaseName == "SignalFire 1.5.2 Phase 12B Canary RC", "release name")
+      require_match(row.diagnosticGeneration == "1.5.1-phase10b", "diagnostic generation")
+      require_match(string.find(row.chatRuntimeGeneration, "phase12b", 1, true) ~= nil,
+        "chat runtime generation")
+      require_match(string.find(row.parserWorkerGeneration, "phase12b", 1, true) ~= nil,
+        "parser worker generation")
+      require_match(row.canaryGeneration == "1.5.2-phase12b-canary", "canary generation")
+      require_match(row.sourceOwnerActive, "source owner")
+      require_match(row.workerOwnerActive, "worker owner")
+      require_match(row.shutdownOwnerActive, "shutdown owner")
+      require_match(not row.sourceProcessingActive, "source processing must be inactive")
+      require_match(not row.workerRunning, "worker must be sleeping")
+      require_match(row.queueDepth == 0, "parser queue must be empty")
+      require_match(not row.parserEnabled, "parser must be Off before start")
+      require_match(not row.chatLinksEnabled, "Chat Links must be Off")
+      require_match(row.installedFilters == 0, "installed filter count")
+      row.matchesExpected = #row.mismatches == 0
+      return row
+    end
+
+    function C:PrintIdentity(row)
+      row = row or self:GetIdentity()
+      c_emit("parser identity: version=" .. tostring(row.version)
+        .. ", channel=" .. tostring(row.releaseChannel)
+        .. ", name=" .. tostring(row.releaseName))
+      c_emit("runtime: chat=" .. tostring(row.chatRuntimeGeneration)
+        .. ", diagnostics=" .. tostring(row.diagnosticGeneration)
+        .. ", worker=" .. tostring(row.parserWorkerGeneration)
+        .. ", canary=" .. tostring(row.canaryGeneration))
+      c_emit("owners: source=" .. tostring(row.sourceOwnerActive)
+        .. ", worker=" .. tostring(row.workerOwnerActive)
+        .. ", shutdown=" .. tostring(row.shutdownOwnerActive))
+      c_emit("state: parser=" .. (row.parserEnabled and "On" or "Off")
+        .. ", Chat Links=" .. (row.chatLinksEnabled and "On" or "Off")
+        .. ", filters=" .. tostring(row.installedFilters)
+        .. ", queue=" .. tostring(row.queueDepth)
+        .. ", identity=" .. (row.matchesExpected and "MATCH" or "MISMATCH"))
+      if not row.matchesExpected then
+        c_emit("identity mismatches: " .. table.concat(row.mismatches, ", "))
+      end
+      return row
+    end
+
+    function C:Start(duration)
+      if self.active then
+        c_emit("A parser canary is already running. Use /sf parser status or /sf parser abort.")
+        return false
+      end
+      duration = tonumber(duration)
+      if not duration or duration <= 0 or duration > self.maximumDuration or duration ~= math.floor(duration) then
+        c_emit("Canary duration must be a whole number from 1 to 120 seconds.")
+        return false
+      end
+
+      local options = c_options()
+      self.previousParserEnabled = options.publicGroups ~= false
+      self.previousChatLinksEnabled = options.inlineChatLinks == true
+      self:ForceOff("canary identity check", true)
+      local identity = self:GetIdentity()
+      if not identity.matchesExpected or type(P3.Apply) ~= "function"
+        or type(P3.ReconcileFilterRegistration) ~= "function" then
+        if type(P3.Apply) ~= "function" then
+          identity.mismatches[#identity.mismatches + 1] = "parser apply owner"
+          identity.matchesExpected = false
+        end
+        if type(P3.ReconcileFilterRegistration) ~= "function" then
+          identity.mismatches[#identity.mismatches + 1] = "filter reconciliation owner"
+          identity.matchesExpected = false
+        end
+        self:PrintIdentity(identity)
+        c_emit("The installed SignalFire files do not match the canary build. Canary not started.")
+        return false
+      end
+
+      self.requestedDuration = duration
+      self.startedAt = c_now()
+      self.deadline = self.startedAt + duration
+      self.lastAbortReason = nil
+      self.chatMaintenanceRuns = 0
+      self.startingFPS = nil
+      self.minimumFPS = nil
+      self.endingFPS = nil
+      self.fpsElapsed = 0
+      self.active = true
+      P3._canaryDeadline = self.deadline
+      P3._canaryDiagnosticsEnabled = true
+      B._sfP3Stats = {}
+      P3._frameDiagnostics = {}
+      options.publicGroups = true
+      options.inlineChatLinks = false
+      P3.Apply()
+      P3.ReconcileFilterRegistration()
+      c_sync_options()
+      self:SampleFPS()
+      if P3._filterInstalled == true then
+        self:AbortSafety("Public Groups render filters appeared while Chat Links were Off")
+        return false
+      end
+
+      self.frame:SetScript("OnUpdate", function(frame, elapsed)
+        if not C.active then frame:SetScript("OnUpdate", nil); frame:Hide(); return end
+        C.fpsElapsed = c_number(C.fpsElapsed) + c_number(elapsed)
+        if C.fpsElapsed >= .25 then C.fpsElapsed = 0; C:SampleFPS() end
+        C:CheckRuntime("canary timer")
+      end)
+      self.frame:Show()
+      c_emit("SignalFire parser canary started for " .. tostring(duration) .. " seconds.")
+      c_emit("Chat Links are Off.")
+      c_emit("Use /sf parser abort if performance drops.")
+      return true
+    end
+
+    function C:GetStatus()
+      local runtime = c_runtime_state()
+      local now = c_now()
+      local elapsed = self.active and math.max(0, now - c_number(self.startedAt)) or 0
+      local remaining = self.active and math.max(0, c_number(self.deadline) - now) or 0
+      local stats = c_stats()
+      return {
+        version=SignalFire_GetVersion and SignalFire_GetVersion() or tostring(SignalFire_VERSION or "1.5.2"),
+        runtimeGeneration=P3.generation,
+        parserEnabled=c_options().publicGroups ~= false,
+        chatLinksEnabled=c_options().inlineChatLinks == true,
+        canaryActive=self.active == true,
+        requestedDuration=c_number(self.requestedDuration),
+        elapsedSeconds=elapsed,
+        remainingSeconds=remaining,
+        sourceActive=runtime.sourceActive == true,
+        workerActive=runtime.workerActive == true,
+        queueDepth=c_number(runtime.queueDepth),
+        filtersInstalled=c_number(runtime.filtersInstalled),
+        TestParseCalls=c_number(stats.TestParseCalls),
+        processedRecords=c_number(stats.queueRecordsProcessed),
+        queueDrops=c_number(stats.queueDrops),
+        queueMaximumDepth=c_number(stats.queueMaximumDepth),
+        workerMaximumFrameMs=c_number(stats.workerMaximumFrameMs),
+        lastAbortReason=self.lastAbortReason or "none",
+      }
+    end
+
+    function C:PrintStatus()
+      local row = self:GetStatus()
+      c_emit("parser status: version=" .. tostring(row.version)
+        .. ", runtime=" .. tostring(row.runtimeGeneration)
+        .. ", parser=" .. (row.parserEnabled and "enabled" or "disabled")
+        .. ", links=" .. (row.chatLinksEnabled and "enabled" or "disabled")
+        .. ", canary=" .. (row.canaryActive and "active" or "inactive"))
+      c_emit("duration=" .. tostring(row.requestedDuration)
+        .. ", elapsed=" .. string.format("%.1f", row.elapsedSeconds)
+        .. ", remaining=" .. string.format("%.1f", row.remainingSeconds)
+        .. ", source=" .. (row.sourceActive and "active" or "inactive")
+        .. ", worker=" .. (row.workerActive and "active" or "sleeping"))
+      c_emit("queue=" .. tostring(row.queueDepth) .. ", filters=" .. tostring(row.filtersInstalled)
+        .. ", TestParse=" .. tostring(row.TestParseCalls)
+        .. ", processed=" .. tostring(row.processedRecords)
+        .. ", drops=" .. tostring(row.queueDrops)
+        .. ", maxDepth=" .. tostring(row.queueMaximumDepth)
+        .. ", maxFrameMs=" .. string.format("%.3f", row.workerMaximumFrameMs)
+        .. ", lastAbort=" .. tostring(row.lastAbortReason))
+      return row
+    end
+
+    function C:PrintReport()
+      local row = self.lastReport
+      if not row then c_emit("No parser canary report is available for this session."); return nil end
+      c_emit("parser report: requested=" .. tostring(row.requestedDuration)
+        .. "s, actual=" .. string.format("%.1f", row.actualDuration)
+        .. "s, outcome=" .. tostring(row.outcome) .. ", reason=" .. tostring(row.abortReason))
+      c_emit("afterward: parser=" .. (row.parserEnabled and "On" or "Off")
+        .. ", links=" .. (row.chatLinksEnabled and "On" or "Off")
+        .. ", filters=" .. tostring(row.filtersInstalled))
+      c_emit("source=" .. tostring(row.sourceEventsReceived)
+        .. ", candidates=" .. tostring(row.candidateGateCalls)
+        .. " (accepted=" .. tostring(row.candidatesAccepted) .. ", rejected=" .. tostring(row.candidatesRejected) .. ")"
+        .. ", TestParse=" .. tostring(row.TestParseCalls))
+      c_emit("queue=" .. tostring(row.queueRecordsCreated) .. "/" .. tostring(row.queueRecordsProcessed)
+        .. ", maxDepth=" .. tostring(row.queueMaximumDepth) .. ", drops=" .. tostring(row.queueDrops)
+        .. ", workerFrames=" .. tostring(row.workerActiveFrames)
+        .. ", stops=" .. tostring(row.workerBudgetStopsByCount) .. "/" .. tostring(row.workerBudgetStopsByTime))
+      c_emit("timing: maxFrameMs=" .. string.format("%.3f", row.workerMaximumFrameMs)
+        .. ", maxRecordMs=" .. string.format("%.3f", row.workerMaximumRecordMs)
+        .. ", filterReceipts=" .. tostring(row.filterReceipts)
+        .. ", forbidden=" .. tostring(row.forbiddenRenderPathCalls)
+        .. ", chatMaintenance=" .. tostring(row.chatMaintenanceRuns))
+      c_emit("FPS: start=" .. tostring(row.startingFPS or "unavailable")
+        .. ", minimum=" .. tostring(row.minimumFPS or "unavailable")
+        .. ", end=" .. tostring(row.endingFPS or "unavailable"))
+      return row
+    end
+
+    function B:SF152_HandleParserSlash(command)
+      local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+      if cmd == "parser identity" then
+        C:PrintIdentity()
+        return true
+      elseif string.sub(cmd, 1, 13) == "parser canary" then
+        local suffix = cmd:gsub("^parser%s+canary", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        local duration = suffix == "" and 10 or tonumber(suffix)
+        if suffix ~= "" and not duration then
+          c_emit("Canary duration must be numeric and no greater than 120 seconds.")
+          return true
+        end
+        C:Start(duration)
+        return true
+      elseif cmd == "parser abort" then
+        if not C:Shutdown("aborted", "manual abort") then
+          C:ForceOff("manual abort", true)
+          c_emit("No parser canary was active. Parsing and Chat Links are Off.")
+        end
+        return true
+      elseif cmd == "parser off" then
+        C:ForceOff("parser off", false)
+        return true
+      elseif cmd == "parser status" then
+        C:PrintStatus()
+        return true
+      elseif cmd == "parser report" then
+        C:PrintReport()
+        return true
+      elseif cmd == "parser" then
+        c_emit("Commands: /sf parser identity, canary [1-120], abort, off, status, report")
+        return true
+      end
+      return false
+    end
+
+    C.frame = C.frame or CreateFrame("Frame")
+    C.frame:SetScript("OnUpdate", nil)
+    C.frame:Hide()
+    C:ForceOff("canary build startup", true)
+
+    local lifecycle = _G.SignalFireCacheLifecycle151
+    if lifecycle and not C._cacheRunWrapped and type(lifecycle.Run) == "function" then
+      C._cacheRunWrapped = true
+      C._oldCacheRun = lifecycle.Run
+      lifecycle.Run = function(self, reason, ...)
+        local why = tostring(reason or "")
+        if C.active and string.find(string.lower(why), "chat", 1, true) then
+          C.chatMaintenanceRuns = c_number(C.chatMaintenanceRuns) + 1
+          C:AbortSafety("chat-triggered cache maintenance")
+          return false, 0
+        end
+        return C._oldCacheRun(self, reason, ...)
+      end
+    end
+
+    local oldPerfSlash = B.SF151_HandlePerfSlash
+    B.SF151_HandlePerfSlash = function(self, command)
+      if self:SF152_HandleParserSlash(command) then return true end
+      return oldPerfSlash and oldPerfSlash(self, command) or false
+    end
+    if P.InstallSlash then P:InstallSlash() end
+  end
+end
+-- SIGNALFIRE_PHASE12B_PARSER_CANARY_END

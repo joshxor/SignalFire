@@ -1055,6 +1055,7 @@ do
     local P3 = _G.SignalFireChatRuntime151 or {}
     _G.SignalFireChatRuntime151 = P3
     P3.generation = "1.5.2-phase12b"
+    P3.workerGeneration = "1.5.2-phase12b"
     P3.workerMaximumRecords = 4
     P3.workerMaximumMs = 0.75
     P3.renderDecisionMaximum = 256
@@ -1247,6 +1248,7 @@ do
         and BronzeLFG_DB.options.developerDiagnostics == true)
         or (_G.SignalFirePerf151 and _G.SignalFirePerf151.enabled == true)
         or P3._stabilityDiagnosticsEnabled == true
+        or P3._canaryDiagnosticsEnabled == true
     end
 
     local function p3_note(field, amount)
@@ -1260,9 +1262,37 @@ do
       return p3_note(field, amount)
     end
 
-    local function p3_parsing_enabled()
+    local function p3_canary_owner()
+      local owner = _G.SignalFireParserCanary151
+      return owner and owner.active == true and owner or nil
+    end
+
+    local function p3_canary_abort(reason)
+      local owner = p3_canary_owner()
+      if owner and owner.AbortSafety then
+        pcall(owner.AbortSafety, owner, tostring(reason or "runtime safety trigger"))
+      end
+      return false
+    end
+
+    local function p3_canary_check(stage)
+      local owner = p3_canary_owner()
+      if not owner or not owner.CheckRuntime then return true end
+      local ok, allowed = pcall(owner.CheckRuntime, owner, tostring(stage or "runtime"))
+      if not ok then
+        p3_canary_abort("canary safety check error")
+        return false
+      end
+      return allowed ~= false
+    end
+
+    local function p3_option_parsing_enabled()
       return BronzeLFG_DB ~= nil and BronzeLFG_DB.options ~= nil
         and BronzeLFG_DB.options.publicGroups ~= false
+    end
+
+    local function p3_parsing_enabled()
+      return p3_option_parsing_enabled() and P3._parserSuspended ~= true
     end
 
     local function p3_candidate(text)
@@ -1358,7 +1388,7 @@ do
     end
 
     local function p3_depth()
-      return #(B._sfP3Queue or {})
+      return type(B._sfP3Queue) == "table" and #B._sfP3Queue or 0
     end
 
     -- Session-only canonical Public Groups index.
@@ -1503,6 +1533,7 @@ do
         p3_note("parsingDisabledParserCalls")
         return nil
       end
+      if not p3_canary_check("before TestParse") then return nil end
       local o = p3_options()
       local raw = p3_trim(text)
       if raw == "" or p3_has_existing_link(raw) then return nil end
@@ -1534,7 +1565,11 @@ do
         stats.testParseMsTotal = stats.testParseMsTotal + elapsed
         if elapsed > stats.testParseMsMax then stats.testParseMsMax = elapsed end
       end
-      if not ok then p3_note("parserErrors"); return nil end
+      if not ok then
+        p3_note("parserErrors")
+        p3_canary_abort("parser error")
+        return nil
+      end
       if type(parsed) ~= "table" or parsed.eligible ~= true then return nil end
       if parsed.kind == "guild" and o.parseGuildRecruitment == false then return nil end
       if parsed.kind ~= "guild" and parsed.kind ~= "group" then return nil end
@@ -1605,6 +1640,7 @@ do
         p3_note("parsingDisabledQueueCalls")
         return nil
       end
+      if not p3_canary_check("before queue") then return nil end
       local raw = tostring(text or "")
       if p3_author(author) == p3_author(UnitName and UnitName("player") or "") and not B.SignalFireTestSay then return nil end
 
@@ -1652,7 +1688,15 @@ do
       end
       B._sfP3RecordSlots[B._sfP3RecordCursor] = {id=id, stamp=stamp}
 
+      if B._sfP3Queue ~= nil and type(B._sfP3Queue) ~= "table" then
+        p3_canary_abort("queue corruption")
+        return nil
+      end
       B._sfP3Queue = B._sfP3Queue or {}
+      if #B._sfP3Queue > 40 then
+        p3_canary_abort("hard queue bound exceeded")
+        return nil
+      end
       while #B._sfP3Queue >= 40 do
         local dropped = table.remove(B._sfP3Queue, 1)
         if dropped then
@@ -1683,7 +1727,8 @@ do
         B._inlinePublicChatEventSeen[oldInline.key] = nil
       end
       B._sfP3InlineSeenSlots[B._sfP3InlineSeenCursor] = {key=inlineKey, stamp=stamp}
-      if B._sfP3Frame then B._sfP3Frame:Show() end
+      if P3.StartParserWork then P3.StartParserWork()
+      elseif B._sfP3Frame then B._sfP3Frame:Show() end
       if P3._enqueueCount % 25 == 0 then p3_prune(stamp) end
       return rec
     end
@@ -1772,6 +1817,7 @@ do
         p3_note("parsingDisabledSourceReturns")
         return nil
       end
+      if not p3_canary_check("before source candidate") then return nil end
       p3_note("sourceEventsReceived")
       local raw = tostring(text or "")
       if raw == "" or p3_is_protocol(raw) then
@@ -1993,7 +2039,7 @@ do
 
     local function p3_links_enabled()
       local o = BronzeLFG_DB and BronzeLFG_DB.options
-      return o ~= nil and o.publicGroups ~= false and o.inlineChatLinks == true
+      return o ~= nil and p3_parsing_enabled() and o.inlineChatLinks == true
     end
 
     local function p3_frame_is_visible(frame)
@@ -2519,21 +2565,50 @@ do
       end
     end
 
+    local function p3_discard_pending_records()
+      local dropped = 0
+      local queue = type(B._sfP3Queue) == "table" and B._sfP3Queue or {}
+      for _, rec in ipairs(queue) do
+        if type(rec) == "table" then
+          rec.done = true
+          rec.dropped = true
+          if B._sfP3Records and rec.id then B._sfP3Records[rec.id] = nil end
+          dropped = dropped + 1
+        end
+      end
+      B._sfP3Queue = {}
+      B._sfP3ActiveRecords = {}
+      B._sfP3Seen = {}
+      B._sfP3SeenSlots = {}
+      P3._decisionCache = {}
+      P3._decisionSlots = {}
+      P3._pendingByStableId = {}
+      return dropped
+    end
+
+    function P3.StopParserWork(reason)
+      P3._parserSuspended = true
+      P3._lastStopReason = tostring(reason or "parser stopped")
+      local dropped = p3_discard_pending_records()
+      if B._sfP3Frame then
+        B._sfP3Frame:SetScript("OnUpdate", nil)
+        B._sfP3Frame:Hide()
+      end
+      P3.ReconcileFilterRegistration()
+      return true, dropped
+    end
+
     function P3.Apply()
+      if p3_option_parsing_enabled() then P3._parserSuspended = false end
       p3_disable_old_runtime()
       B.AddPublicGroup = p3_add_public
       B.InlinePublicChatLinkForMessage = p3_inline
       p3_restore_chat_frames()
       P3.ReconcileFilterRegistration()
       if not p3_parsing_enabled() then
-        B._sfP3Queue = {}
-        B._sfP3ActiveRecords = {}
-        P3._decisionCache = {}
-        P3._decisionSlots = {}
+        P3.StopParserWork("parsing disabled")
         P3._renderDecisionCache = {}
         P3._renderDecisionSlots = {}
-        P3._pendingByStableId = {}
-        if B._sfP3Frame then B._sfP3Frame:Hide() end
       end
       if not P3._canonicalIndexBuilt then
         P3._canonicalIndexBuilt = true
@@ -2542,8 +2617,7 @@ do
     end
 
     function P3.ClearRuntimeCaches()
-      B._sfP3Queue = {}
-      B._sfP3ActiveRecords = {}
+      p3_discard_pending_records()
       B._sfP3Seen = {}
       B._sfP3SeenSlots = {}
       B._sfP3Records = {}
@@ -2556,7 +2630,10 @@ do
       P3._renderDecisionSlots = {}
       P3._pendingByStableId = {}
       P3._renderGeneration = (tonumber(P3._renderGeneration or 0) or 0) + 1
-      if B._sfP3Frame then B._sfP3Frame:Hide() end
+      if B._sfP3Frame then
+        B._sfP3Frame:SetScript("OnUpdate", nil)
+        B._sfP3Frame:Hide()
+      end
       return true
     end
 
@@ -2568,17 +2645,40 @@ do
       return p3_candidate(text)
     end
 
-    B._sfP3Frame = B._sfP3Frame or (CreateFrame and CreateFrame("Frame") or nil)
-    if B._sfP3Frame then
-      B._sfP3Frame:Hide()
-      B._sfP3Frame:SetScript("OnUpdate", function(frame, elapsed)
-        if p3_depth() <= 0 then frame:Hide(); p3_note("workerIdleFrames"); return end
+    local function p3_worker_update(frame, elapsed)
+      if P3._workerRunning then
+        p3_canary_abort("worker re-entry")
+        return
+      end
+      if not p3_canary_check("worker frame") then return end
+      P3._workerRunning = true
+      local canaryWasActive = p3_canary_owner() ~= nil
+      local ok, err = pcall(function()
+        if type(B._sfP3Queue) ~= "table" then
+          p3_canary_abort("queue corruption")
+          return
+        end
+        if #B._sfP3Queue > 40 then
+          p3_canary_abort("hard queue bound exceeded")
+          return
+        end
+        if p3_depth() <= 0 then
+          frame:SetScript("OnUpdate", nil)
+          frame:Hide()
+          p3_note("workerIdleFrames")
+          return
+        end
         p3_note("workerFramesActive")
         local frameStarted = debugprofilestop and debugprofilestop() or nil
         local processed = 0
         local stoppedByTime = false
         while processed < P3.workerMaximumRecords do
+          if not p3_canary_check("before worker record") then return end
           local rec = p3_next()
+          if rec ~= nil and type(rec) ~= "table" then
+            p3_canary_abort("queue corruption")
+            return
+          end
           if not rec then break end
           local recordStarted = debugprofilestop and debugprofilestop() or nil
           p3_process(rec)
@@ -2602,9 +2702,48 @@ do
           local frameMs = math.max(0, debugprofilestop() - frameStarted)
           local stats = p3_diagnostics_enabled() and p3_stats() or nil
           if stats and frameMs > stats.workerMaximumFrameMs then stats.workerMaximumFrameMs = frameMs end
+          if frameMs > 10 and p3_canary_owner() then p3_canary_abort("worker frame exceeded 10 ms") end
         end
-        if p3_depth() <= 0 then frame:Hide() end
+        if p3_depth() <= 0 then
+          frame:SetScript("OnUpdate", nil)
+          frame:Hide()
+        end
       end)
+      P3._workerRunning = false
+      if not ok then
+        if canaryWasActive then p3_canary_abort("worker error") else error(err, 0) end
+      end
+    end
+
+    B._sfP3Frame = B._sfP3Frame or (CreateFrame and CreateFrame("Frame") or nil)
+    if B._sfP3Frame then
+      B._sfP3Frame:SetScript("OnUpdate", nil)
+      B._sfP3Frame:Hide()
+    end
+
+    function P3.StartParserWork()
+      if not p3_parsing_enabled() or p3_depth() <= 0 or not B._sfP3Frame then return false end
+      B._sfP3Frame:SetScript("OnUpdate", p3_worker_update)
+      B._sfP3Frame:Show()
+      return true
+    end
+
+    function P3.GetParserRuntimeState()
+      local frame = B._sfP3Frame
+      return {
+        generation=P3.generation,
+        workerGeneration=P3.workerGeneration,
+        sourceOwnerActive=B.AddPublicGroup == p3_add_public,
+        workerOwnerActive=type(p3_worker_update) == "function" and frame ~= nil,
+        shutdownOwnerActive=type(P3.StopParserWork) == "function",
+        sourceActive=p3_parsing_enabled(),
+        workerActive=frame and frame.IsShown and frame:IsShown() or false,
+        workerScript=frame and frame.GetScript and frame:GetScript("OnUpdate") ~= nil or false,
+        queueDepth=p3_depth(),
+        filtersInstalled=P3._filterInstalled == true and 3 or 0,
+        suspended=P3._parserSuspended == true,
+        lastStopReason=P3._lastStopReason,
+      }
     end
 
     function B:SF151_GetChatRuntimeStatus()

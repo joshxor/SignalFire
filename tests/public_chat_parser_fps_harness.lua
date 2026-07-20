@@ -27,14 +27,15 @@ end
 
 local function drain()
   local frame = assert(B._sfP3Frame, "worker frame missing")
-  local update = assert(frame:GetScript("OnUpdate"), "worker OnUpdate missing")
   local guard = 0
   while #(B._sfP3Queue or {}) > 0 do
+    local update = assert(frame:GetScript("OnUpdate"), "active worker OnUpdate missing")
     update(frame, .01)
     guard = guard + 1
     assert(guard < 10000, "worker queue did not drain")
   end
   assert(not frame:IsShown(), "worker remained active after queue drained")
+  assert(frame:GetScript("OnUpdate") == nil, "worker OnUpdate remained installed after drain")
 end
 
 local function reset(publicGroups, links)

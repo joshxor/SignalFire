@@ -1,4 +1,18 @@
-# SignalFire 1.5.2 Phase 12B RC
+# SignalFire 1.5.2 Phase 12B Canary RC
+
+This unpublished affected-player build adds a bounded parser safety canary. `/sf parser canary 5` temporarily enables Public Groups parsing with Chat Links forced Off, then automatically disables parsing and clears unfinished parser work. Emergency abort, status, and bounded session-report commands are included without changing parser classification or Public Groups identity.
+
+- Added a fail-closed `/sf parser identity` check so stale or mixed installations cannot start the canary.
+- The identity report includes release metadata, runtime generations, final parser owners, parser/link state, and installed SignalFire filter count.
+- Recorded the affected-player 1.5.1 parser-on FPS tests as the official comparison baseline; those tests did not run the Phase 12B implementation.
+- Added 5-120 second parser canaries with a 10-second default.
+- Added automatic shutdown at the deadline and one shared emergency stop owner.
+- Added safety aborts for parser errors, worker re-entry, queue corruption, hard queue overflow, worker frames above 10 ms, forbidden render work, unexpected filters, and chat-triggered maintenance.
+- Added session-only FPS, source, queue, worker, and filter reporting without retaining raw chat.
+- Kept Chat Links Off throughout every canary and left both parsing and links Off afterward.
+- Preserved the Phase 12A cache correction and Phase 12B source/worker architecture.
+
+## Phase 12B Parser Isolation
 
 This combined test candidate preserves the Phase 12A cache-lifecycle hotfix and restructures Public Groups chat parsing so one logical source message produces at most one bounded parser job, regardless of how many chat frames receive it.
 
