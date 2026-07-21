@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Network services
@@ -9,7 +9,7 @@ do
 
     local SFN_PREFIX = "BLFG312"
     local SFN_CHANNEL = "BLFG"
-    local SFN_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SFN_VERSION = _G.SignalFire_VERSION or "1.5.3"
 
     local function sfn_now()
       return (time and time()) or 0
@@ -1513,13 +1513,21 @@ do
     end
 
     -- Optional hooks for favorite activity feed.
+    function BLFG:SFN_RecordGuildRecruitmentActivity(guildName, raw)
+      if BronzeLFG_DB and BronzeLFG_DB.favoriteGuilds
+        and BronzeLFG_DB.favoriteGuilds[string.lower(tostring(guildName or ""))] then
+        sfn_add_activity(tostring(guildName or "Guild") .. " posted recruitment", tostring(raw or ""), "Interface\\Icons\\INV_Misc_TabardPVP_01")
+        if self.SF151_RequestPanelRefresh then self:SF151_RequestPanelRefresh("network")
+        elseif self.RefreshSFNetwork then self:RefreshSFNetwork() end
+      end
+    end
+
     if BLFG.UpsertGuildBrowserChatListing then
       local oldUpsert = BLFG.UpsertGuildBrowserChatListing
       function BLFG:UpsertGuildBrowserChatListing(guildName, author, raw, ...)
         local r = oldUpsert(self, guildName, author, raw, ...)
-        if BronzeLFG_DB and BronzeLFG_DB.favoriteGuilds and BronzeLFG_DB.favoriteGuilds[string.lower(tostring(guildName or ""))] then
-          sfn_add_activity(tostring(guildName or "Guild") .. " posted recruitment", tostring(raw or ""), "Interface\\Icons\\INV_Misc_TabardPVP_01")
-          if self.RefreshSFNetwork then self:RefreshSFNetwork() end
+        if not self._sfP3SuppressGuildSideEffects then
+          self:SFN_RecordGuildRecruitmentActivity(guildName, raw)
         end
         return r
       end
@@ -1883,7 +1891,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFAM_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SFAM_VERSION = _G.SignalFire_VERSION or "1.5.3"
 
     local function sfam_now()
       return (GetTime and GetTime()) or (time and time()) or 0
@@ -2821,7 +2829,7 @@ end
 -- Compatibility
 do
   repeat
-    local SF_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SF_VERSION = _G.SignalFire_VERSION or "1.5.3"
 
     local function cleanAddonText(msg)
       if type(msg) ~= "string" then return msg end

@@ -5,12 +5,12 @@ dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load")
 local P3 = assert(SignalFireChatRuntime151, "Phase 12C runtime did not load")
-assert(P3.generation == "1.5.2-phase12c", "unexpected exact-link owner")
-assert(SignalFire_VERSION == "1.5.2", "unexpected visible version")
-assert(SignalFire_RELEASE_CHANNEL == "stable", "unexpected release channel")
-assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2",
+assert(P3.generation == "1.5.3-phase12c-coverage", "unexpected exact-link owner")
+assert(SignalFire_VERSION == "1.5.3", "unexpected visible version")
+assert(SignalFire_RELEASE_CHANNEL == "rc", "unexpected release channel")
+assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.3 Guild and Group Link Coverage RC",
   "unexpected release name")
-assert(SignalFire_DEVELOPMENT_MILESTONE == "Phase 12C Exact Contextual Chat Links",
+assert(SignalFire_DEVELOPMENT_MILESTONE == "Guild and Group Link Coverage",
   "unexpected development milestone")
 
 local testNow = 1800000
@@ -71,6 +71,9 @@ local fixtures = {
   {"TANK LF GRP WITH AURA TO RDF SPAM", "Random Dungeon Finder - LFG T"},
   {"LFM RDF NEED TANK / DPS", "Random Dungeon Finder - Need T/D"},
   {"LFM SPAM RDF Need Tank Healer DPS WITH HAVE AURAS 40+", "Random Dungeon Finder - Need T/H/D"},
+  {"lf dps and support azuregos instanced", "Azuregos - Need D"},
+  {"lv 46 SC DPS with AURA LFG", "Random Dungeon Finder - LFG D"},
+  {"LF2M Tank and 1 DPS 45+ WE HAVE AURAS EXP", "Random Dungeon Finder - Need T/D"},
 }
 
 for _, frameCount in ipairs({1, 2, 5, 10}) do

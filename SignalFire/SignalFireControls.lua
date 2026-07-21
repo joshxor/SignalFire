@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Command aliases

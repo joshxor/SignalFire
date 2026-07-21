@@ -1,4 +1,4 @@
--- SignalFire 1.5.2 developer-only runtime diagnostics.
+-- SignalFire 1.5.3 developer-only runtime diagnostics.
 do
   local B = _G.BronzeLFG
   if not B then return end
@@ -2246,7 +2246,7 @@ do
   if B and P and CreateFrame then
     local C = _G.SignalFireParserCanary151 or {}
     _G.SignalFireParserCanary151 = C
-    C.generation = "1.5.2-phase12c-canary"
+    C.generation = "1.5.3-guild-group-canary"
     C.maximumDuration = 120
     C.active = false
     C.shuttingDown = false
@@ -2496,17 +2496,17 @@ do
       local function require_match(ok, label)
         if not ok then row.mismatches[#row.mismatches + 1] = label end
       end
-      require_match(row.version == "1.5.2", "version")
-      require_match(row.releaseChannel == "stable", "release channel")
-      require_match(row.releaseName == "SignalFire 1.5.2", "release name")
-      require_match(row.developmentMilestone == "Phase 12C Exact Contextual Chat Links",
+      require_match(row.version == "1.5.3", "version")
+      require_match(row.releaseChannel == "rc", "release channel")
+      require_match(row.releaseName == "SignalFire 1.5.3 Guild and Group Link Coverage RC", "release name")
+      require_match(row.developmentMilestone == "Guild and Group Link Coverage",
         "development milestone")
       require_match(row.diagnosticGeneration == "1.5.1-phase10b", "diagnostic generation")
       require_match(string.find(row.chatRuntimeGeneration, "phase12c", 1, true) ~= nil,
         "chat runtime generation")
       require_match(string.find(row.parserWorkerGeneration, "phase12c", 1, true) ~= nil,
         "parser worker generation")
-      require_match(row.canaryGeneration == "1.5.2-phase12c-canary", "canary generation")
+      require_match(row.canaryGeneration == "1.5.3-guild-group-canary", "canary generation")
       require_match(row.sourceOwnerActive, "source owner")
       require_match(row.workerOwnerActive, "worker owner")
       require_match(row.shutdownOwnerActive, "shutdown owner")
@@ -2620,7 +2620,7 @@ do
       local remaining = self.active and math.max(0, c_number(self.deadline) - now) or 0
       local stats = c_stats()
       return {
-        version=SignalFire_GetVersion and SignalFire_GetVersion() or tostring(SignalFire_VERSION or "1.5.2"),
+        version=SignalFire_GetVersion and SignalFire_GetVersion() or tostring(SignalFire_VERSION or "1.5.3"),
         runtimeGeneration=P3.generation,
         parserEnabled=c_options().publicGroups ~= false,
         chatLinksEnabled=c_options().inlineChatLinks == true,
@@ -2713,13 +2713,18 @@ do
         if type(activities) == "table" then activities = table.concat(activities, " / ") end
         c_emit("trace key: semantic=" .. tostring(row.semanticKey or "none"))
         c_emit("trace candidate=" .. tostring(row.candidateAccepted)
+          .. ", reason=" .. tostring(row.candidateReason or "none")
           .. ", rejection=" .. tostring(row.rejectionReason or "none")
           .. ", parser=" .. tostring(row.exactParserResult or "none"))
         c_emit("trace result: kind=" .. tostring(row.kind or "none")
           .. ", intent=" .. tostring(row.intent or "none")
           .. ", activity=" .. tostring(row.activity or "none")
           .. ", activities=" .. tostring(activities or "none")
-          .. ", roles=" .. tostring(row.roles or "none"))
+          .. ", roles=" .. tostring(row.roles or "none")
+          .. ", unknown=" .. tostring(row.unknownActivity or "none"))
+        c_emit("trace guild: seeker=" .. tostring(row.guildSeeker)
+          .. ", recruiter=" .. tostring(row.guildRecruiter)
+          .. ", name=" .. tostring(row.guildName or "none"))
         c_emit("trace row: id=" .. tostring(row.stableId or "none")
           .. ", exists=" .. tostring(row.canonicalRowExists)
           .. ", title=" .. tostring(row.linkTitle or "none"))
@@ -2729,7 +2734,10 @@ do
           .. ", match=" .. tostring(row.keyMatches))
         c_emit("trace work: parser=" .. tostring(row.parserCallCount or 0)
           .. ", upsert=" .. tostring(row.upsertCount or 0)
-          .. ", linkBuild=" .. tostring(row.linkBuildCount or 0))
+          .. ", linkBuild=" .. tostring(row.linkBuildCount or 0)
+          .. ", filters=" .. tostring(row.filterReceiptCount or 0)
+          .. ", owner=" .. tostring(row.resolverOwner or "none")
+          .. ", negativeCache=" .. tostring(row.negativeCacheState))
         return true
       elseif string.sub(cmd, 1, 13) == "parser canary" then
         local suffix = cmd:gsub("^parser%s+canary", ""):gsub("^%s+", ""):gsub("%s+$", "")

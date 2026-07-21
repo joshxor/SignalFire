@@ -5,7 +5,7 @@ dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load")
 local chat = assert(SignalFireChatRuntime151, "Phase 12C chat owner did not load")
-assert(chat.generation == "1.5.2-phase12c", "unexpected chat owner")
+assert(chat.generation == "1.5.3-phase12c-coverage", "unexpected chat owner")
 local stressMessages = tonumber(arg and arg[3]) or 50000
 local parsingOffMessages = tonumber(arg and arg[4]) or 100000
 assert(stressMessages >= 100 and stressMessages % 100 == 0, "stress message count must be a multiple of 100")
@@ -101,7 +101,7 @@ end
 drain()
 local acceptedStats = stats()
 assert((acceptedStats.TestParseCalls or 0) == accepted, "accepted fixtures did not all reach TestParse")
-assert(SignalFireParserRegression.Run().failed == 0, "48-case parser regression failed")
+assert(SignalFireParserRegression.Run().failed == 0, "57-case parser regression failed")
 
 local function stress(frameCount, links)
   reset(true, links)

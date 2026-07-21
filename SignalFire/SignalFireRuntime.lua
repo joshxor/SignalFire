@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Startup guard
@@ -7,7 +7,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SF135N_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SF135N_VERSION = _G.SignalFire_VERSION or "1.5.3"
 
     local function sf135n_print(msg)
       if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r " .. tostring(msg or "")) end

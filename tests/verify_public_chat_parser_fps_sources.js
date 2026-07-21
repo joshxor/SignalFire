@@ -7,7 +7,7 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(ui, 'P3.generation = "1.5.2-phase12c"', "Phase 12C owner");
+requireText(ui, 'P3.generation = "1.5.3-phase12c-coverage"', "Phase 12C owner");
 requireText(ui, "P3.workerMaximumRecords = 4", "worker record budget");
 requireText(ui, "P3.workerMaximumMs = 0.75", "worker time budget");
 requireText(ui, "function P3.ReconcileFilterRegistration()", "filter reconciliation owner");

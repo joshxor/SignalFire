@@ -7,8 +7,8 @@ local B = assert(BronzeLFG, "SignalFire did not load")
 local P3 = assert(SignalFireChatRuntime151, "Phase 12C parser owner did not load")
 local C = assert(SignalFireParserCanary151, "parser canary owner did not load")
 local perf = assert(SignalFirePerf151, "final slash owner did not load")
-assert(P3.generation == "1.5.2-phase12c", "unexpected parser owner")
-assert(C.generation == "1.5.2-phase12c-canary", "unexpected canary owner")
+assert(P3.generation == "1.5.3-phase12c-coverage", "unexpected parser owner")
+assert(C.generation == "1.5.3-guild-group-canary", "unexpected canary owner")
 
 local testNow = 2100000
 local profileClock = 1000
@@ -73,15 +73,15 @@ assert(SlashCmdList["SIGNALFIRE"] == perf.slashWrapper, "diagnostics wrapper is 
 parser_command("parser identity")
 local identity = C:GetIdentity()
 assert(identity.matchesExpected == true, "current canary identity did not match")
-assert(identity.version == "1.5.2" and identity.releaseChannel == "stable",
+assert(identity.version == "1.5.3" and identity.releaseChannel == "rc",
   "release identity did not match")
-assert(identity.releaseName == "SignalFire 1.5.2",
+assert(identity.releaseName == "SignalFire 1.5.3 Guild and Group Link Coverage RC",
   "release name did not match")
-assert(identity.developmentMilestone == "Phase 12C Exact Contextual Chat Links",
+assert(identity.developmentMilestone == "Guild and Group Link Coverage",
   "development milestone did not match")
-assert(identity.chatRuntimeGeneration == "1.5.2-phase12c"
-  and identity.parserWorkerGeneration == "1.5.2-phase12c"
-  and identity.canaryGeneration == "1.5.2-phase12c-canary",
+assert(identity.chatRuntimeGeneration == "1.5.3-phase12c-coverage"
+  and identity.parserWorkerGeneration == "1.5.3-phase12c-coverage"
+  and identity.canaryGeneration == "1.5.3-guild-group-canary",
   "runtime generations did not match")
 assert(identity.sourceOwnerActive and identity.workerOwnerActive and identity.shutdownOwnerActive,
   "final parser owners were not active")
@@ -261,7 +261,7 @@ end
 
 -- Test 7: Phase 12C ownership and worker budgets remain unchanged.
 assert(P3.workerMaximumRecords == 4 and P3.workerMaximumMs == .75, "worker budget changed")
-assert(P3.generation == "1.5.2-phase12c", "source owner changed")
+assert(P3.generation == "1.5.3-phase12c-coverage", "source owner changed")
 assert(((B._sfP3Stats or {}).historicalFullTableDuplicateScans or 0) == 0,
   "historical live-chat scan returned")
 assert_off("final state")

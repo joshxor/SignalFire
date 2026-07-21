@@ -7,13 +7,13 @@ local B = assert(BronzeLFG, "SignalFire did not load from " .. tostring(addonRoo
 local migrate = assert(B.SF151_RepairReleaseDatabase, "release migration is unavailable")
 local chat = assert(SignalFireChatRuntime151, "chat runtime is unavailable")
 
-assert(SignalFire_VERSION == "1.5.2", "global version is not 1.5.2")
-assert(SignalFire_RELEASE_CHANNEL == "stable", "release channel is not stable")
-assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2", "release name is inconsistent")
-assert(SignalFire_DEVELOPMENT_MILESTONE == "Phase 12C Exact Contextual Chat Links",
+assert(SignalFire_VERSION == "1.5.3", "global version is not 1.5.3")
+assert(SignalFire_RELEASE_CHANNEL == "rc", "release channel is not rc")
+assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.3 Guild and Group Link Coverage RC", "release name is inconsistent")
+assert(SignalFire_DEVELOPMENT_MILESTONE == "Guild and Group Link Coverage",
   "development milestone is inconsistent")
-assert(SignalFire_GetVersion() == "1.5.2", "authoritative version getter is inconsistent")
-assert(SignalFire_GetTitleText() == "SignalFire v1.5.2", "production title is inconsistent")
+assert(SignalFire_GetVersion() == "1.5.3", "authoritative version getter is inconsistent")
+assert(SignalFire_GetTitleText() == "SignalFire v1.5.3", "production title is inconsistent")
 assert(SignalFirePerf151 and SignalFirePerf151.enabled == false,
   "performance diagnostics did not default Off")
 assert(SignalFireStability151 and SignalFireStability151.enabled == false
