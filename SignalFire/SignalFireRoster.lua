@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Roster presentation
@@ -7,7 +7,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFRP_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFRP_VERSION = _G.SignalFire_VERSION or "1.5.2"
     local SFRP_FRAME_NAME = "SignalFireFullRosterFrame"
 
     local function sfrp_trim(s)
@@ -199,7 +199,6 @@ do
       local myGuild = sfrp_my_guild()
 
       for _, u in ipairs(allRows) do
-        u.favorite = u.favorite or sfrp_is_fav(self, u.name)
         local keep = true
         if filter == "SignalFire" then keep = not u.whoOnly
         elseif filter == "Who" then keep = u.whoOnly == true
@@ -539,7 +538,16 @@ do
           end
         end)
         r:SetScript("OnLeave", function(row)
-          if BLFG.RefreshOnlinePanel then BLFG:RefreshOnlinePanel() end
+          local u = row.user
+          if u then
+            local selected = BLFG.fullRosterSelectedName and sfrp_low(BLFG.fullRosterSelectedName) == sfrp_low(u.name or "")
+            if selected then sfrp_flat(row, .90)
+            elseif u.self then sfrp_flat(row, .84)
+            elseif u.favorite then sfrp_flat(row, .82)
+            elseif u.friend then sfrp_flat(row, .78)
+            elseif u.whoOnly then sfrp_flat(row, .56)
+            else sfrp_flat(row, .68) end
+          end
           if GameTooltip then GameTooltip:Hide() end
         end)
         self.onlineRows[i] = r
@@ -823,7 +831,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFN138_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFN138_VERSION = _G.SignalFire_VERSION or "1.5.2"
     BLFG.SFN138_FavoriteAlertsInstalled = true
 
     local function sfn138_now()
@@ -1028,14 +1036,10 @@ do
       sfn138_emit("Favorite listing: " .. sfn138_short(author, 20) .. " - " .. a, body, "Interface\\Icons\\INV_Misc_GroupNeedMore", "listing:" .. safeId, 0)
     end
 
-    local function sfn138_scan_online_rows(self)
-      local _, o = sfn138_ensure_db()
-      if o.favoritePlayerOnlineAlerts == false then return end
-      if not self or not self.GetOnlineUserRows then return end
-      local rows = self:GetOnlineUserRows() or {}
-      for _, u in ipairs(rows) do
-        if u and u.name then sfn138_alert_online(u, "scan") end
-      end
+    function BLFG:SF151_CheckFavoriteTransition(u, source)
+      if not u or not u.name then return false end
+      sfn138_alert_online(u, source or "presence")
+      return true
     end
 
     -- Hooks ----------------------------------------------------------------------
@@ -1047,7 +1051,9 @@ do
         if tonumber(p[10]) then zone = p[8] else zone = "" end
       end
       local r = SFN138_OldHandlePresence and SFN138_OldHandlePresence(self, p, ...)
-      if name then sfn138_alert_online({name=name, zone=zone or "", role=role or "", classFile=classFile or ""}, "presence") end
+      if name and self.SF151_CheckFavoriteTransition then
+        self:SF151_CheckFavoriteTransition({name=name, zone=zone or "", role=role or "", classFile=classFile or ""}, "presence")
+      end
       return r
     end
 
@@ -1078,7 +1084,6 @@ do
       local r = SFN138_OldRefreshSFNetwork and SFN138_OldRefreshSFNetwork(self, ...)
       if self.sfn138Refreshing then return r end
       self.sfn138Refreshing = true
-      sfn138_scan_online_rows(self)
       if self.SFN138_UpdateBeaconActivity then self:SFN138_UpdateBeaconActivity() end
       self.sfn138Refreshing = nil
       return r
@@ -1300,4 +1305,3 @@ do
     sfn138_ensure_db()
   until true
 end
-

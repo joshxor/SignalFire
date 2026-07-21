@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Command aliases
@@ -603,20 +603,16 @@ do
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("PLAYER_LOGIN")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame.elapsed = 0
-    frame.count = 0
-    frame:SetScript("OnEvent", function()
-      sfu_safe("Legacy purge", SFU.PurgeLegacy, true)
-      if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
-    end)
-    frame:SetScript("OnUpdate", function(self, elapsed)
-      self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-      if self.elapsed < 2 then return end
-      self.elapsed = 0
-      self.count = (self.count or 0) + 1
+    local function sfu_verify_runtime()
       sfu_safe("Legacy purge", SFU.PurgeLegacy, true)
       sfu_safe("Event Board tools", SFU.PatchEventBoardUI)
-      if self.count >= 8 then self:SetScript("OnUpdate", nil) end
+    end
+    frame:SetScript("OnEvent", function()
+      sfu_verify_runtime()
+      if BLFG and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
+      if BLFG and BLFG.SF151_ScheduleDelayed then
+        BLFG:SF151_ScheduleDelayed("startup.utility-controls", 1.0, sfu_verify_runtime)
+      end
     end)
 
 
@@ -701,22 +697,6 @@ do
           end)
         end
       end
-    end
-
-    -- Patch the active panel immediately and repeatedly for a few seconds because
-    -- old Network/Event Board code can rebuild or restack pieces after login/open.
-    do
-      local f2 = CreateFrame("Frame")
-      f2.elapsed = 0
-      f2.count = 0
-      f2:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-        if self.elapsed < .5 then return end
-        self.elapsed = 0
-        self.count = (self.count or 0) + 1
-        if BLFG and BLFG.sfeEventPanel then sfu_safe("Event Board hard tools", SFU.PatchEventBoardUI) end
-        if self.count >= 20 then self:SetScript("OnUpdate", nil) end
-      end)
     end
 
     -- SignalFire 1.4.19: UtilityUI must not draw a second Event/Notice tool row.
@@ -842,16 +822,11 @@ do
       f:SetScript("OnEvent", function(self, event, addon)
         if event == "ADDON_LOADED" and addon and addon ~= "SignalFire" and addon ~= "BronzeLFG" then return end
         SignalFireSlashHashFix_Apply()
-      end)
-      f:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-        if self.elapsed < 0.75 then return end
-        self.elapsed = 0
-        self.ticks = (self.ticks or 0) + 1
-        SignalFireSlashHashFix_Apply()
-        if self.ticks >= 8 then self:SetScript("OnUpdate", nil) end
+        local B = _G.BronzeLFG
+        if B and B.SF151_ScheduleDelayed then
+          B:SF151_ScheduleDelayed("startup.slash-hash", 1.0, SignalFireSlashHashFix_Apply)
+        end
       end)
     end
   until true
 end
-

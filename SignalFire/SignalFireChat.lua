@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Chat rendering guard
@@ -212,6 +212,8 @@ do
       local cmd = sfsff_low(raw)
       local B = sfsff_B()
 
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(cmd) then return true end
+
       if SignalFireSlashFinal and SignalFireSlashFinal.HandleUtilitySlash and SignalFireSlashFinal.HandleUtilitySlash(cmd) then return true end
       if SignalFireSlashFinal and SignalFireSlashFinal.HandleModuleSlash and SignalFireSlashFinal.HandleModuleSlash(cmd) then return true end
       if SignalFireModules and SignalFireModules.HandleSlash and SignalFireModules.HandleSlash(cmd, nil) then return true end
@@ -323,14 +325,10 @@ do
       sfsff_frame:SetScript("OnEvent", function(self, event, addon)
         if event == "ADDON_LOADED" and addon and addon ~= "SignalFire" and addon ~= "BronzeLFG" then return end
         SignalFireSlashFreezeFix.Apply()
-      end)
-      sfsff_frame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
-        if self.elapsed < 0.75 then return end
-        self.elapsed = 0
-        self.ticks = (self.ticks or 0) + 1
-        SignalFireSlashFreezeFix.Apply()
-        if self.ticks >= 8 then self:SetScript("OnUpdate", nil) end
+        local B = _G.BronzeLFG
+        if B and B.SF151_ScheduleDelayed then
+          B:SF151_ScheduleDelayed("startup.slash-freeze", 1.0, SignalFireSlashFreezeFix.Apply)
+        end
       end)
     end
   until true
@@ -510,6 +508,12 @@ do
 
     local function sfcq_enqueue(B, author, text, channelName)
       if not B then return nil end
+      if not BronzeLFG_DB or not BronzeLFG_DB.options
+        or BronzeLFG_DB.options.publicGroups == false then
+        local runtime = _G.SignalFireChatRuntime151
+        if runtime and runtime.Note then runtime.Note("parsingDisabledLegacyQueueReturns") end
+        return nil
+      end
       local raw = tostring(text or "")
       if raw == "" or sfcq_has_signalfire_link(raw) then return nil end
       if not sfcq_public_signal(raw) then return nil end
@@ -671,7 +675,8 @@ do
     end
 
     local function sffcl_public_enabled()
-      return not (BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.publicGroups == false)
+      return BronzeLFG_DB and BronzeLFG_DB.options
+        and BronzeLFG_DB.options.publicGroups ~= false
     end
 
     local function sffcl_is_ascension()
@@ -798,10 +803,39 @@ do
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       local out = {}
       if s:find("tank", 1, true) or s:find("prot", 1, true) then table.insert(out, roleText and roleText("Tank") or "Tank") end
-      if s:find("heal", 1, true) or s:find("heals", 1, true) or s:find("healer", 1, true) or s:find("resto", 1, true) then table.insert(out, roleText and roleText("Healer") or "Healer") end
+      if s:find("heal", 1, true) or s:find("heals", 1, true) or s:find("healer", 1, true)
+        or s:find("heasl", 1, true) or s:find("resto", 1, true) then
+        table.insert(out, roleText and roleText("Healer") or "Healer")
+      end
       if s:find("dps", 1, true) or s:find("damage", 1, true) then table.insert(out, roleText and roleText("DPS") or "DPS") end
       if #out == 0 and (s:find("need", 1, true) or s:find("lfm", 1, true)) then return "Needed" end
       return table.concat(out, "  ")
+    end
+
+    local function sffcl_intent(text)
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      if s:find(" lfg ", 1, true) or s:find(" looking for group", 1, true)
+        or s:find(" looking for grp", 1, true) or s:find(" looking for party", 1, true) then
+        return "Applicant"
+      end
+      if s:find(" lfm ", 1, true) or s:find(" lf%d+m") or s:find(" need ", 1, true)
+        or s:find(" lf %d+ tank") or s:find(" lf %d+ heal") or s:find(" lf %d+ dps")
+        or s:find(" lf tank", 1, true) or s:find(" lf heal", 1, true)
+        or s:find(" lf dps", 1, true) then
+        return "Recruiter"
+      end
+      local lfAt = s:find(" lf ", 1, true)
+      if lfAt then
+        local before = string.sub(s, 1, lfAt - 1)
+        if before:find("tank", 1, true) or before:find("heal", 1, true)
+          or before:find("heasl", 1, true) or before:find("dps", 1, true) then
+          return "Applicant"
+        end
+      end
+      if sffcl_role_signal(s) and (s:find(" aura", 1, true) or s:find(" spam", 1, true)) then
+        return "Applicant"
+      end
+      return "Recruiter"
     end
 
     local function sffcl_guild_name(text)
@@ -915,6 +949,21 @@ do
       return nil
     end
 
+    local function sffcl_world_activities(text)
+      if not sffcl_is_ascension() then return nil end
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      local out = {}
+      if sffcl_word(s, "snowgrave") then table.insert(out, "Snowgrave") end
+      if sffcl_word(s, "kaldros depthbreaker") then
+        table.insert(out, "Kaldros Depthbreaker")
+      elseif sffcl_word(s, "kaldros") then
+        table.insert(out, "Kaldros")
+      end
+      if sffcl_word(s, "soggoth") or sffcl_word(s, "sogoth") then table.insert(out, "Soggoth") end
+      if sffcl_word(s, "lord kazzak") or sffcl_word(s, "kazzak") then table.insert(out, "Lord Kazzak") end
+      return #out > 0 and out or nil
+    end
+
     local function sffcl_specific_dungeon(text)
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       -- On Ascension/CoA, players commonly shorten Vaults of Inquisition to just
@@ -1009,6 +1058,8 @@ do
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       if s:find("invasion", 1, true) then return "Event", "Invasion" end
       if s:find("boss blitz", 1, true) or s:find("hcbb", 1, true) or s:find("bbhc", 1, true) then return "Event", "Boss Blitz" end
+      local worldActivities = sffcl_world_activities(text)
+      if worldActivities then return "World Boss", table.concat(worldActivities, " / "), worldActivities end
       local randomFinder = s:find(" rdf ", 1, true) or s:find("random dungeon", 1, true)
         or s:find("random mythic dungeon", 1, true)
       local mythicFinder = s:find(" mythic ", 1, true) or s:find("mythic+", 1, true)
@@ -1067,13 +1118,15 @@ do
         return result
       end
 
-      local publicType, activity = sffcl_activity_type(raw)
+      local publicType, activity, activities = sffcl_activity_type(raw)
       if not sffcl_public_signal(raw, publicType, activity) then return result end
 
       result.eligible = true
       result.kind = "group"
       result.type = publicType
       result.activity = activity
+      result.activities = activities
+      result.intent = sffcl_intent(raw)
       result.roles = sffcl_roles(raw)
       result.reason = nil
       return result
@@ -1332,6 +1385,7 @@ do
     function SignalFireFastChatLinks.Filter(frame, event, msgText, author, ...)
       local B = BLFG or (_G and _G.BronzeLFG)
       if not B then return false, msgText, author, ... end
+      if _G.SignalFireChatRuntime151 then return false, msgText, author, ... end
       if (event == "CHAT_MSG_SAY" or event == "CHAT_MSG_YELL") and not B.SignalFireTestSay then return false, msgText, author, ... end
 
       local channelName = event
@@ -1369,6 +1423,14 @@ do
     local function sffcl_install()
       local B = BLFG or (_G and _G.BronzeLFG)
       if not B then return end
+      if _G.SignalFireChatRuntime151 then
+        sffcl_disable_old_filters()
+        sffcl_remove_filter("CHAT_MSG_CHANNEL", SignalFireFastChatLinks.Filter)
+        sffcl_remove_filter("CHAT_MSG_SAY", SignalFireFastChatLinks.Filter)
+        sffcl_remove_filter("CHAT_MSG_YELL", SignalFireFastChatLinks.Filter)
+        B._sffclFilterInstalled = nil
+        return
+      end
       sffcl_disable_old_filters()
       sffcl_hook_chat_frames()
       sffcl_remove_bad_fast_rows(B)
@@ -1443,22 +1505,31 @@ do
       end
     end
 
+    -- Release-safe Chat Links migration. A stored boolean is an explicit user
+    -- preference and is preserved. Missing or malformed legacy values use the
+    -- safer default without disabling Public Groups parsing.
+    function BLFG:SF151_ApplyChatLinkSafeDefault(db)
+      db = type(db) == "table" and db or BronzeLFG_DB
+      if type(db) ~= "table" then return false end
+      if type(db.options) ~= "table" then db.options = {} end
+      local options = db.options
+      if options.inlineChatLinks ~= true and options.inlineChatLinks ~= false then
+        options.inlineChatLinks = false
+      end
+      options.sf151Phase10ChatLinkDefaultMigrated = true
+      return options.inlineChatLinks == true
+    end
+
     local function sfcp_ensure_options()
       BronzeLFG_DB = BronzeLFG_DB or {}
       BronzeLFG_DB.options = BronzeLFG_DB.options or {}
       local o = BronzeLFG_DB.options
 
+      BLFG:SF151_ApplyChatLinkSafeDefault(BronzeLFG_DB)
+
       if o.publicGroups == nil then o.publicGroups = true end
       if o.publicStrict == nil then o.publicStrict = true end
       if o.parseGuildRecruitment == nil then o.parseGuildRecruitment = true end
-
-      if o.inlineChatLinks == nil then
-        if o.disableInlineChatLinks == true or o.chatLinkSafeMode == true then
-          o.inlineChatLinks = false
-        else
-          o.inlineChatLinks = true
-        end
-      end
 
       local oldScope = tostring(o.chatLinkScope or o.chatLinksMode or o.chatLinkMode or "")
       oldScope = sfcp_lower(oldScope)
@@ -1654,7 +1725,7 @@ do
 
     local function sfcp_links_enabled()
       local o = sfcp_ensure_options()
-      return o.publicGroups ~= false and o.inlineChatLinks ~= false
+      return o.publicGroups ~= false and o.inlineChatLinks == true
     end
 
     local function sfcp_remove_filter(event, fn)
@@ -1683,6 +1754,7 @@ do
     end
 
     function SFCP.Filter(frame, event, msgText, author, ...)
+      if _G.SignalFireChatRuntime151 then return false, msgText, author, ... end
       if not sfcp_links_enabled() then return false, msgText, author, ... end
       if not sfcp_frame_allowed(frame) then return false, msgText, author, ... end
       if not sfcp_should_handle(msgText) then return false, msgText, author, ... end
@@ -1694,6 +1766,16 @@ do
 
     local function sfcp_install_filter()
       if not ChatFrame_AddMessageEventFilter then return end
+
+      if _G.SignalFireChatRuntime151 then
+        sfcp_remove_filter("CHAT_MSG_CHANNEL", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_SAY", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_YELL", SFCP.Filter)
+        sfcp_remove_filter("CHAT_MSG_CHANNEL", SFCP.fastFilter)
+        sfcp_remove_filter("CHAT_MSG_SAY", SFCP.fastFilter)
+        sfcp_remove_filter("CHAT_MSG_YELL", SFCP.fastFilter)
+        return
+      end
 
       if SignalFireFastChatLinks and type(SignalFireFastChatLinks.Filter) == "function"
         and SignalFireFastChatLinks.Filter ~= SFCP.Filter then
@@ -1754,6 +1836,7 @@ do
 
     local function sfcp_apply_runtime()
       sfcp_ensure_options()
+      if _G.SignalFireChatRuntime151 then return end
       sfcp_restore_chat_addmessage()
       sfcp_install_filter()
       sfcp_wrap_inline()
@@ -1832,10 +1915,15 @@ do
       BLFG._sffclFilterCache = {}
       BLFG._sffclDisplayCache = {}
       if SignalFireChatRuntime151 then
-        SignalFireChatRuntime151._decisionCache = {}
-        SignalFireChatRuntime151._decisionSlots = {}
-        SignalFireChatRuntime151._decisionCursor = 0
+        if SignalFireChatRuntime151.ClearRuntimeCaches then
+          SignalFireChatRuntime151.ClearRuntimeCaches()
+        else
+          SignalFireChatRuntime151._decisionCache = {}
+          SignalFireChatRuntime151._decisionSlots = {}
+          SignalFireChatRuntime151._decisionCursor = 0
+        end
       end
+      if BLFG.SF151_DedupePublicGroups then BLFG:SF151_DedupePublicGroups() end
       if BLFG.RefreshPublicGroups then pcall(function() BLFG:RefreshPublicGroups() end) end
       sfcp_set_status("Public Groups cache cleared.")
     end
@@ -1913,7 +2001,7 @@ do
         end
 
         check("publicGroups", "Parse Public Groups From Chat", "Builds Public Groups from eligible chat posts. Turning this off stops both background parsing and SignalFire chat links.", -22)
-        check("inlineChatLinks", "Show SignalFire Links in Chat", "Adds clickable SignalFire group/guild links to eligible chat lines. Parsing can remain enabled while links are off.", -78)
+        check("inlineChatLinks", "Show SignalFire Links in Chat", "Off by default for compatibility. Enable manually to add clickable SignalFire group/guild links; Public Groups parsing continues while links are off.", -78)
         check("parseGuildRecruitment", "Parse Guild Recruitment", "Detects guild advertisements and creates Guild Browser links/listings. Personal Kick/Twitch/YouTube promotions remain ignored.", -134)
         check("publicStrict", "Strict Parsing", "Recommended. Requires clear group or guild intent and reduces false positives from ordinary chat.", -190)
 
@@ -1926,6 +2014,7 @@ do
 
         local dd = CreateFrame("Frame", "SignalFireChatLinkScopeDropdown", panel, "UIDropDownMenuTemplate")
         f.scopeDropdown = dd
+        if BLFG_FixDropdownButton then BLFG_FixDropdownButton(dd) end
         dd:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -22, -242)
         UIDropDownMenu_SetWidth(dd, 150)
         UIDropDownMenu_Initialize(dd, function()
@@ -1970,7 +2059,7 @@ do
           end
         end)
 
-        local recommendation = sfcp_font(panel, "Complete coverage: all protections On; All Chat Frames.", 9, .45, 1, .45)
+        local recommendation = sfcp_font(panel, "Safer default: Chat Links Off. Enable manually and choose a scope if desired.", 9, .45, 1, .45)
         f.recommendation = recommendation
         recommendation:SetPoint("LEFT", runTests, "RIGHT", 12, 0)
         recommendation:SetWidth(292)
@@ -1996,7 +2085,7 @@ do
         local f = build_panel()
         local o = sfcp_ensure_options()
         f.publicGroups:SetChecked(o.publicGroups ~= false)
-        f.inlineChatLinks:SetChecked(o.inlineChatLinks ~= false)
+        f.inlineChatLinks:SetChecked(o.inlineChatLinks == true)
         f.parseGuildRecruitment:SetChecked(o.parseGuildRecruitment ~= false)
         f.publicStrict:SetChecked(o.publicStrict ~= false)
         UIDropDownMenu_SetSelectedValue(f.scopeDropdown, o.chatLinkScope)
@@ -2104,17 +2193,17 @@ do
       if sfmm_enabled("chatParsing", profile) then
         if saved.chatCaptured then
           o.publicGroups = saved.publicGroups ~= false
-          o.inlineChatLinks = saved.inlineChatLinks ~= false
+          o.inlineChatLinks = saved.inlineChatLinks == true
           saved.chatCaptured = nil
         elseif o.publicGroups == nil then
           o.publicGroups = true
-          o.inlineChatLinks = true
+          o.inlineChatLinks = false
         end
       else
         if not saved.chatCaptured then
           saved.chatCaptured = true
           saved.publicGroups = o.publicGroups ~= false
-          saved.inlineChatLinks = o.inlineChatLinks ~= false
+          saved.inlineChatLinks = o.inlineChatLinks == true
         end
         o.publicGroups = false
         o.inlineChatLinks = false
@@ -2414,7 +2503,7 @@ do
       local o = sfcp_ensure_options()
       return {
         publicGroups = o.publicGroups ~= false,
-        inlineChatLinks = o.inlineChatLinks ~= false,
+        inlineChatLinks = o.inlineChatLinks == true,
         parseGuildRecruitment = o.parseGuildRecruitment ~= false,
         publicStrict = o.publicStrict ~= false,
         chatLinkScope = o.chatLinkScope,
@@ -2473,6 +2562,21 @@ do
       {name="Vault numbered singular shorthand", text="LF3M VAULT", type="Dungeon", activity="Vaults of Inquisition", profile="Ascension"},
       {name="Dungeon abbreviation LFG", text="lvl 53Big aoe Star caller LFG Dung spam hat has aura", type="Dungeon", activity="Random Dungeon Finder"},
       {name="DF role-first shorthand", text="Stormbringer dps LF DF farming grp", type="Dungeon", activity="Random Dungeon Finder"},
+      {name="Kazzak typo roles", text="LFM Kazzak | Heasl and dps no HR PST", type="World Boss", activity="Lord Kazzak", intent="Recruiter", roles={"Healer","DPS"}, profile="Ascension"},
+      {name="RDF healer recruiter", text="LFM HEAL RDF SPAM WE HAVE AURA", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Healer"}},
+      {name="Ascension multi boss route", text="Mythic geared dps LFG Snowgrave/Kaldros/Soggoth", type="World Boss", activity="Snowgrave / Kaldros / Soggoth", intent="Applicant", roles={"DPS"}, profile="Ascension"},
+      {name="RDF numbered recruiter", text="lf 1 tank 1 healer 20+ we have aura rdf spam", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","Healer"}},
+      {name="Vault tank recruiter", text="LFM Vault need tank then gtg", type="Dungeon", activity="Vaults of Inquisition", intent="Recruiter", roles={"Tank"}, profile="Ascension"},
+      {name="RDF tank applicant", text="48 tank LFG RDF group with aura", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"Tank"}},
+      {name="RDF DPS team applicant", text="lvl 22 dps LF team with aura RDF spam", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"DPS"}},
+      {name="RDF aura applicant", text="lvl 56 DPS with exp aura | RDF spam 50+ grp", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"DPS"}},
+      {name="BFD healer applicant", text="Healer LFG BFD", type="Dungeon", activity="Blackfathom Deeps", intent="Applicant", roles={"Healer"}},
+      {name="Generic dungeon DPS recruiter", text="LFM good Dps 1k+ Dungeon farm 35+", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"DPS"}},
+      {name="RDF tank LF applicant", text="TANK LF GRP WITH AURA TO RDF SPAM", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"Tank"}},
+      {name="RDF tank DPS recruiter", text="LFM RDF NEED TANK / DPS", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","DPS"}},
+      {name="RDF all roles recruiter", text="LFM SPAM RDF Need Tank Healer DPS WITH HAVE AURAS 40+", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","Healer","DPS"}},
+      {name="Ignore guild applicant question", text="any lvling guilds recruiting?", ignore=true},
+      {name="Ignore Portuguese dungeon announcement", text="Massmorra aleatoria disponivel hoje, confira as novidades!", ignore=true},
     }
 
     local function sfpr_profile()
@@ -2512,6 +2616,13 @@ do
       end
       if test.type and not sfpr_same(result.type, test.type) then return false end
       if test.activity and not sfpr_same(result.activity, test.activity) then return false end
+      if test.intent and not sfpr_same(result.intent, test.intent) then return false end
+      if test.roles then
+        local roles = sfpr_lower(result.roles)
+        for _, role in ipairs(test.roles) do
+          if not string.find(roles, sfpr_lower(role), 1, true) then return false end
+        end
+      end
       return true
     end
 
@@ -2824,6 +2935,11 @@ do
       end
       if not guildPos then return false end
 
+      -- A question asking whether any guild is recruiting is still a player
+      -- seeking a guild, not a recruitment advertisement by a named guild.
+      local anyPos = string.find(s, " any ", 1, true)
+      if string.find(raw, "?", 1, true) and anyPos and anyPos < guildPos then return true end
+
       -- Real recruitment language wins. This keeps posts such as
       -- "Guild LF members" and "<Guild> is recruiting" valid.
       local recruiting = string.find(s, " recruit", 1, true) or string.find(s, " recrutement", 1, true)
@@ -3025,6 +3141,8 @@ do
         result.type = fast.type
         result.activity = fast.activity
         result.roles = fast.roles
+        result.intent = fast.intent or result.intent
+        result.activities = fast.activities or result.activities
         if fast.guild and fast.guild ~= "" then result.guild = fast.guild end
         result.reason = nil
       end

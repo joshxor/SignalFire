@@ -36,7 +36,7 @@ jobs:
           test -f SignalFire/SignalFire.toc
 
           mapfile -t toc_files < <(sed 's/\r$//' SignalFire/SignalFire.toc | grep -v '^##' | grep -v '^[[:space:]]*$')
-          test "${#toc_files[@]}" -eq 12
+          test "${#toc_files[@]}" -gt 0
 
           for file in "${toc_files[@]}"; do
             test -f "SignalFire/$file" || {
@@ -46,7 +46,7 @@ jobs:
           done
 
           mapfile -t lua_files < <(find SignalFire -maxdepth 1 -type f -name '*.lua' -printf '%f\n' | sort)
-          test "${#lua_files[@]}" -eq 12
+          test "${#lua_files[@]}" -eq "${#toc_files[@]}"
 
           for file in "${lua_files[@]}"; do
             printf '%s\n' "${toc_files[@]}" | grep -Fxq "$file" || {

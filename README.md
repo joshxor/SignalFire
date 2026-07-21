@@ -1,75 +1,46 @@
 # SignalFire
 
-SignalFire is a group-discovery and community coordination addon for World of Warcraft 3.3.5, with dedicated profiles for:
+SignalFire is a group-discovery and community coordination addon for World of Warcraft 3.3.5, with dedicated profiles for **Ascension / Conquest of Azeroth** and **Triumvirate**.
 
-- Ascension / Conquest of Azeroth
-- Triumvirate
+It turns fast-moving public chat into organized listings for dungeons, raids, random dungeon finder groups, Mythic+, world bosses, guild recruitment, and community activities. SignalFire also includes listing and applicant tools, a user Network and Full Roster, favorites, community events, notices, and profile-aware modules.
 
-SignalFire turns fast-moving public chat into organized listings for dungeons, raids, random dungeon finder groups, Mythic+, world bosses, guild recruitment, and community activities. It also includes tools for creating listings, handling applicants, discovering other SignalFire users, following favorites, and organizing events and notices.
+**Current release: 1.5.2**
 
-**Current release: 1.5.1**
+SignalFire 1.5.2 combines the public-chat FPS corrections with exact contextual links for eligible group and guild recruitment messages. The Phase 12C resolver identifies activity, intent, and roles on the first occurrence while reusing that completed result across receiving chat frames.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
-## What's New in 1.5.1
+## Highlights
 
-- Improved activity-link coverage across multiple chat windows and tabs.
-- Added exact Public Groups selection when an activity link is clicked.
-- Expanded recognition for RDF, dungeon shorthand, role-first messages, and Ascension activities.
-- Added Random Dungeon Finder, Random Heroic Dungeon Finder, and Random Mythic Dungeon Finder listing options.
-- Corrected listing ages and Ascension custom class names.
-- Reduced duplicate parsing, listings, alerts, and Network refreshes.
-- Disabled unsupported Invasion listeners outside an enabled Triumvirate profile.
-- Removed unnecessary hidden-panel polling and recurring UI scans.
-- Added bounded caches, batched refreshes, and deferred chat processing.
-- Expanded the built-in parser regression suite to 33 cases.
-
-## Features
-
-### Public Groups
-
-- Detects supported group advertisements from public chat.
-- Recognizes dungeons, raids, RDF, Mythic+, Ascended raids, world bosses, roles, and common shorthand.
-- Adds clickable activity links that open and highlight the matching listing.
-- Provides search, filters, paging, duplicate control, and automatic expiration.
-- Separates guild recruitment from players who are simply looking for a guild.
-
-### Create Listing
-
-- Creates dungeon, raid, Mythic+, RDF, world boss, and custom listings.
-- Supports Normal, Heroic, Mythic+, and Ascended difficulty where available.
-- Tracks requested roles, key level, item level, group size, and notes.
-- Includes posting previews, rebroadcasting, applicant management, and cancellation.
-- Hides individual dungeon selection for random dungeon finder activities.
-
-### Guilds and Community
-
-- Guild Browser with recruitment detection and guild details.
-- Recruitment Creator with reusable guild advertisements.
-- Community Event Board and Notice Board.
-- Favorite-player, activity, listing, and event alerts.
-
-### SignalFire Network
-
-- Discovers other active SignalFire users.
-- Includes Network and Full Roster views, player details, favorites, and quick actions.
-- Supports manual refresh and optional 15, 30, or 60-second auto-refresh.
-- Displays Ascension custom class names supplied by each player's client.
-
-### Server Profiles
-
-- Separate settings and activity data for Ascension / CoA and Triumvirate.
-- Profile-aware module availability and discovery behavior.
-- Ascension disables unsupported invasion and `/who` systems.
-- Triumvirate retains supported Invasions and `/who` enhancements.
-
-### Interface and Customization
-
-- Profile-aware Modules manager.
+- Public Groups parsing for supported group and guild advertisements.
+- Exact activity and role detection with search, filters, paging, and expiration.
+- Optional SignalFire chat links that open and highlight the matching listing.
+- Random Normal, Heroic, and Mythic Dungeon Finder listing flows.
+- Dungeon, raid, Mythic+, Ascended, world boss, and custom listing tools.
+- Applicant management, rebroadcasting, listing updates, and cancellation.
+- Network and Full Roster views with favorites and Ascension custom classes.
+- Guild Browser, Recruitment Creator, Community Events, and Notice Board.
+- Separate Ascension/CoA and Triumvirate settings and module availability.
 - 90%, 100%, 110%, and 120% interface scaling.
-- Persistent window position and profile-specific settings.
-- Searchable, filterable, and paged list views.
-- Configurable chat-link scope, strict parsing, favorites, alerts, and Network refresh intervals.
+
+## What Changed in 1.5.2
+
+- Fixed severe FPS loss caused by public-chat parser work multiplying across receiving ChatFrames.
+- Removed chat-triggered cache maintenance and moved non-display work into bounded deferred owners.
+- Added first-occurrence exact links with recruiter `Need T/H/D` and applicant `LFG T/H/D` wording.
+- Added shared exact link resolution for supported group and guild recruitment messages.
+- Expanded Ascension activity aliases and multi-activity world-boss route recognition.
+- Preserved Public Groups parsing while Chat Links are Off.
+- Kept Chat Links Off by default for fresh installations and missing legacy preferences.
+- Preserved the existing UI, profiles, Network, community features, SavedVariables, and protocol compatibility.
+
+## Chat Links
+
+SignalFire continues to parse eligible chat and populate Public Groups while Chat Links are Off. Enable links manually under **Options > Chat & Parsing** when you want clickable activity and guild links.
+
+Available scopes are Main Chat Only, Visible Chat Frames, and All Chat Frames. All Chat Frames provides the broadest coverage; lighter scopes may reduce custom-link rendering work on affected Ascension clients.
+
+In 1.5.2, Public Groups source parsing no longer scales with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Source events and filter fallback share one exact resolver, so the first eligible occurrence receives the same contextual link across every receiving frame.
 
 ## Commands
 
@@ -77,40 +48,59 @@ SignalFire turns fast-moving public chat into organized listings for dungeons, r
 - `/sf public` opens Public Groups.
 - `/sf guild` opens the Guild Browser.
 - `/sfparse` opens the parser regression tests.
+- `/sf diag start` begins session-only stability diagnostics.
+- `/sf diag report` prints a diagnostic report.
+- `/sf diag stop` disables diagnostics.
+- `/sf diag` lists the remaining diagnostic commands.
+- `/sf parser canary 5` runs a five-second parser-only safety test with Chat Links Off.
+- `/sf parser abort` immediately stops an active canary and discards unfinished parser work.
+- `/sf parser off` is the emergency parser and Chat Links shutdown command.
+- `/sf parser status` and `/sf parser report` show bounded session-only canary results.
+- `/sf parser identity` reports the active release and parser owners.
+- `/sf parser trace <message>` explains one parser and exact-link decision without retaining live chat history.
+
+Diagnostics and deep traces are disabled by default and are not saved between sessions.
 
 ## Installation
 
-1. Fully close World of Warcraft.
-2. Delete any existing `Interface\AddOns\SignalFire` folder.
-3. Extract the latest release into `Interface\AddOns`.
+1. Fully exit World of Warcraft.
+2. Delete the existing `Interface\AddOns\SignalFire` addon folder.
+3. Extract the release into `Interface\AddOns`.
 4. Confirm the final path is `Interface\AddOns\SignalFire\SignalFire.toc`.
 5. Launch the game and use `/sf` to open SignalFire.
 
-Do not overwrite an older SignalFire installation.
+Deleting the addon folder does not delete `BronzeLFG_DB`; normal upgrades preserve settings. Do not overwrite an older addon folder because removed or renamed files can remain behind.
 
 ## Compatibility
 
-- World of Warcraft 3.3.5
+- World of Warcraft 3.3.5 build 12340 / Lua 5.1
 - Ascension / Conquest of Azeroth
 - Triumvirate
-- Lua 5.1 / Wrath addon environment
 
-SignalFire retains the `BronzeLFG`, `BLFG`, and `BronzeLFG_DB` names internally for SavedVariables and compatibility with established addon data.
+SignalFire retains the internal `BronzeLFG`, `BLFG`, and `BronzeLFG_DB` names for SavedVariables and compatibility with established data.
 
-## Repository Layout
+## Known Limitations
+
+- Some Ascension/CoA clients may experience intermittent micro-stutter while custom SignalFire links are visible during very busy chat. Chat Links now default Off as a safety measure. This does not disable Public Groups parsing.
+- The first Public Groups link click can briefly pause while that panel is constructed for the first time. Reopening it is substantially faster.
+- The current testing optimized known measured hotspots, but it does not establish that every FPS issue or client crash is fixed.
+
+## Troubleshooting
+
+1. Confirm Chat Links are Off under **Options > Chat & Parsing**.
+2. Run `/sf diag start`.
+3. Reproduce the problem briefly.
+4. Run `/sf diag report`, then `/sf diag stop`.
+5. Include the output, addon list, server profile, and any Lua error in the report.
+
+As a controlled file test, fully exit WoW and temporarily rename both `BronzeLFG.lua` and any `BronzeLFG.lua.bak` found in the SignalFire folder, then restore them before normal play. Resetting `BronzeLFG_DB` resets settings and cached data; back it up first and use that only as a troubleshooting test, not as a standard upgrade step.
+
+## Repository
 
 - `SignalFire/` contains the complete addon source and TOC.
-- `CHANGELOG.md` contains user-facing release history.
-- `.github/workflows/release.yml` validates and packages the addon.
+- `CHANGELOG.md` contains the user-facing release notes.
+- `.github/workflows/release.yml` validates and packages the TOC file set.
 
-Pushing changes to `main` builds an installable ZIP as a workflow artifact. Pushing a version tag such as `v1.5.1` also publishes that ZIP and its SHA-256 checksum as GitHub release assets.
-
-## Known Limitation
-
-Some Ascension / CoA clients may experience intermittent micro-stutter while custom SignalFire links are visible during very busy public chat. Players can reduce the impact by selecting **Main Chat Only** or **Visible Chat Frames**, or by disabling visible links while keeping Public Groups parsing enabled.
-
-## Support
-
-When reporting a problem, include the active server profile, the SignalFire version, what was happening when the issue occurred, and any Lua error shown by the client.
+Repository automation can build an installable ZIP. Publishing, tagging, and distributor uploads remain explicit maintainer actions.
 
 **SignalFire. Lighting the Path to Adventure.**

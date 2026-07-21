@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Startup guard
@@ -7,7 +7,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SF135N_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SF135N_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function sf135n_print(msg)
       if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100SignalFire>|r " .. tostring(msg or "")) end
@@ -1191,6 +1191,8 @@ do
       local raw = tostring(input or "")
       local cmd = sfm146_low(raw)
 
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(cmd) then return true end
+
       if cmd == "modules" or cmd == "module" or cmd == "mod" or cmd == "mods" then
         sfm146_msg("Active modules for " .. tostring(sfm146_profile_id()) .. ": " .. sfm146_status_line())
         sfm146_msg("Module commands: /sf invasions on, /sf invasions off, /sf invasions default")
@@ -1392,4 +1394,3 @@ do
     end)
   until true
 end
-

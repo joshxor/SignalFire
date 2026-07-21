@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Parser rules
@@ -1415,4 +1415,3 @@ do
     SignalFire_GetCurrentInvasionArea = function() return SignalFireInvasions.GetCurrentInvasionArea() end
   until true
 end
-

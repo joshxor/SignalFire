@@ -1,4 +1,4 @@
--- SignalFire 1.5.0
+-- SignalFire 1.5.2
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Network services
@@ -9,7 +9,7 @@ do
 
     local SFN_PREFIX = "BLFG312"
     local SFN_CHANNEL = "BLFG"
-    local SFN_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFN_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function sfn_now()
       return (time and time()) or 0
@@ -764,6 +764,7 @@ do
         zone = zone,
         seen = stamp,
       }
+      if self.SF151_InvalidateRosterData then self:SF151_InvalidateRosterData("status", name) end
 
       return sfn_send(table.concat({SFN_PREFIX, "SFNSTATUS", name, classFile or className or "", looking, flags, zone, tostring(stamp), className or classFile or ""}, "~"))
     end
@@ -797,6 +798,10 @@ do
           zone = zone ~= "" and zone or oldStatus.zone,
           seen = seen,
         }
+        if BLFG.SF151_InvalidateRosterData then BLFG:SF151_InvalidateRosterData("status", name) end
+        if BLFG.SF151_CheckFavoriteTransition then
+          BLFG:SF151_CheckFavoriteTransition(BLFG.sfnStatuses[name], "status")
+        end
         BLFG._sfnLastPresenceResponse = sfn_now()
         BLFG._sfnPresenceRefreshPending = nil
         if BLFG.SF151_NotePresencePacket then BLFG:SF151_NotePresencePacket("SFNSTATUS") end
@@ -1236,41 +1241,6 @@ do
       local rows = {}
       if self.GetOnlineUserRows then rows = self:GetOnlineUserRows() or {} end
       local nowStamp = sfn_now()
-      local byName = {}
-      for _, u in ipairs(rows) do
-        local key = sfn_name_key(u and u.name or "")
-        if key ~= "" then byName[key] = u end
-      end
-      for name, su in pairs(self.sfnStatuses or {}) do
-        local seen = tonumber(su and su.seen or 0) or 0
-        if seen <= 0 or (nowStamp - seen) > 180 then
-          self.sfnStatuses[name] = nil
-        else
-          local key = sfn_name_key((su and su.name) or name)
-          local existing = key ~= "" and byName[key] or nil
-          if existing then
-            existing.looking = su.looking
-            existing.sfnRoleFlags = su.flags
-            if tostring(existing.zone or "") == "" then existing.zone = su.zone end
-            if tostring(existing.className or "") == "" or tostring(existing.className or "") == "Unknown" then existing.className = su.className end
-            if tostring(existing.classFile or "") == "" or tostring(existing.classFile or "") == "UNKNOWN" then existing.classFile = su.classFile end
-            if self.SF151_ResolveClassDisplay then self:SF151_ResolveClassDisplay(existing) end
-            if seen > (tonumber(existing.seen or 0) or 0) then existing.seen = seen end
-          else
-            local row = {name=(su and su.name) or name, className=su.className, classFile=su.classFile, role=su.role, looking=su.looking, zone=su.zone, seen=seen}
-            if self.SF151_ResolveClassDisplay then self:SF151_ResolveClassDisplay(row) end
-            table.insert(rows, row)
-            if key ~= "" then byName[key] = row end
-          end
-        end
-      end
-      table.sort(rows, function(a,b)
-        if a.self and not b.self then return true end
-        if b.self and not a.self then return false end
-        if a.favorite and not b.favorite then return true end
-        if b.favorite and not a.favorite then return false end
-        return tostring(a.name or "") < tostring(b.name or "")
-      end)
 
       self.sfnUserPage = tonumber(self.sfnUserPage or 1) or 1
       local per = tonumber(self.sfnRowsPerPage or #(self.sfnUserRows or {})) or 6
@@ -1629,6 +1599,7 @@ do
     end
 
     local SFN_Frame = CreateFrame("Frame")
+    BLFG._sfPerfNetworkPulseFrame = SFN_Frame
     SFN_Frame.elapsed = 45
     SFN_Frame:RegisterEvent("PLAYER_LOGIN")
     SFN_Frame:RegisterEvent("CHAT_MSG_CHANNEL")
@@ -1912,7 +1883,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFAM_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SFAM_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function sfam_now()
       return (GetTime and GetTime()) or (time and time()) or 0
@@ -2184,6 +2155,10 @@ do
       if self.SFAM_PulseSideButton then self:SFAM_PulseSideButton("Network", tonumber(duration) or 8) end
     end
 
+    function BLFG:SFAM_PulsePublicGroupRow(row)
+      if row then sfam_pulse(row, 5, .25, .65, 1, .22) end
+    end
+
     function BLFG:SFAM_ShowToast(title, body, icon, duration)
       if not sfam_enabled("pulseEffects") then return end
       duration = tonumber(duration) or 5
@@ -2255,54 +2230,7 @@ do
     end
 
     local function sfam_compiled_online_rows(self)
-      local rows = {}
-      local seen = {}
-      if self and self.GetOnlineUserRows then
-        for _, u in ipairs(self:GetOnlineUserRows() or {}) do
-          if u then
-            table.insert(rows, u)
-            local n = string.lower(tostring(u.name or ""))
-            if n ~= "" then seen[n] = u end
-          end
-        end
-      end
-      if self and self.sfnStatuses then
-        for name, su in pairs(self.sfnStatuses or {}) do
-          local low = string.lower(tostring(name or ""))
-          if low ~= "" and seen[low] then
-            local u = seen[low]
-            u.looking = su.looking or u.looking
-            u.status = su.looking or u.status
-            u.sfnRoleFlags = su.flags or u.sfnRoleFlags
-            u.flags = su.flags or u.flags
-            u.zone = (u.zone and u.zone ~= "") and u.zone or su.zone
-            u.className = (u.className and u.className ~= "") and u.className or su.className
-            u.classFile = (u.classFile and u.classFile ~= "") and u.classFile or su.classFile
-            u.role = (u.role and u.role ~= "") and u.role or su.role
-          elseif low ~= "" then
-            table.insert(rows, {
-              name = name,
-              className = su.className,
-              classFile = su.classFile,
-              role = su.role,
-              looking = su.looking or "Online",
-              status = su.looking or "Online",
-              zone = su.zone,
-              seen = su.seen,
-              sfnRoleFlags = su.flags,
-              flags = su.flags,
-              favorite = self.IsFavorite and self:IsFavorite(name) or false,
-            })
-          end
-        end
-      end
-      table.sort(rows, function(a,b)
-        if a.self and not b.self then return true end
-        if b.self and not a.self then return false end
-        if a.favorite and not b.favorite then return true end
-        if b.favorite and not a.favorite then return false end
-        return tostring(a.name or "") < tostring(b.name or "")
-      end)
+      local rows = self and self.GetOnlineUserRows and self:GetOnlineUserRows() or {}
       if self then self.sfamCompiledOnlineRows = rows end
       return rows
     end
@@ -2862,10 +2790,7 @@ do
     sfamLogin:RegisterEvent("PLAYER_LOGIN")
     sfamLogin:SetScript("OnEvent", function()
       sfam_ensure_options()
-      sfamLogin.waitUntil = sfam_now() + 8
-      sfamLogin:SetScript("OnUpdate", function(self)
-        if not self.waitUntil or sfam_now() < self.waitUntil then return end
-        self:SetScript("OnUpdate", nil)
+      local function show_summary()
         if not sfam_enabled("loginSummaryToast") then return end
         if BLFG.SFN_SendStatus then BLFG:SFN_SendStatus() end
         if BLFG.SendPresence then BLFG:SendPresence() end
@@ -2873,7 +2798,12 @@ do
         if BLFG.SFN_GetNoticeRows then notices = #(BLFG:SFN_GetNoticeRows() or {}) end
         local noticeText = tostring(notices) .. " notice(s)"
         BLFG:SFAM_ShowToast("SignalFire ready", "Network roster compiling  |  " .. noticeText, "Interface\\Icons\\Spell_Fire_FlameBolt", 5)
-      end)
+      end
+      if BLFG and BLFG.SF151_ScheduleDelayed then
+        BLFG:SF151_ScheduleDelayed("startup.login-summary", 8.0, show_summary)
+      else
+        show_summary()
+      end
     end)
 
     sfam_ensure_options()
@@ -2891,7 +2821,7 @@ end
 -- Compatibility
 do
   repeat
-    local SF_VERSION = _G.SignalFire_VERSION or "1.4.23"
+    local SF_VERSION = _G.SignalFire_VERSION or "1.5.2"
 
     local function cleanAddonText(msg)
       if type(msg) ~= "string" then return msg end
@@ -2948,16 +2878,15 @@ do
       for _, child in ipairs(kids) do recursiveSkin(child, depth + 1) end
     end
 
-    local function setChildrenAbove(parent, frame)
-      if not parent or not frame then return end
+    local function setPrimaryChildrenAbove(parent)
+      if not parent then return end
       local base = parent.GetFrameLevel and parent:GetFrameLevel() or 1
-      local kids = { frame:GetChildren() }
-      for _, child in ipairs(kids) do
-        if child and child.SetFrameLevel and child ~= parent.SignalFireDragHandle and child ~= parent.SignalFireCloseButton then
+      local owner = _G.BronzeLFG
+      for _, child in ipairs({owner and owner.side, owner and owner.content}) do
+        if child and child.SetFrameLevel then
           local cur = child.GetFrameLevel and child:GetFrameLevel() or 0
           if cur <= base then child:SetFrameLevel(base + 5) end
         end
-        setChildrenAbove(parent, child)
       end
     end
 
@@ -2987,7 +2916,7 @@ do
       f:SetFrameStrata("HIGH")
       f:SetFrameLevel(50)
       if not f._sfChildrenAboveApplied then
-        setChildrenAbove(f, f)
+        setPrimaryChildrenAbove(f)
         f._sfChildrenAboveApplied = true
       end
       if not f.SignalFireDragHandle then
@@ -3038,7 +2967,7 @@ do
         if BronzeLFG_ApplyVisibleVersion then
           BronzeLFG_ApplyVisibleVersion()
         else
-          if B.titleText and B.titleText.SetText then B.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(SF_VERSION) .. " (Beta)")) end
+          if B.titleText and B.titleText.SetText then B.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(SF_VERSION))) end
           if B.versionText then
             if B.versionText.SetText then B.versionText:SetText("") end
             if B.versionText.SetAlpha then B.versionText:SetAlpha(0) end
@@ -3199,6 +3128,7 @@ do
       msg = string.gsub(msg, "^%s+", "")
       msg = string.gsub(msg, "%s+$", "")
       local B = _G.BronzeLFG
+      if B and B.SF151_HandlePerfSlash and B:SF151_HandlePerfSlash(msg) then return end
       -- 1.4.8: Handle module commands directly in the main /sf owner first.
       -- This avoids the old wrapper chain swallowing /sf modules before the module layer sees it.
       if sfcompat_handle_modules_slash and sfcompat_handle_modules_slash(msg) then return end

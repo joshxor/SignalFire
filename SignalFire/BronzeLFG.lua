@@ -15,7 +15,7 @@ end
 -- BronzeNet profiles, right-click options, autosave settings, UI polish.
 -- WoW 3.3.5 / Bronzebeard compatible.
 
-local VERSION = SignalFire_VERSION or "1.4.23"
+local VERSION = SignalFire_VERSION or "1.5.2"
 local CHANNEL = "BLFG"
 local PREFIX = "BLFG312"
 
@@ -1391,13 +1391,16 @@ end
 
 function BLFG:ExpirePublicGroups()
   local expire = 300
+  local removed = 0
   if BronzeLFG_DB.options and BronzeLFG_DB.options.publicExpire then expire = tonumber(BronzeLFG_DB.options.publicExpire) or 300 end
   for id, g in pairs(self.publicGroups) do
     if now() - (g.seen or g.created or now()) > expire then
       self.publicGroups[id] = nil
+      removed = removed + 1
       if self.selectedPublic == id then self.selectedPublic = nil end
     end
   end
+  return removed
 end
 
 function BLFG:BuildProfileWhisper(activity)
@@ -1649,7 +1652,7 @@ function BLFG:CreateUI()
   f:Hide()
   table.insert(UISpecialFrames, "BronzeLFGFrame")
 
-  local title = font(f, (SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)", 22, 1, .75, 0)
+  local title = font(f, (SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire v1.5.2", 22, 1, .75, 0)
   title:SetPoint("TOP", f, "TOP", 0, -14)
   local ver = font(f, "", 10, .9, .8, .45)
   ver:SetPoint("LEFT", title, "RIGHT", 8, -4)
@@ -3088,6 +3091,7 @@ function BLFG:GetOnlineUserRows()
       table.insert(rows, u)
     end
   end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     if a.self and not b.self then return true end
     if b.self and not a.self then return false end
@@ -5429,6 +5433,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
 end)
 
 local pulse = CreateFrame("Frame")
+BLFG._sfPerfCorePulseFrame = pulse
 pulse.elapsed = 0
 pulse.presenceElapsed = 55
 pulse:SetScript("OnUpdate", function(self, elapsed)
@@ -8237,6 +8242,10 @@ end
 -- Final SetItemRef wrapper: handles both BronzeLFG link types and strips link text safely.
 BLFG_SetItemRef_Before565 = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
+  if _G.SignalFireStability151 and _G.SignalFireStability151.setItemRefProbe
+      and _G.SignalFireStability151:ObserveSetItemRefProbe(link) then
+    return
+  end
   if type(link) == "string" and string.sub(link, 1, 13) == "bronzelfgpub:" then
     local id = string.sub(link, 14)
     local title = ""
@@ -14241,6 +14250,7 @@ function BLFG:GetOnlineUserRows(...)
   end
 
   local myZone = currentZoneText()
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     if a.self and not b.self then return true end
     if b.self and not a.self then return false end
@@ -15087,7 +15097,7 @@ function BLFG:ApplySignalFireBetaTitle()
     BronzeLFG_ApplyVisibleVersion()
     return
   end
-  if self.titleText then self.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire (Beta)") end
+  if self.titleText then self.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or "SignalFire v1.5.2") end
   if self.versionText then
     self.versionText:SetText("")
     if self.versionText.SetAlpha then self.versionText:SetAlpha(0) end
@@ -15098,6 +15108,7 @@ end
 BLFG_SF574_OldGetOnlineUserRows = BLFG.GetOnlineUserRows
 function BLFG:GetOnlineUserRows(...)
   local rows = BLFG_SF574_OldGetOnlineUserRows and BLFG_SF574_OldGetOnlineUserRows(self, ...) or {}
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("network", "sorts", 1) end
   table.sort(rows, function(a,b)
     local asf = SF574_IsSignalFireUser(a)
     local bsf = SF574_IsSignalFireUser(b)
@@ -16803,6 +16814,7 @@ end
 
 function BLFG_SF135J_FixAllDropdowns(root)
   if not root or not root.GetChildren then return end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("ui", "treeFramesVisited", 1) end
   local kids = {root:GetChildren()}
   for _, child in ipairs(kids) do
     if child and child.GetName then
@@ -16815,6 +16827,7 @@ end
 
 function BLFG_SF135J_FixVisibleDropdowns()
   if not BLFG then return end
+  if SignalFirePerf151 and SignalFirePerf151.enabled then SignalFirePerf151:Note("ui", "recursiveTreeScans", 1) end
   BLFG_SF135J_FixAllDropdowns(BLFG.frame)
   BLFG_SF135J_FixAllDropdowns(BLFG.content)
   BLFG_SF135J_FixAllDropdowns(BLFG.optionsPanel)
@@ -16931,7 +16944,7 @@ end
 -- SignalFire 1.4.23: no-local central visible-version finalizer.
 -- Keep this block free of `local` declarations; BronzeLFG.lua is already near
 -- Lua 5.1/Wrath's 200-local main-chunk compiler limit.
-VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.5.2"
 BRONZELFG_VERSION = VERSION
 BLFG_VERSION = VERSION
 BronzeLFG_Version = VERSION
@@ -16940,7 +16953,7 @@ if BronzeLFG then
   if BronzeLFG_ApplyVisibleVersion then
     BronzeLFG_ApplyVisibleVersion()
   elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
-    BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+    BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION)))
   end
 end
 if CreateFrame then
@@ -16948,7 +16961,7 @@ if CreateFrame then
   BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_LOGIN")
   BLFG_SFV_FinalizeFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
   BLFG_SFV_FinalizeFrame:SetScript("OnEvent", function()
-    VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.4.23"
+    VERSION = (SignalFire_GetVersion and SignalFire_GetVersion()) or SignalFire_VERSION or "1.5.2"
     BRONZELFG_VERSION = VERSION
     BLFG_VERSION = VERSION
     BronzeLFG_Version = VERSION
@@ -16957,7 +16970,7 @@ if CreateFrame then
       if BronzeLFG_ApplyVisibleVersion then
         BronzeLFG_ApplyVisibleVersion()
       elseif BronzeLFG.titleText and BronzeLFG.titleText.SetText then
-        BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION) .. " (Beta)"))
+        BronzeLFG.titleText:SetText((SignalFire_GetTitleText and SignalFire_GetTitleText()) or ("SignalFire v" .. tostring(VERSION)))
       end
     end
   end)
