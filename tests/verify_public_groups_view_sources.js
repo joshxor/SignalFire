@@ -1,7 +1,7 @@
 const fs = require("fs");
 
 const ui = fs.readFileSync("SignalFire/SignalFireUI.lua", "utf8");
-const bronze = fs.readFileSync("SignalFire/BronzeLFG.lua", "utf8");
+const bronze = fs.readFileSync("SignalFire/BronzeLFG.lua", "utf8").replace(/\r\n/g, "\n");
 
 function requireText(text, label) {
   if (!ui.includes(text)) throw new Error(`missing ${label}: ${text}`);
