@@ -4,9 +4,9 @@ SignalFire is a group-discovery and community coordination addon for World of Wa
 
 It turns fast-moving public chat into organized listings for dungeons, raids, random dungeon finder groups, Mythic+, world bosses, guild recruitment, and community activities. SignalFire also includes listing and applicant tools, a user Network and Full Roster, favorites, community events, notices, and profile-aware modules.
 
-**Current release: 1.5.1**
+**Current release: 1.5.2**
 
-**Current test candidate: 1.5.2 Phase 12C Exact Links RC** preserves the Phase 12A and 12B performance corrections while guaranteeing an exact activity, intent, and role link on the first eligible chat occurrence. Run `/sf parser identity` before testing; `/sf parser trace <message>` reports the exact decision without retaining chat history.
+SignalFire 1.5.2 combines the public-chat FPS corrections with exact contextual links for eligible group and guild recruitment messages. The Phase 12C resolver identifies activity, intent, and roles on the first occurrence while reusing that completed result across receiving chat frames.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
@@ -23,17 +23,16 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 - Separate Ascension/CoA and Triumvirate settings and module availability.
 - 90%, 100%, 110%, and 120% interface scaling.
 
-## What Changed in 1.5.1
+## What Changed in 1.5.2
 
-- Improved chat classification, exact link targeting, RDF shorthand, and role-first messages.
-- Added Random Dungeon Finder, Random Heroic Dungeon Finder, and Random Mythic Dungeon Finder listing options.
-- Corrected listing ages and Ascension custom class display.
-- Reduced repeated parsing, refreshes, hidden work, recursive UI scans, and unnecessary timers.
-- Added cached Network, roster, Public Groups, and Browse views with bounded session caches.
-- Added lazy panel construction and incremental visible-row rendering.
-- Improved SavedVariables repair and profile-safe module migration.
-- Added opt-in stability and ownership diagnostics.
-- Changed **Chat Links to Off by default** for fresh installations and missing legacy preferences. Public Groups parsing remains active, and existing explicit On or Off choices are preserved.
+- Fixed severe FPS loss caused by public-chat parser work multiplying across receiving ChatFrames.
+- Removed chat-triggered cache maintenance and moved non-display work into bounded deferred owners.
+- Added first-occurrence exact links with recruiter `Need T/H/D` and applicant `LFG T/H/D` wording.
+- Added shared exact link resolution for supported group and guild recruitment messages.
+- Expanded Ascension activity aliases and multi-activity world-boss route recognition.
+- Preserved Public Groups parsing while Chat Links are Off.
+- Kept Chat Links Off by default for fresh installations and missing legacy preferences.
+- Preserved the existing UI, profiles, Network, community features, SavedVariables, and protocol compatibility.
 
 ## Chat Links
 
@@ -41,7 +40,7 @@ SignalFire continues to parse eligible chat and populate Public Groups while Cha
 
 Available scopes are Main Chat Only, Visible Chat Frames, and All Chat Frames. All Chat Frames provides the broadest coverage; lighter scopes may reduce custom-link rendering work on affected Ascension clients.
 
-In the 1.5.2 candidate, Public Groups source parsing no longer scales with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Those filters perform completed cache lookups only; an uncached first occurrence may appear without a SignalFire link.
+In 1.5.2, Public Groups source parsing no longer scales with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Source events and filter fallback share one exact resolver, so the first eligible occurrence receives the same contextual link across every receiving frame.
 
 ## Commands
 
@@ -57,6 +56,8 @@ In the 1.5.2 candidate, Public Groups source parsing no longer scales with the n
 - `/sf parser abort` immediately stops an active canary and discards unfinished parser work.
 - `/sf parser off` is the emergency parser and Chat Links shutdown command.
 - `/sf parser status` and `/sf parser report` show bounded session-only canary results.
+- `/sf parser identity` reports the active release and parser owners.
+- `/sf parser trace <message>` explains one parser and exact-link decision without retaining live chat history.
 
 Diagnostics and deep traces are disabled by default and are not saved between sessions.
 

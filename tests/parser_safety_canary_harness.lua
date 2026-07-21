@@ -73,10 +73,12 @@ assert(SlashCmdList["SIGNALFIRE"] == perf.slashWrapper, "diagnostics wrapper is 
 parser_command("parser identity")
 local identity = C:GetIdentity()
 assert(identity.matchesExpected == true, "current canary identity did not match")
-assert(identity.version == "1.5.2" and identity.releaseChannel == "rc",
+assert(identity.version == "1.5.2" and identity.releaseChannel == "stable",
   "release identity did not match")
-assert(identity.releaseName == "SignalFire 1.5.2 Phase 12C Exact Links RC",
+assert(identity.releaseName == "SignalFire 1.5.2",
   "release name did not match")
+assert(identity.developmentMilestone == "Phase 12C Exact Contextual Chat Links",
+  "development milestone did not match")
 assert(identity.chatRuntimeGeneration == "1.5.2-phase12c"
   and identity.parserWorkerGeneration == "1.5.2-phase12c"
   and identity.canaryGeneration == "1.5.2-phase12c-canary",

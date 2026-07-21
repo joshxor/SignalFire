@@ -1,17 +1,72 @@
-# SignalFire 1.5.2 Phase 12C Exact Links RC
+# SignalFire 1.5.2
 
-This unpublished test candidate keeps the Phase 12A cache correction and Phase 12B bounded chat architecture while restoring exact contextual links on the first eligible chat occurrence.
+Development milestone: **Phase 12C Exact Contextual Chat Links**
 
-- Added one shared exact resolver for source-first and ChatFrame-first delivery.
-- Builds canonical Public Groups identity before caching the completed activity link.
-- Uses recruiter-aware `Need T/H/D` and applicant-aware `LFG T/H/D` titles.
-- Added Ascension aliases for Snowgrave, Kaldros, Soggoth, Lord Kazzak, Vaults of Inquisition, BFD, RDF, and MC.
-- Added multi-activity world-boss route links such as `Snowgrave / Kaldros / Soggoth - LFG D`.
-- Added narrow `Heasl` healer typo handling from field chat.
-- Repurposed the sleeping worker for refreshes, alerts, and guild updates; it no longer repeats exact parsing or canonical upserts.
-- Added `/sf parser trace <message>` and bounded exact-resolver timing and ownership counters.
-- Expanded the parser regression suite from 33 to 48 cases.
-- Preserved zero Public Groups filters while parsing or Chat Links are Off.
+## Performance
+
+- Removed synchronous cache-lifecycle maintenance from public chat message checkpoints.
+- Consolidated automatic cache cleanup under one throttled lifecycle owner.
+- Reworked Public Groups parsing so expensive parser work runs once per logical chat message instead of multiplying across receiving ChatFrames.
+- Added cheap early rejection for ordinary chat, addon protocol traffic, disabled features, and unsupported messages.
+- Added bounded parser work and deferred non-display bookkeeping.
+- Removed filter-side refreshes, notifications, cache cleanup, and duplicate parsing.
+- Preserved Public Groups collection when Chat Links are disabled.
+- Prevented unnecessary display filters from remaining registered when Chat Links are disabled.
+- Preserved the field-tested FPS fix for high-volume city and global chat.
+
+## Exact Contextual Chat Links
+
+- Added one shared exact-message resolver for source chat events and ChatFrame fallback handling.
+- Added first-occurrence exact links for eligible LFM and LFG posts.
+- Ensured repeated messages receive the same correct contextual link without reprocessing once per ChatFrame.
+- Added correct recruiter wording using `Need T/H/D`.
+- Added correct applicant wording using `LFG T/H/D`.
+- Prevented applicant roles from being mislabeled as needed roles.
+- Prevented generic fallback links from replacing known exact activities.
+- Ensured the canonical Public Groups row exists before caching the positive link decision.
+- Preserved indexed Public Groups updates without restoring full-table live-chat scans.
+
+## Parser and Activity Coverage
+
+- Added or improved explicit aliases for Random Dungeon Finder/RDF, Vaults of Inquisition/Vault, Blackfathom Deeps/BFD, Molten Core/MC, Lord Kazzak/Kazzak, Snowgrave, Kaldros/Kaldros Depthbreaker, and Soggoth/Sogoth.
+- Added support for multi-activity applicant posts such as Snowgrave, Kaldros, and Soggoth.
+- Added narrow role typo handling for `Heasl` as Healer.
+- Improved recruiter and applicant intent detection for common private-server phrasing.
+- Preserved ordinary chat and unrelated announcements without adding links.
+
+## Guild Recruitment Links
+
+- Routed eligible guild recruitment advertisements through the shared Phase 12C resolver and display-cache architecture.
+- Preserved clickable detected guild-name links to Guild Browser entries.
+- Deferred Guild Browser listing updates away from ChatFrame display callbacks.
+- Continued excluding players merely looking for a guild unless guild-applicant support is deliberately added later.
+
+## Diagnostics and Safety
+
+- Added parser identity and runtime-owner reporting.
+- Added bounded parser trace diagnostics for individual messages.
+- Added exact resolver, parser call, canonical upsert, link-build, cache-hit, fallback, and missing-link counters.
+- Added safe parser and link canary commands.
+- Added automatic canary shutdown that leaves parsing and Chat Links disabled after testing.
+- Kept diagnostics session-only, bounded, disabled by default, and inexpensive while inactive.
+- Added regression fixtures for real affected-player chat examples.
+- Added validation across multiple receiving ChatFrame counts.
+
+## Compatibility
+
+- Preserved WoW 3.3.5 build 12340 and Lua 5.1 compatibility.
+- Preserved Ascension, Conquest of Azeroth, and Triumvirate profiles.
+- Preserved `BronzeLFG_DB` saved-variable compatibility.
+- Preserved the `BLFG312` addon communication prefix.
+- Preserved existing TOC load order.
+- Preserved native Blizzard item, spell, quest, achievement, trade, and player links.
+- Preserved explicit user Chat Links On and Off choices.
+- Chat Links continue to default Off for fresh or missing settings.
+
+## Deferred
+
+- Automatic activity-alias learning remains deferred for a later release.
+- Crafter development remains deferred until parser and chat-link field validation is complete.
 
 ## Phase 12B Canary Foundation
 

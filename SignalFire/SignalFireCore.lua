@@ -5,8 +5,9 @@
 do
   repeat
     SignalFire_VERSION = "1.5.2"
-    SignalFire_RELEASE_CHANNEL = "rc"
-    SignalFire_RELEASE_NAME = "SignalFire 1.5.2 Phase 12C Exact Links RC"
+    SignalFire_RELEASE_CHANNEL = "stable"
+    SignalFire_RELEASE_NAME = "SignalFire 1.5.2"
+    SignalFire_DEVELOPMENT_MILESTONE = "Phase 12C Exact Contextual Chat Links"
 
     function SignalFire_GetVersion()
       return tostring(SignalFire_VERSION or "1.5.2")

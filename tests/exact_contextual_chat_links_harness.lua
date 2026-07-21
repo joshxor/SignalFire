@@ -7,9 +7,11 @@ local B = assert(BronzeLFG, "SignalFire did not load")
 local P3 = assert(SignalFireChatRuntime151, "Phase 12C runtime did not load")
 assert(P3.generation == "1.5.2-phase12c", "unexpected exact-link owner")
 assert(SignalFire_VERSION == "1.5.2", "unexpected visible version")
-assert(SignalFire_RELEASE_CHANNEL == "rc", "unexpected release channel")
-assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2 Phase 12C Exact Links RC",
+assert(SignalFire_RELEASE_CHANNEL == "stable", "unexpected release channel")
+assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.2",
   "unexpected release name")
+assert(SignalFire_DEVELOPMENT_MILESTONE == "Phase 12C Exact Contextual Chat Links",
+  "unexpected development milestone")
 
 local testNow = 1800000
 local profileClock = 1000

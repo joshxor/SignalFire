@@ -2476,6 +2476,7 @@ do
         version=tostring(version or "missing"),
         releaseChannel=tostring(SignalFire_RELEASE_CHANNEL or "missing"),
         releaseName=tostring(SignalFire_RELEASE_NAME or "missing"),
+        developmentMilestone=tostring(SignalFire_DEVELOPMENT_MILESTONE or "missing"),
         chatRuntimeGeneration=tostring(P3.generation or "missing"),
         diagnosticGeneration=tostring(stability.generation or "missing"),
         parserWorkerGeneration=tostring(runtime.workerGeneration or P3.workerGeneration or "missing"),
@@ -2496,8 +2497,10 @@ do
         if not ok then row.mismatches[#row.mismatches + 1] = label end
       end
       require_match(row.version == "1.5.2", "version")
-      require_match(row.releaseChannel == "rc", "release channel")
-      require_match(row.releaseName == "SignalFire 1.5.2 Phase 12C Exact Links RC", "release name")
+      require_match(row.releaseChannel == "stable", "release channel")
+      require_match(row.releaseName == "SignalFire 1.5.2", "release name")
+      require_match(row.developmentMilestone == "Phase 12C Exact Contextual Chat Links",
+        "development milestone")
       require_match(row.diagnosticGeneration == "1.5.1-phase10b", "diagnostic generation")
       require_match(string.find(row.chatRuntimeGeneration, "phase12c", 1, true) ~= nil,
         "chat runtime generation")
@@ -2522,6 +2525,7 @@ do
       c_emit("parser identity: version=" .. tostring(row.version)
         .. ", channel=" .. tostring(row.releaseChannel)
         .. ", name=" .. tostring(row.releaseName))
+      c_emit("milestone: " .. tostring(row.developmentMilestone))
       c_emit("runtime: chat=" .. tostring(row.chatRuntimeGeneration)
         .. ", diagnostics=" .. tostring(row.diagnosticGeneration)
         .. ", worker=" .. tostring(row.parserWorkerGeneration)
