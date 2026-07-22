@@ -2149,6 +2149,7 @@ do
       {key="notices", label="Notice Board", description="Trusted network notices, update notices, and admin notice controls.", profiles={Triumvirate=true, Ascension=true}, default=true, required=true},
       {key="invasions", label="Invasions", description="Triumvirate invasion beacons, grouping tools, and invasion listings.", profiles={Triumvirate=true, Ascension=false}, defaults={Triumvirate=true, Ascension=false}, toggleable=true},
       {key="ascensionListingTools", label="Ascension Listing Tools", description="Ascension Mythic+, Ascended raids, profile aliases, and compact dungeon selection.", profiles={Triumvirate=false, Ascension=true}, defaults={Triumvirate=false, Ascension=true}, required=true},
+      {key="tradeskillMarketplace", label="Tradeskill Marketplace", description="Local crafting offers and requests.", profiles={Triumvirate=true, Ascension=true}, defaults={Triumvirate=false, Ascension=false}, toggleable=true},
       {key="raidTools", label="Raid Tools", description="Reserved for a later raid-leader tools package.", profiles={Triumvirate=false, Ascension=false}, defaults={Triumvirate=false, Ascension=false}, unavailable="Deferred until after 1.5"},
     }
 
@@ -2277,6 +2278,9 @@ do
       sfcp_apply_runtime()
       if BLFG.optPublic then BLFG.optPublic:SetChecked(o.publicGroups ~= false) end
       if BLFG.side and BLFG.BuildSide then pcall(function() BLFG:BuildSide() end) end
+      if _G.SignalFireMarketplace151 and _G.SignalFireMarketplace151.Reconcile then
+        _G.SignalFireMarketplace151:Reconcile("modules-apply")
+      end
     end
 
     local function sfmm_set(key, enabled, quiet)

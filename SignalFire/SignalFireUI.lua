@@ -4679,6 +4679,7 @@ do
     L.previewSignatures = L.previewSignatures or {}
     L.moduleKeys = L.moduleKeys or {
       "chatParsing", "guildBrowser", "recruitmentCreator", "events", "notices", "invasions", "ascensionListingTools",
+      "tradeskillMarketplace",
     }
 
     -- Dropdown registration is session-only and stored on each dropdown frame.

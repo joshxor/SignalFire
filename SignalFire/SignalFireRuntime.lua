@@ -687,6 +687,7 @@ do
 
     local MODULES = {
       { key = "invasions", label = "Invasions", desc = "Triumvirate invasion grouping tools", icon = "INV_Misc_Head_Dragon_01" },
+      { key = "tradeskillMarketplace", label = "Tradeskill Marketplace", desc = "Local crafting offers and requests", icon = "INV_Hammer_20" },
     }
 
     local function sfm_lower(s)
@@ -767,14 +768,18 @@ do
       if SignalFireProfiles.Triumvirate then
         SignalFireProfiles.Triumvirate.modules = SignalFireProfiles.Triumvirate.modules or {}
         SignalFireProfiles.Triumvirate.modules.invasions = true
+        SignalFireProfiles.Triumvirate.modules.tradeskillMarketplace = false
         SignalFireProfiles.Triumvirate.features = SignalFireProfiles.Triumvirate.features or {}
         SignalFireProfiles.Triumvirate.features.invasions = true
+        SignalFireProfiles.Triumvirate.features.tradeskillMarketplace = false
       end
       if SignalFireProfiles.Ascension then
         SignalFireProfiles.Ascension.modules = SignalFireProfiles.Ascension.modules or {}
         SignalFireProfiles.Ascension.modules.invasions = false
+        SignalFireProfiles.Ascension.modules.tradeskillMarketplace = false
         SignalFireProfiles.Ascension.features = SignalFireProfiles.Ascension.features or {}
         SignalFireProfiles.Ascension.features.invasions = false
+        SignalFireProfiles.Ascension.features.tradeskillMarketplace = false
       end
     end
     sfm_patch_profile_defaults()
@@ -1030,6 +1035,8 @@ do
         self.selectedInvasionName = nil
         self.selectedInvasionBeacon = nil
       end
+      local marketplace = _G.SignalFireMarketplace151
+      if marketplace and marketplace.Reconcile then marketplace:Reconcile("modules-apply") end
     end
 
     local SFModules_OldProfileSet = BLFG.SF143_SetServerProfile
