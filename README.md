@@ -4,9 +4,9 @@ SignalFire is a group-discovery and community coordination addon for World of Wa
 
 It turns fast-moving public chat into organized listings for dungeons, raids, random dungeon finder groups, Mythic+, world bosses, guild recruitment, and community activities. SignalFire also includes listing and applicant tools, a user Network and Full Roster, favorites, community events, notices, and profile-aware modules.
 
-**Current release: 1.5.2**
+**Current release: 1.5.3**
 
-SignalFire 1.5.2 combines the public-chat FPS corrections with exact contextual links for eligible group and guild recruitment messages. The Phase 12C resolver identifies activity, intent, and roles on the first occurrence while reusing that completed result across receiving chat frames.
+SignalFire 1.5.3 expands exact guild and group-link coverage while preserving the public-chat FPS corrections introduced in 1.5.2. It recognizes more English and Spanish guild recruitment phrasing, creates canonical Guild Browser rows before first-link rendering, and improves Azuregos and activity-unspecified group detection.
 
 [Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
 
@@ -23,16 +23,16 @@ SignalFire 1.5.2 combines the public-chat FPS corrections with exact contextual 
 - Separate Ascension/CoA and Triumvirate settings and module availability.
 - 90%, 100%, 110%, and 120% interface scaling.
 
-## What Changed in 1.5.2
+## What Changed in 1.5.3
 
-- Fixed severe FPS loss caused by public-chat parser work multiplying across receiving ChatFrames.
-- Removed chat-triggered cache maintenance and moved non-display work into bounded deferred owners.
-- Added first-occurrence exact links with recruiter `Need T/H/D` and applicant `LFG T/H/D` wording.
-- Added shared exact link resolution for supported group and guild recruitment messages.
-- Expanded Ascension activity aliases and multi-activity world-boss route recognition.
-- Preserved Public Groups parsing while Chat Links are Off.
-- Kept Chat Links Off by default for fresh installations and missing legacy preferences.
-- Preserved the existing UI, profiles, Network, community features, SavedVariables, and protocol compatibility.
+- Expanded guild recruitment detection across common English and supported Spanish phrases.
+- Added exact Guild Browser links for qualifying recruitment posts and canonical guild-row creation before the first link is rendered.
+- Added Azuregos recognition and activity-unspecified aura group support.
+- Preserved ambiguous `SC` text as diagnostic context instead of assigning an unsupported specific dungeon.
+- Invalidates stale negative parser decisions when parser generations change.
+- Added bounded guild and group diagnostics plus expanded live-message regression fixtures.
+- Preserved one authoritative parser decision per logical message; receiving ChatFrame filters reuse the completed result.
+- Preserved zero display filters while Chat Links are Off, with no permanent idle `OnUpdate` or chat-triggered full-table maintenance.
 
 ## Chat Links
 
@@ -40,7 +40,7 @@ SignalFire continues to parse eligible chat and populate Public Groups while Cha
 
 Available scopes are Main Chat Only, Visible Chat Frames, and All Chat Frames. All Chat Frames provides the broadest coverage; lighter scopes may reduce custom-link rendering work on affected Ascension clients.
 
-In 1.5.2, Public Groups source parsing no longer scales with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Source events and filter fallback share one exact resolver, so the first eligible occurrence receives the same contextual link across every receiving frame.
+Public Groups source parsing does not scale with the number of chat frames receiving a message. Chat Links register display filters only while both Public Groups parsing and Chat Links are enabled. Source events and filter fallback share one exact resolver, so the first eligible occurrence receives the same contextual link across every receiving frame.
 
 ## Commands
 

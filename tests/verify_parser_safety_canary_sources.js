@@ -8,7 +8,7 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3 Guild and Group Link Coverage RC"', "canary release name");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3"', "canary release name");
 requireText(ui, "function P3.StopParserWork(reason)", "shared parser shutdown owner");
 requireText(ui, 'B._sfP3Frame:SetScript("OnUpdate", nil)', "sleeping parser worker");
 requireText(ui, 'p3_canary_check("before source candidate")', "source deadline check");

@@ -31,8 +31,8 @@ const diagnostics = fs.readFileSync(path.join(addon, "SignalFireDiagnostics.lua"
 const workflow = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
 
 requireText(core, 'SignalFire_VERSION = "1.5.3"', "authoritative version");
-requireText(core, 'SignalFire_RELEASE_CHANNEL = "rc"', "release channel");
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3 Guild and Group Link Coverage RC"', "release name");
+requireText(core, 'SignalFire_RELEASE_CHANNEL = "stable"', "release channel");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3"', "release name");
 requireText(core, 'SignalFire_DEVELOPMENT_MILESTONE = "Guild and Group Link Coverage"', "development milestone");
 requireText(core, 'return "SignalFire v" .. SignalFire_GetVersion()', "stable title composition");
 requireText(chat, "options.inlineChatLinks = false", "safe Chat Links default");
@@ -57,4 +57,4 @@ if (testSayAssignments.length !== 2
   throw new Error("test-say mode has an unexpected enable path");
 }
 
-console.log(`release-candidate source verification: PASS (${tocFiles.length} Lua files, version 1.5.3 rc)`);
+console.log(`stable release source verification: PASS (${tocFiles.length} Lua files, version 1.5.3)`);

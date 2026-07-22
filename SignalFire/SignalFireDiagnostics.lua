@@ -2497,8 +2497,8 @@ do
         if not ok then row.mismatches[#row.mismatches + 1] = label end
       end
       require_match(row.version == "1.5.3", "version")
-      require_match(row.releaseChannel == "rc", "release channel")
-      require_match(row.releaseName == "SignalFire 1.5.3 Guild and Group Link Coverage RC", "release name")
+      require_match(row.releaseChannel == "stable", "release channel")
+      require_match(row.releaseName == "SignalFire 1.5.3", "release name")
       require_match(row.developmentMilestone == "Guild and Group Link Coverage",
         "development milestone")
       require_match(row.diagnosticGeneration == "1.5.1-phase10b", "diagnostic generation")

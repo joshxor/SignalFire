@@ -32,7 +32,7 @@ requireText(diagnostics, 'cmd == "diag start"', "diagnostic slash commands");
 requireText(diagnostics, "S.maximumRecent = 32", "bounded recent history");
 requireText(diagnostics, "S.maximumErrors = 12", "bounded error history");
 requireText(diagnostics, "S.maximumSamples = 16", "bounded resource history");
-requireText(toc, "## Version: 1.5.3", "release-candidate version");
+requireText(toc, "## Version: 1.5.3", "stable release version");
 
 const phase10Start = diagnostics.indexOf("SIGNALFIRE_PHASE10_STABILITY_BEGIN");
 const phase10End = diagnostics.indexOf("SIGNALFIRE_PHASE10_STABILITY_END", phase10Start);

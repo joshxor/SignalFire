@@ -73,9 +73,9 @@ assert(SlashCmdList["SIGNALFIRE"] == perf.slashWrapper, "diagnostics wrapper is 
 parser_command("parser identity")
 local identity = C:GetIdentity()
 assert(identity.matchesExpected == true, "current canary identity did not match")
-assert(identity.version == "1.5.3" and identity.releaseChannel == "rc",
+assert(identity.version == "1.5.3" and identity.releaseChannel == "stable",
   "release identity did not match")
-assert(identity.releaseName == "SignalFire 1.5.3 Guild and Group Link Coverage RC",
+assert(identity.releaseName == "SignalFire 1.5.3",
   "release name did not match")
 assert(identity.developmentMilestone == "Guild and Group Link Coverage",
   "development milestone did not match")

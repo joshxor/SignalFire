@@ -9,7 +9,7 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3 Guild and Group Link Coverage RC"',
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3"',
   "Phase 12C release name");
 requireText(core, 'SignalFire_DEVELOPMENT_MILESTONE = "Guild and Group Link Coverage"',
   "Phase 12C development milestone");

@@ -8,8 +8,8 @@ local migrate = assert(B.SF151_RepairReleaseDatabase, "release migration is unav
 local chat = assert(SignalFireChatRuntime151, "chat runtime is unavailable")
 
 assert(SignalFire_VERSION == "1.5.3", "global version is not 1.5.3")
-assert(SignalFire_RELEASE_CHANNEL == "rc", "release channel is not rc")
-assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.3 Guild and Group Link Coverage RC", "release name is inconsistent")
+assert(SignalFire_RELEASE_CHANNEL == "stable", "release channel is not stable")
+assert(SignalFire_RELEASE_NAME == "SignalFire 1.5.3", "release name is inconsistent")
 assert(SignalFire_DEVELOPMENT_MILESTONE == "Guild and Group Link Coverage",
   "development milestone is inconsistent")
 assert(SignalFire_GetVersion() == "1.5.3", "authoritative version getter is inconsistent")
