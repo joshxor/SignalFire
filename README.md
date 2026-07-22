@@ -8,7 +8,7 @@ It turns fast-moving public chat into organized listings for dungeons, raids, ra
 
 SignalFire 1.5.3 expands exact guild and group-link coverage while preserving the public-chat FPS corrections introduced in 1.5.2. It recognizes more English and Spanish guild recruitment phrasing, creates canonical Guild Browser rows before first-link rendering, and improves Azuregos and activity-unspecified group detection.
 
-[Download SignalFire on CurseForge](https://www.curseforge.com/wow/addons/signalfire)
+
 
 ## Highlights
 
