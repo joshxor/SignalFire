@@ -17,4 +17,5 @@ SignalFireControls.lua
 SignalFireChat.lua
 SignalFireListing.lua
 SignalFireUI.lua
+SignalFireMarketplace.lua
 SignalFireDiagnostics.lua

@@ -15,7 +15,7 @@ function requireText(source, text, label) {
 requireText(tocText, "## Interface: 30300", "Wrath interface version");
 requireText(tocText, "## Version: 1.5.3", "TOC version");
 requireText(tocText, "## SavedVariables: BronzeLFG_DB", "SavedVariables declaration");
-if (tocFiles.length !== 13) throw new Error(`expected 13 TOC files, got ${tocFiles.length}`);
+if (tocFiles.length !== 14) throw new Error(`expected 14 TOC files, got ${tocFiles.length}`);
 if (JSON.stringify([...tocFiles].sort()) !== JSON.stringify(luaFiles)) {
   throw new Error("TOC and addon Lua file sets differ");
 }

@@ -598,6 +598,7 @@ do
   end
 
   function B:SF151_HandlePerfSlash(command)
+    if self.SFMarketplaceHandleSlash and self:SFMarketplaceHandleSlash(command) then return true end
     local cmd = tostring(command or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if cmd == "perf on" then
       P.enabled = true

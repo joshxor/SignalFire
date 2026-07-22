@@ -146,7 +146,8 @@ local files = {
   "SignalFireCore.lua", "BronzeLFG.lua", "SignalFireDiscovery.lua", "SignalFireNetwork.lua",
   "SignalFireRoster.lua", "SignalFireCommunity.lua", "SignalFireRuntime.lua",
   "SignalFireIntegration.lua", "SignalFireControls.lua", "SignalFireChat.lua",
-  "SignalFireListing.lua", "SignalFireUI.lua", "SignalFireDiagnostics.lua",
+  "SignalFireListing.lua", "SignalFireUI.lua", "SignalFireMarketplace.lua",
+  "SignalFireDiagnostics.lua",
 }
 for _, file in ipairs(files) do
   local chunk, err = loadfile(addonRoot .. "/" .. file)
