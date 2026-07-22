@@ -27,7 +27,7 @@ if (!block.includes("record.dependencies")) throw new Error("panel dependencies 
 if (!block.includes("self.maximumErrors")) throw new Error("panel error history is not bounded");
 
 const luaFiles = toc.split(/\r?\n/).filter((line) => /\.lua\s*$/.test(line));
-if (luaFiles.length !== 14) throw new Error(`TOC Lua load order changed: ${luaFiles.length} files`);
+if (luaFiles.length !== 15) throw new Error(`TOC Lua load order changed: ${luaFiles.length} files`);
 
 console.log("lazy panel source verification: PASS");
 

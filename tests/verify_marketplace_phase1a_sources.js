@@ -25,8 +25,11 @@ requireText(diagnostics, "SFMarketplaceHandleSlash", "final slash dispatcher doe
 const lines = toc.split(/\r?\n/).filter(Boolean);
 const uiIndex = lines.indexOf("SignalFireUI.lua");
 const marketplaceIndex = lines.indexOf("SignalFireMarketplace.lua");
+const marketplaceUIIndex = lines.indexOf("SignalFireMarketplaceUI.lua");
 const diagnosticsIndex = lines.indexOf("SignalFireDiagnostics.lua");
-if (!(uiIndex >= 0 && marketplaceIndex === uiIndex + 1 && diagnosticsIndex === marketplaceIndex + 1)) {
+if (!(uiIndex >= 0 && marketplaceIndex === uiIndex + 1
+  && marketplaceUIIndex === marketplaceIndex + 1
+  && diagnosticsIndex === marketplaceUIIndex + 1)) {
   throw new Error("Marketplace TOC placement is incorrect");
 }
 
@@ -41,10 +44,6 @@ for (const forbidden of [
   "|Hsignalfiremkt:",
 ]) {
   if (marketplace.includes(forbidden)) throw new Error(`Phase 1A contains forbidden owner: ${forbidden}`);
-}
-
-if (fs.existsSync(path.join(addon, "SignalFireMarketplaceUI.lua"))) {
-  throw new Error("Phase 1A must not create SignalFireMarketplaceUI.lua");
 }
 
 for (const required of [

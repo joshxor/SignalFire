@@ -2333,6 +2333,7 @@ do
         {"Applicants", "Review applicants", "INV_Misc_GroupNeedMore", function() BLFG:ShowApplicants() end},
         {"Public Groups", "From chat channels", "INV_Misc_Map_01", function() BLFG:ShowPublicGroups() end},
       }
+      if sfmm_enabled("tradeskillMarketplace") then table.insert(items, {"Marketplace", "Crafting offers and requests", "INV_Hammer_20", function() BLFG:ShowMarketplace() end}) end
       if sfmm_enabled("guildBrowser") then table.insert(items, {"Guild Browser", "Find guilds", "INV_Misc_TabardPVP_01", function() BLFG:ShowGuildBrowser() end}) end
       if sfmm_enabled("invasions") then table.insert(items, {"Invasions", "Nearby invasion groups", "INV_Misc_Head_Dragon_01", function() BLFG:ShowInvasions() end}) end
       table.insert(items, {"My Listing", "Manage your group", "INV_Misc_Book_09", function() BLFG:ShowMyListing() end})

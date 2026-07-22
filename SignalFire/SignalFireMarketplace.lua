@@ -508,7 +508,11 @@ do
     function M:Enable(profile)
       profile = tostring(profile or mkt_profile())
       if not self:IsEnabled() then self:Disable("module-disabled"); return false, "module disabled" end
-      if self.runtime and self.runtime.active and self.runtime.profile == profile then return true end
+      if self.runtime and self.runtime.active and self.runtime.profile == profile then
+        local currentUI = _G.SignalFireMarketplaceUI151
+        if currentUI and currentUI.Enable then return currentUI:Enable(profile) end
+        return true
+      end
       self:Disable("profile-change")
       local store, report = self:MigrateProfile(profile)
       if not store then self:RecordError(report); return false, report end
@@ -519,11 +523,25 @@ do
       runtime.indexRepairs = runtime.indexRepairs + (tonumber(report.repairs or 0) or 0)
       self.indexRepairs = self.indexRepairs + (tonumber(report.repairs or 0) or 0)
       self:ExpireListings("enable")
+      local marketplaceUI = _G.SignalFireMarketplaceUI151
+      if marketplaceUI and marketplaceUI.Enable then
+        local uiOK, uiResult, uiError = pcall(marketplaceUI.Enable, marketplaceUI, profile)
+        if not uiOK or uiResult == false then
+          self:RecordError(uiOK and uiError or uiResult)
+          self:Disable("ui-enable-error")
+          return false, uiOK and uiError or uiResult
+        end
+      end
       return true
     end
 
     function M:Disable(reason)
       self:CancelExpiration()
+      local marketplaceUI = _G.SignalFireMarketplaceUI151
+      if marketplaceUI and marketplaceUI.Disable then
+        local ok, err = pcall(marketplaceUI.Disable, marketplaceUI, reason)
+        if not ok then self:RecordError(err) end
+      end
       local runtime = self.runtime
       if runtime then
         runtime.active = false
@@ -565,14 +583,19 @@ do
       local timers = self.timerActive and 1 or 0
       local indexes = active and tonumber(runtime.indexCount or 0) or 0
       local enabled = self:IsEnabled()
-      local disabledClean = not enabled and not runtime and timers == 0 and indexes == 0
+      local marketplaceUI = _G.SignalFireMarketplaceUI151
+      local panel = marketplaceUI and marketplaceUI.GetPanelState
+        and marketplaceUI:GetPanelState() or "unbuilt"
+      local uiClean = not marketplaceUI or not marketplaceUI.IsDisabledClean
+        or marketplaceUI:IsDisabledClean()
+      local disabledClean = not enabled and not runtime and timers == 0 and indexes == 0 and uiClean
       return {
         owner=self.generation, profile=profile, enabled=enabled,
         schema=type(root) == "table" and tonumber(root.schemaVersion or 0) or 0,
         persisted=store and mkt_count(store.listingsById) or 0,
         favorites=store and mkt_count(store.favoritesById) or 0,
         nextSequence=store and tonumber(store.nextSequence or 1) or 1,
-        runtime=active and "active" or "inactive",
+        runtime=active and "active" or "inactive", panel=panel,
         runtimeGeneration=active and runtime.generation or 0,
         indexes=indexes, views=0, events=0, filters=0, timers=timers,
         onUpdate=0, queues=0,
@@ -589,7 +612,8 @@ do
         .. ", enabled=" .. tostring(status.enabled))
       mkt_emit("schema=" .. tostring(status.schema) .. ", persisted=" .. tostring(status.persisted)
         .. ", favorites=" .. tostring(status.favorites) .. ", nextSequence=" .. tostring(status.nextSequence))
-      mkt_emit("runtime=" .. tostring(status.runtime) .. ", generation=" .. tostring(status.runtimeGeneration)
+      mkt_emit("runtime=" .. tostring(status.runtime) .. ", panel=" .. tostring(status.panel)
+        .. ", generation=" .. tostring(status.runtimeGeneration)
         .. ", indexes=" .. tostring(status.indexes) .. ", views=" .. tostring(status.views))
       mkt_emit("events=" .. tostring(status.events) .. ", filters=" .. tostring(status.filters)
         .. ", timers=" .. tostring(status.timers) .. ", onUpdate=" .. tostring(status.onUpdate)
@@ -616,8 +640,13 @@ do
         mkt_emit("Tradeskill Marketplace reset to the profile default.")
         return true
       elseif cmd == "marketplace" or cmd == "market" then
-        M:PrintStatus()
-        mkt_emit("Commands: /sf marketplace status, on, off, default")
+        if not M:IsEnabled() then
+          mkt_emit("Tradeskill Marketplace is disabled for " .. mkt_profile()
+            .. ". Enable it in Options > Modules or use /sf marketplace on.")
+          return true
+        end
+        if self.SFMarketplaceOpen then return self:SFMarketplaceOpen("slash") end
+        mkt_emit("Tradeskill Marketplace UI is unavailable.")
         return true
       end
       return false
