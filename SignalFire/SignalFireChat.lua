@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Chat rendering guard
@@ -692,6 +692,8 @@ do
     local function sffcl_noise_or_trade(text)
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       if s == "  " or sffcl_has_link(s) then return false end
+      if s:find("/join guild recruitment", 1, true)
+        or s:find("use proper chat channels", 1, true) then return true end
       if s:find(" wts ", 1, true) or s:find(" wtb ", 1, true) or s:find(" wtt ", 1, true) then return true end
       if s:find(" sell", 1, true) or s:find(" buying ", 1, true) or s:find(" price ", 1, true) then return true end
       -- Do not treat "leveling" as trade/noise when the same line is clearly a
@@ -711,7 +713,12 @@ do
           or s:find(" guild pls", 1, true) or s:find(" guild please", 1, true))
       local guildRecruiting = taggedGuildAd or s:find(" recruit", 1, true) or s:find(" recruitment", 1, true)
         or s:find(" looking for members", 1, true) or s:find(" seeking members", 1, true)
+        or s:find(" looking for active", 1, true) or s:find(" looking for committed", 1, true)
         or s:find(" accepting members", 1, true) or s:find(" join us", 1, true) or s:find(" join our", 1, true)
+        or s:find(" players welcome", 1, true) or s:find(" player welcome", 1, true)
+        or s:find(" guild invite", 1, true) or s:find(" whisper for invite", 1, true)
+        or s:find(" recluta", 1, true) or s:find(" reclutando", 1, true)
+        or s:find(" buscamos jugadores", 1, true)
       if guildSeeking and not guildRecruiting then return true end
       -- Streaming/video promotions are never SignalFire group or guild listings.
       -- Do this before the generic recruitment exception: a personal stream line such
@@ -741,6 +748,7 @@ do
         or s:find(" hcbb", 1, true) or s:find(" bbhc", 1, true) or s:find(" invasion", 1, true)
         or s:find(" de other side", 1, true) or s:find(" other side", 1, true)
         or s:find(" vault ", 1, true) or s:find(" wc ", 1, true)
+        or s:find(" azuregos", 1, true)
     end
 
     local function sffcl_public_signal(text, parsedType, parsedActivity)
@@ -838,6 +846,31 @@ do
       return "Recruiter"
     end
 
+    local function sffcl_guild_recruitment_signal(low, hasAngle)
+      low = " " .. sffcl_lower(sffcl_clean_text(low)) .. " "
+      if low:find("/join guild recruitment", 1, true)
+        or low:find("use proper chat channels", 1, true) then return false end
+      local english = low:find(" recruit", 1, true) or low:find(" recruitment", 1, true)
+        or low:find(" guild looking for", 1, true) or low:find(" looking for active", 1, true)
+        or low:find(" looking for committed", 1, true) or low:find(" seeking members", 1, true)
+        or low:find(" accepting members", 1, true) or low:find(" players welcome", 1, true)
+        or low:find(" player welcome", 1, true) or low:find(" whisper for invite", 1, true)
+        or low:find(" guild invite", 1, true) or low:find(" join our", 1, true)
+        or low:find(" join us", 1, true) or low:find(" active community", 1, true)
+      local spanish = low:find(" recluta", 1, true) or low:find(" reclutando", 1, true)
+        or low:find(" buscamos jugadores", 1, true) or low:find(" jugadores nuevos", 1, true)
+        or low:find(" veteranos", 1, true) or low:find(" unete", 1, true)
+        or low:find(" \195\186nete", 1, true) or low:find(" guild latina", 1, true)
+        or low:find(" hermandad", 1, true) or low:find(" invitacion", 1, true)
+        or low:find(" invitaci\195\179n", 1, true)
+      local structured = hasAngle and (low:find(" guild", 1, true) or low:find(" pve", 1, true)
+        or low:find(" pvp", 1, true) or low:find(" raid", 1, true)
+        or low:find(" world boss", 1, true) or low:find(" mythic", 1, true)
+        or low:find(" members", 1, true) or low:find(" players", 1, true)
+        or low:find(" preferably looking for", 1, true))
+      return english or spanish or structured
+    end
+
     local function sffcl_guild_name(text)
       local raw = sffcl_clean_text(text)
       local low = sffcl_lower(raw)
@@ -848,22 +881,14 @@ do
       -- guild-ad style signal so random angle-bracket chatter does not turn into a
       -- guild link.
       local angleGuild = raw:match("<([^>]+)>")
-      local angleSignal = low:find("recruit", 1, true)
-        or low:find("guild", 1, true)
-        or low:find("join", 1, true)
-        or low:find("consider", 1, true)
-        or low:find("tag", 1, true)
-        or low:find("pvp", 1, true)
-        or low:find("pve", 1, true)
-        or low:find("level", 1, true)
-        or low:find("dungeon", 1, true)
-        or low:find("raid", 1, true)
+      local angleSignal = sffcl_guild_recruitment_signal(low, angleGuild ~= nil)
       if angleGuild and angleSignal then
         local g = sffcl_salvage_guild_name(angleGuild)
         if g ~= "" then return g end
       end
 
-      local guildIntent = low:find("recruit", 1, true) or low:find("guild", 1, true) or low:find("discord", 1, true) or low:find("join us", 1, true)
+      local guildIntent = sffcl_guild_recruitment_signal(low, angleGuild ~= nil)
+        or low:find("discord", 1, true) or low:find("join us", 1, true)
         or low:find("join ", 1, true) or low:find("consider ", 1, true) or low:find("guild tag", 1, true)
         or low:find("realm first", 1, true) or low:find("main-raid", 1, true) or low:find("main raid", 1, true)
       if not guildIntent then return "" end
@@ -896,6 +921,11 @@ do
       if not g then g = raw:match("^(.-)%s*%[[Nn][Aa]%]") end
       if not g then g = raw:match("^(.-)%s*%[[Ee][Uu]%]") end
       if not g then g = raw:match("[Gg]uild%s+[Rr]ecruitment%s*[%+:%-%|]%s*(.-)%s+[Rr]ecru") end
+      if not g and low:find(" guild latina", 1, true)
+        and (low:find(" recluta", 1, true) or low:find(" reclutando", 1, true)
+          or low:find(" buscamos jugadores", 1, true)) then
+        g = raw:match("^%s*([%w%'%-]+)%s+[Gg][Uu][Ii][Ll][Dd]%s+[Ll][Aa][Tt][Ii][Nn][Aa]")
+      end
 
       -- Common all-caps Ascension format:
       --   GUILD NAME - FRESH GUILD RECRUITING ...
@@ -953,6 +983,7 @@ do
       if not sffcl_is_ascension() then return nil end
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
       local out = {}
+      if sffcl_word(s, "azuregos") then table.insert(out, "Azuregos") end
       if sffcl_word(s, "snowgrave") then table.insert(out, "Snowgrave") end
       if sffcl_word(s, "kaldros depthbreaker") then
         table.insert(out, "Kaldros Depthbreaker")
@@ -1056,10 +1087,11 @@ do
 
     local function sffcl_activity_type(text)
       local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      local unknownActivity = sffcl_is_ascension() and sffcl_word(s, "sc") and "SC" or nil
       if s:find("invasion", 1, true) then return "Event", "Invasion" end
       if s:find("boss blitz", 1, true) or s:find("hcbb", 1, true) or s:find("bbhc", 1, true) then return "Event", "Boss Blitz" end
       local worldActivities = sffcl_world_activities(text)
-      if worldActivities then return "World Boss", table.concat(worldActivities, " / "), worldActivities end
+      if worldActivities then return "World Boss", table.concat(worldActivities, " / "), worldActivities, unknownActivity end
       local randomFinder = s:find(" rdf ", 1, true) or s:find("random dungeon", 1, true)
         or s:find("random mythic dungeon", 1, true)
       local mythicFinder = s:find(" mythic ", 1, true) or s:find("mythic+", 1, true)
@@ -1076,10 +1108,14 @@ do
       if dungeon then return "Dungeon", dungeon end
       if s:find("rdf", 1, true) or s:find("random dungeon", 1, true) or s:find("heroic", 1, true)
         or s:find(" dungeon", 1, true) or s:find(" dung ", 1, true) or s:find(" df ", 1, true) then
-        return "Dungeon", "Random Dungeon Finder"
+        return "Dungeon", "Random Dungeon Finder", nil, unknownActivity
       end
-      if s:find(" lfg ", 1, true) then return "LFG", "Looking For Group" end
-      return "Dungeon", "Group Listing"
+      if (s:find(" aura", 1, true) or s:find(" auras", 1, true))
+        and (s:find(" lfg ", 1, true) or s:find(" lfm ", 1, true) or s:find(" lf%d+m")) then
+        return "Dungeon", "Random Dungeon Finder", nil, unknownActivity
+      end
+      if s:find(" lfg ", 1, true) then return "LFG", "Looking For Group", nil, unknownActivity end
+      return "Dungeon", "Group Listing", nil, unknownActivity
     end
 
     -- SignalFire 1.4.30: deterministic parser probe used by the in-game
@@ -1118,7 +1154,7 @@ do
         return result
       end
 
-      local publicType, activity, activities = sffcl_activity_type(raw)
+      local publicType, activity, activities, unknownActivity = sffcl_activity_type(raw)
       if not sffcl_public_signal(raw, publicType, activity) then return result end
 
       result.eligible = true
@@ -1126,6 +1162,7 @@ do
       result.type = publicType
       result.activity = activity
       result.activities = activities
+      result.unknownActivity = unknownActivity
       result.intent = sffcl_intent(raw)
       result.roles = sffcl_roles(raw)
       result.reason = nil
@@ -2575,6 +2612,15 @@ do
       {name="RDF tank LF applicant", text="TANK LF GRP WITH AURA TO RDF SPAM", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"Tank"}},
       {name="RDF tank DPS recruiter", text="LFM RDF NEED TANK / DPS", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","DPS"}},
       {name="RDF all roles recruiter", text="LFM SPAM RDF Need Tank Healer DPS WITH HAVE AURAS 40+", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","Healer","DPS"}},
+      {name="Spanish guild recruitment", text="Mercenarios Guild Latina PVE Recluta jugadores nuevos o veteranos para realizar contenido PVE, u Mythic", kind="guild", guild="Mercenarios"},
+      {name="NETWORK ERROR guild recruitment", text="<NETWORK ERROR> is a Guild looking for active members to run mythics and progress together; we also have tons of members with *AURA* leveling alts Active and experienced leadership looking to set up RAID GROUPS soon raid times will be polled and up to yo", kind="guild", guild="NETWORK ERROR"},
+      {name="Full Retards guild recruitment", text="<Full Retards> PvP guild, is looking for active committed players to join our core group for World Bosses, BG's, Arenas, High Risk, Crows Cache, World PvP, Premades. Whisper for invite. Come join the cause.", kind="guild", guild="Full Retards"},
+      {name="Highly Regarded guild recruitment", text="<Highly Regarded> Realm firster clears somewhere. We hold fastest kills for all 6 CoA world bosses by significant margins. Preferably looking for necromancers, felsworn, templars, or any pumper. Raiding 8-11 pm EST Sun/Mon.", kind="guild", guild="Highly Regarded"},
+      {name="Relentless guild recruitment", text="<Relentless> Currently 100+ level 60s strong, active PvE Ascended Raiding Guild w/300+ members on a lively Discord. 2 Raid Teams Wed/Thu 7pm PST & Sat/Sun 6PM PST. New & veteran players welcome - passionate vibes, active community. PST for guild invite", kind="guild", guild="Relentless"},
+      {name="Ignore guild channel announcement", text="~~ USE PROPER CHAT CHANNELS ~~ [/join Guild Recruitment] -- [/join Trade -- /join Poll] ~~", ignore=true},
+      {name="Azuregos instanced recruiter", text="lf dps and support azuregos instanced", type="World Boss", activity="Azuregos", intent="Recruiter", roles={"DPS"}, profile="Ascension"},
+      {name="SC applicant uses safe RDF fallback", text="lv 46 SC DPS with AURA LFG", type="Dungeon", activity="Random Dungeon Finder", intent="Applicant", roles={"DPS"}, profile="Ascension"},
+      {name="Unspecified aura recruiter", text="LF2M Tank and 1 DPS 45+ WE HAVE AURAS EXP", type="Dungeon", activity="Random Dungeon Finder", intent="Recruiter", roles={"Tank","DPS"}, profile="Ascension"},
       {name="Ignore guild applicant question", text="any lvling guilds recruiting?", ignore=true},
       {name="Ignore Portuguese dungeon announcement", text="Massmorra aleatoria disponivel hoje, confira as novidades!", ignore=true},
     }
@@ -2863,6 +2909,12 @@ do
 
       local sfcp1430bOldCoreProbe = BLFG.SF1430_CoreParseText
       function BLFG:SF1430_CoreParseText(text)
+        local raw = string.lower(tostring(text or ""))
+        if string.find(raw, "/join guild recruitment", 1, true)
+          or string.find(raw, "use proper chat channels", 1, true) then
+          return {input=tostring(text or ""), eligible=false, kind="ignored",
+            reason="Guild channel announcement"}
+        end
         local result = sfcp1430bOldCoreProbe and sfcp1430bOldCoreProbe(self, text) or nil
         if not result or not result.eligible then return result end
 

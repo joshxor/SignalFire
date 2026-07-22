@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Roster presentation
@@ -7,7 +7,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFRP_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SFRP_VERSION = _G.SignalFire_VERSION or "1.5.3"
     local SFRP_FRAME_NAME = "SignalFireFullRosterFrame"
 
     local function sfrp_trim(s)
@@ -831,7 +831,7 @@ do
     local BLFG = _G.BronzeLFG
     if not BLFG then break end
 
-    local SFN138_VERSION = _G.SignalFire_VERSION or "1.5.2"
+    local SFN138_VERSION = _G.SignalFire_VERSION or "1.5.3"
     BLFG.SFN138_FavoriteAlertsInstalled = true
 
     local function sfn138_now()

@@ -158,14 +158,14 @@ end
 assert(SignalFireParserRegression and SignalFireParserRegression.Run,
   "parser regression suite was not loaded")
 local result = SignalFireParserRegression.Run()
-assert(result.total == 48, "expected 48 parser tests, got " .. tostring(result.total))
+assert(result.total == 57, "expected 57 parser tests, got " .. tostring(result.total))
 if result.failed > 0 then
   for _, item in ipairs(result.results or {}) do
     if item.status == "FAIL" then print("parser fixture failed: " .. tostring(item.detail)) end
   end
 end
 assert(result.failed == 0, "parser regressions failed: " .. tostring(result.failed))
-assert(result.passed + result.skipped == 48, "parser result count mismatch")
+assert(result.passed + result.skipped == 57, "parser result count mismatch")
 
 local perf = assert(SignalFirePerf151, "performance diagnostics were not loaded")
 assert(SlashCmdList["SIGNALFIRE"] == perf.slashWrapper, "diagnostics are not the final slash owner")
@@ -205,7 +205,7 @@ local rosterSnapshot = assert(SignalFireRosterSnapshot151, "Network/roster snaps
 assert(rosterSnapshot.owner == "1.5.1-perf-phase3", "wrong final Network/roster owner")
 
 local chat = assert(SignalFireChatRuntime151, "Phase 12C chat owner was not loaded")
-assert(chat.generation == "1.5.2-phase12c", "wrong final chat/Public Groups owner")
+assert(chat.generation == "1.5.3-phase12c-coverage", "wrong final chat/Public Groups owner")
 BronzeLFG:SF151_SetDeveloperDiagnostics(true)
 BronzeLFG:SF151_ResetChatRuntimeStats()
 

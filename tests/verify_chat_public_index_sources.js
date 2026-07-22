@@ -11,7 +11,7 @@ if (start < 0 || end <= start) throw new Error("Phase 5 source markers were not 
 const block = source.slice(start, end);
 
 for (const required of [
-  'P3.generation = "1.5.2-phase12c"',
+  'P3.generation = "1.5.3-phase12c-coverage"',
   "local function p3_source_key",
   "local function p3_cached_render_decision",
   "local function p3_index_lookup",

@@ -8,7 +8,7 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2"', "canary release name");
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3"', "canary release name");
 requireText(ui, "function P3.StopParserWork(reason)", "shared parser shutdown owner");
 requireText(ui, 'B._sfP3Frame:SetScript("OnUpdate", nil)', "sleeping parser worker");
 requireText(ui, 'p3_canary_check("before source candidate")', "source deadline check");
@@ -36,7 +36,7 @@ requireText(diagnostics, "function B:SF152_HandleParserSlash(command)", "final p
 for (const command of ["parser identity", "parser trace ", "parser canary", "parser abort", "parser off", "parser status", "parser report"]) {
   requireText(diagnostics, command, `${command} command`);
 }
-requireText(diagnostics, 'row.version == "1.5.2"', "exact version identity gate");
+requireText(diagnostics, 'row.version == "1.5.3"', "exact version identity gate");
 requireText(diagnostics, 'row.diagnosticGeneration == "1.5.1-phase10b"',
   "diagnostic identity gate");
 requireText(diagnostics, 'string.find(row.chatRuntimeGeneration, "phase12c", 1, true)',

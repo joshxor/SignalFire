@@ -1,3 +1,33 @@
+# SignalFire 1.5.3
+
+Development milestone: **Guild and Group Link Coverage**
+
+## Guild Recruitment Coverage
+
+- Expanded exact guild recruitment detection across common English and explicitly supported Spanish recruitment phrases.
+- Added reliable guild-name extraction from angle-bracketed advertisements and exact Guild Browser links for qualifying recruitment posts.
+- Ensured the canonical Guild Browser row exists before first-link rendering.
+- Improved detection of PvE, PvP, raid, Mythic, leveling, social, and world-content recruitment advertisements.
+- Preserved exclusion of players merely seeking a guild and ordinary channel announcements.
+
+## Group and Activity Coverage
+
+- Added Azuregos instanced activity recognition.
+- Improved role-first and abbreviated applicant messages and bounded `LF1M`/`LF2M`-style recruiter detection.
+- Preserved activity-unspecified aura group advertisements through the existing Random Dungeon Finder category.
+- Kept the ambiguous `SC` abbreviation unassigned while reporting it through parser diagnostics.
+- Prevented stale negative cache decisions from suppressing repeated valid posts.
+- Invalidated stale negative parser decisions when parser aliases or runtime generations change.
+- Added bounded guild/group diagnostics and expanded regression fixtures based on live Ascension messages.
+
+## Performance and Compatibility
+
+- Preserved the Phase 12A-12C one-resolution-per-logical-message architecture and FPS behavior across multiple ChatFrames.
+- Kept one authoritative parser decision per logical message while ChatFrame filters reuse the completed result.
+- Confirmed parser work does not scale with receiving ChatFrame count and Chat Links Off installs zero display filters.
+- Added no permanent idle `OnUpdate` or chat-triggered full-table maintenance.
+- Preserved native Blizzard hyperlinks, SavedVariables, server profiles, `BLFG312`, and TOC order.
+
 # SignalFire 1.5.2
 
 Development milestone: **Phase 12C Exact Contextual Chat Links**

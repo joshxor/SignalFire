@@ -9,11 +9,11 @@ function requireText(source, text, label) {
   if (!source.includes(text)) throw new Error(`missing ${label}: ${text}`);
 }
 
-requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.2"',
+requireText(core, 'SignalFire_RELEASE_NAME = "SignalFire 1.5.3"',
   "Phase 12C release name");
-requireText(core, 'SignalFire_DEVELOPMENT_MILESTONE = "Phase 12C Exact Contextual Chat Links"',
+requireText(core, 'SignalFire_DEVELOPMENT_MILESTONE = "Guild and Group Link Coverage"',
   "Phase 12C development milestone");
-requireText(ui, 'P3.generation = "1.5.2-phase12c"', "Phase 12C runtime owner");
+requireText(ui, 'P3.generation = "1.5.3-phase12c-coverage"', "Phase 12C runtime owner");
 requireText(ui, "P3.ResolveExactMessage = p3_resolve", "shared exact resolver export");
 requireText(ui, "P3.SemanticKey = p3_semantic_key", "shared semantic key owner");
 requireText(ui, "p3_upsert_canonical = function", "indexed canonical upsert owner");
@@ -45,7 +45,7 @@ for (const forbidden of ["p3_parse(", "TestParse", "p3_upsert_canonical(", "p3_r
   if (worker.includes(forbidden)) throw new Error(`worker repeats exact resolver work: ${forbidden}`);
 }
 for (const required of ["RequestPublicGroupsRefresh", "NotifyForPublicGroup",
-  "UpsertGuildBrowserChatListing"]) {
+  "SFN_RecordGuildRecruitmentActivity", 'SF151_RequestPanelRefresh("guildBrowser")']) {
   requireText(worker, required, `deferred side effect ${required}`);
 }
 
@@ -61,13 +61,14 @@ for (const forbidden of ["p3_parse(", "TestParse", "p3_upsert_canonical(",
 }
 
 for (const alias of ["snowgrave", "kaldros", "soggoth", "sogoth", "kazzak", "vault",
-  "blackfathom", "rdf", "molten core", "heasl"]) {
+  "blackfathom", "rdf", "molten core", "heasl", "azuregos", "recluta", "guild latina"]) {
   requireText(chat.toLowerCase(), alias, `field alias ${alias}`);
 }
 for (const field of ["exactResolverCalls", "exactResolverCacheHits", "exactResolverCacheMisses",
   "exactResolverFilterFallbacks", "exactResolverSourceOwners", "exactResolverFilterOwners",
   "exactResolverReentryPrevented", "canonicalUpserts", "exactLinksBuilt",
-  "eligibleMessagesWithoutLinks", "genericLinksBuilt"]) {
+  "eligibleMessagesWithoutLinks", "genericLinksBuilt", "guildCandidates", "guildAccepted",
+  "eligibleGuildMessagesWithoutLinks", "eligibleGroupMessagesWithoutLinks", "unknownActivities"]) {
   requireText(ui, `"${field}"`, `aggregate counter ${field}`);
 }
 

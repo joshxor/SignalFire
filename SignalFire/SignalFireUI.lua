@@ -1,4 +1,4 @@
--- SignalFire 1.5.2
+-- SignalFire 1.5.3
 -- Runtime modules are grouped by subsystem; initialization order is preserved.
 
 -- Final interface ownership
@@ -31,7 +31,7 @@ do
 
     local function sfui_version_label()
       if SignalFire_GetVersionLabel then return SignalFire_GetVersionLabel(sfui_profile_id()) end
-      return "v" .. tostring(SignalFire_VERSION or "1.5.2") .. " - " .. sfui_profile_name(true)
+      return "v" .. tostring(SignalFire_VERSION or "1.5.3") .. " - " .. sfui_profile_name(true)
     end
 
     local function sfui_flat(frame, alpha)
@@ -176,7 +176,7 @@ do
     end
 
     local function sfui_apply_identity()
-      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.2")
+      BLFG.version = (SignalFire_GetVersion and SignalFire_GetVersion()) or tostring(SignalFire_VERSION or "1.5.3")
       if BronzeLFG_ApplyVisibleVersion then
         BronzeLFG_ApplyVisibleVersion()
       elseif BLFG.titleText then
@@ -1054,8 +1054,9 @@ do
 
     local P3 = _G.SignalFireChatRuntime151 or {}
     _G.SignalFireChatRuntime151 = P3
-    P3.generation = "1.5.2-phase12c"
-    P3.workerGeneration = "1.5.2-phase12c"
+    P3.generation = "1.5.3-phase12c-coverage"
+    P3.workerGeneration = "1.5.3-phase12c-coverage"
+    P3.aliasGeneration = "1.5.3-guild-group-v1"
     P3.workerMaximumRecords = 4
     P3.workerMaximumMs = 0.75
     P3.renderDecisionMaximum = 256
@@ -1235,6 +1236,10 @@ do
         "exactResolverCacheHits", "exactResolverCacheMisses", "exactResolverFilterFallbacks",
         "exactResolverSourceOwners", "exactResolverFilterOwners", "exactResolverReentryPrevented",
         "canonicalUpserts", "exactLinksBuilt", "eligibleMessagesWithoutLinks", "genericLinksBuilt",
+        "guildCandidates", "guildAccepted", "guildRejected", "guildNameExtractionFailures",
+        "guildLinksBuilt", "eligibleGuildMessagesWithoutLinks", "groupCandidates", "groupAccepted",
+        "unknownActivities", "eligibleGroupMessagesWithoutLinks", "negativeCacheHits",
+        "negativeCacheInvalidations", "guildCanonicalUpserts",
         "normalizationCalls", "normalizationMsTotal", "normalizationMsMax",
         "candidateMsTotal", "candidateMsMax", "canonicalUpsertMsTotal", "canonicalUpsertMsMax",
         "linkTitleMsTotal", "linkTitleMsMax", "exactResolverMsTotal", "exactResolverMsMax",
@@ -1347,13 +1352,19 @@ do
       local raw = p3_norm(text)
       if raw == "" or p3_is_protocol(raw) or p3_has_existing_link(raw) then
         p3_note("candidateGateRejected")
-        return false
+        return false, "Empty, protocol, or already linked"
       end
       if p3_has_external_noise(" " .. raw .. " ")
         and not string.find(raw, "discord.gg", 1, true)
         and not string.find(raw, "discord.com/invite", 1, true) then
         p3_note("candidateGateRejected")
-        return false
+        return false, "External promotion"
+      end
+      if string.find(raw, "/join guild recruitment", 1, true)
+        or string.find(raw, "use proper chat channels", 1, true) then
+        p3_note("candidateGateRejected")
+        p3_note("guildRejected")
+        return false, "Guild channel announcement"
       end
       if string.find(raw, "?", 1, true)
         or string.find(raw, "do i need ", 1, true)
@@ -1362,7 +1373,7 @@ do
         or string.find(raw, "what tank", 1, true)
         or string.find(raw, "can dps", 1, true) then
         p3_note("candidateGateRejected")
-        return false
+        return false, "Question or ordinary conversation"
       end
 
       local words = " " .. string.gsub(raw, "[^%w%+<>']", " ") .. " "
@@ -1385,6 +1396,7 @@ do
         or string.find(words, " snowgrave ", 1, true) or string.find(words, " kaldros ", 1, true)
         or string.find(words, " soggoth ", 1, true) or string.find(words, " sogoth ", 1, true)
         or string.find(words, " kazzak ", 1, true)
+        or string.find(words, " azuregos ", 1, true)
         or string.find(raw, "other side", 1, true) or string.find(raw, "otha side", 1, true)
       local direct = string.find(words, " lfm ", 1, true) or string.find(words, " lfg ", 1, true)
         or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
@@ -1397,6 +1409,38 @@ do
         or string.find(raw, "seeking members", 1, true)
         or string.find(raw, "join our guild", 1, true)
         or (string.find(raw, "guild tag", 1, true) and string.find(raw, "<", 1, true))
+      local guildWrapped = string.find(raw, "<", 1, true) and string.find(raw, ">", 1, true)
+      local guildRecruiting = recruiting
+        or string.find(raw, " guild looking for", 1, true)
+        or string.find(raw, "looking for active", 1, true)
+        or string.find(raw, "looking for committed", 1, true)
+        or string.find(raw, "preferably looking for", 1, true)
+        or string.find(raw, "players welcome", 1, true)
+        or string.find(raw, "player welcome", 1, true)
+        or string.find(raw, "whisper for invite", 1, true)
+        or string.find(raw, "guild invite", 1, true)
+        or string.find(raw, "active community", 1, true)
+        or string.find(raw, " recluta", 1, true)
+        or string.find(raw, " reclutando", 1, true)
+        or string.find(raw, "buscamos jugadores", 1, true)
+        or string.find(raw, "jugadores nuevos", 1, true)
+        or string.find(raw, " guild latina", 1, true)
+        or string.find(raw, " hermandad", 1, true)
+        or string.find(raw, " unete", 1, true)
+        or string.find(raw, " \195\186nete", 1, true)
+        or string.find(raw, " invitacion", 1, true)
+        or string.find(raw, " invitaci\195\179n", 1, true)
+      local structuredGuild = guildWrapped and (guildRecruiting
+        or string.find(words, " guild ", 1, true) or string.find(words, " pve ", 1, true)
+        or string.find(words, " pvp ", 1, true) or string.find(words, " raid ", 1, true)
+        or string.find(words, " mythic ", 1, true) or string.find(words, " members ", 1, true)
+        or string.find(words, " players ", 1, true))
+      if guildRecruiting and (structuredGuild or string.find(raw, " guild latina", 1, true)
+        or string.find(raw, " hermandad", 1, true)) then
+        p3_note("candidateGateAccepted")
+        p3_note("guildCandidates")
+        return true, "Bounded guild recruitment signal"
+      end
       local anchored = direct or recruiting
         or (string.find(words, " lf ", 1, true) and (role or activity))
         or (string.find(raw, "looking for", 1, true) and (role or activity))
@@ -1408,10 +1452,11 @@ do
           or string.find(words, " aura ", 1, true)))
       if anchored then
         p3_note("candidateGateAccepted")
-        return true
+        p3_note("groupCandidates")
+        return true, "Bounded group signal"
       end
       p3_note("candidateGateRejected")
-      return false
+      return false, "No bounded group or guild signal"
     end
 
     local function p3_candidate(text)
@@ -1602,8 +1647,6 @@ do
       local low = " " .. string.lower(raw) .. " "
       if p3_has_external_noise(low) and not string.find(low, "discord.gg", 1, true)
         and not string.find(low, "discord.com/invite", 1, true) then return nil end
-      if string.find(low, " guild", 1, true) and B.SF151_IsGuildSeeking and B:SF151_IsGuildSeeking(raw) then return nil end
-
       local probe = _G.SignalFireFastChatLinks and _G.SignalFireFastChatLinks.TestParse
       if type(probe) ~= "function" then return nil end
       local diagnostics = p3_diagnostics_enabled()
@@ -1630,9 +1673,22 @@ do
         p3_canary_abort("parser error")
         return nil
       end
-      if type(parsed) ~= "table" or parsed.eligible ~= true then return nil end
+      if type(parsed) ~= "table" or parsed.eligible ~= true then
+        if string.find(low, " guild", 1, true) or string.find(raw, "<", 1, true) then
+          p3_note("guildRejected")
+          p3_note("guildNameExtractionFailures")
+        end
+        return nil
+      end
       if parsed.kind == "guild" and o.parseGuildRecruitment == false then return nil end
       if parsed.kind ~= "guild" and parsed.kind ~= "group" then return nil end
+      if parsed.kind == "guild" then
+        p3_note("guildAccepted")
+        if not parsed.guild and not parsed.guildName then p3_note("guildNameExtractionFailures") end
+      else
+        p3_note("groupAccepted")
+        if parsed.unknownActivity then p3_note("unknownActivities") end
+      end
       return parsed
     end
 
@@ -1868,6 +1924,7 @@ do
       local item = {
         rec=rec or false, stableId=rec and rec.stableId or nil, positive=positive == true,
          generation=tonumber(P3._renderGeneration or 0) or 0,
+         aliasGeneration=P3.aliasGeneration,
          stamp=stamp, expires=stamp + (ttl or (positive and P3.renderDecisionPositiveTTL or P3.renderDecisionNegativeTTL)),
          rejection=rejection, ownerOrigin=origin or "source", sourceConsumed=origin ~= "filter",
       }
@@ -1879,19 +1936,27 @@ do
       local key = preparedKey or p3_render_key(author, text)
       local item = P3._renderDecisionCache and P3._renderDecisionCache[key] or nil
       if not item then p3_note("renderDecisionMisses"); return nil, false, key end
-      if item.generation ~= (tonumber(P3._renderGeneration or 0) or 0)
+      local groupRowMissing = item.rec and item.rec ~= false and item.rec.kind == "group"
+        and item.stableId and not (B.publicGroups and B.publicGroups[item.stableId])
+      local guildRowMissing = item.rec and item.rec ~= false and item.rec.kind == "guild"
+        and not item.rec.guildRow
+      if item.aliasGeneration ~= P3.aliasGeneration
+        or item.generation ~= (tonumber(P3._renderGeneration or 0) or 0)
         or p3_now() > (tonumber(item.expires or 0) or 0)
-        or (item.stableId and not (B.publicGroups and B.publicGroups[item.stableId])) then
+        or groupRowMissing or guildRowMissing then
+        if item.rec == false then p3_note("negativeCacheInvalidations") end
         P3._renderDecisionCache[key] = nil
         p3_note("renderDecisionMisses")
         return nil, false, key
       end
       p3_note("renderDecisionHits")
+      if item.rec == false then p3_note("negativeCacheHits") end
       return item.rec ~= false and item.rec or nil, true, key, item
     end
 
     local p3_render
     local p3_upsert_canonical
+    local p3_upsert_guild_canonical
 
     -- Session-only re-entry guard. Owner: SignalFireChatRuntime151. Key: the
     -- semantic message key. Maximum: 64 simultaneously resolving messages.
@@ -1978,24 +2043,36 @@ do
           prepared.guildName = parsed.guildName or parsed.guild
           prepared.semanticKey = sourceKey
           prepared.candidateAccepted = true
+          prepared.candidateReason = candidateReason
+          prepared.resolverOwner = origin
           prepared.rejectionReason = nil
           if prepared.kind == "group" then
             p3_note("coreCalls")
             prepared.linkRow = p3_make_link_row(prepared, parsed)
             p3_upsert_canonical(prepared)
             p3_note("canonicalUpserts")
+          elseif prepared.kind == "guild" then
+            p3_upsert_guild_canonical(prepared)
+            p3_note("canonicalUpserts")
+            p3_note("guildCanonicalUpserts")
           end
 
           -- A positive decision is cached only after its canonical group row
           -- exists and its exact hyperlink has been constructed.
           if prepared.kind == "group" and not (prepared.stableId and B.publicGroups
             and B.publicGroups[prepared.stableId]) then
-            error("Canonical row was not created", 0)
+            error("Canonical Public Groups row was not created", 0)
+          elseif prepared.kind == "guild" and not prepared.guildRow then
+            error("Canonical Guild Browser row was not created", 0)
           end
           decision = prepared
           if p3_options().inlineChatLinks == true and p3_render then
             display = p3_render(prepared, raw)
-            if display == raw then p3_note("eligibleMessagesWithoutLinks") end
+            if display == raw then
+              p3_note("eligibleMessagesWithoutLinks")
+              if prepared.kind == "guild" then p3_note("eligibleGuildMessagesWithoutLinks")
+              else p3_note("eligibleGroupMessagesWithoutLinks") end
+            end
           end
           p3_cache_render_decision(sourceKey, prepared, true, nil, nil, nil, origin)
         end)
@@ -2115,6 +2192,42 @@ do
       B._lastPublicGroupTouchedKey = id
       rec.publicDirtyReason = isNew and "chat-insert" or "chat-update"
       rec.needsPublicRefresh = true
+      if diagnostics and started and debugprofilestop then
+        local elapsed = math.max(0, debugprofilestop() - started)
+        local stats = p3_stats()
+        stats.canonicalUpsertMsTotal = stats.canonicalUpsertMsTotal + elapsed
+        if elapsed > stats.canonicalUpsertMsMax then stats.canonicalUpsertMsMax = elapsed end
+      end
+      return row
+    end
+
+    -- Guild Browser rows use the existing normalized chat-listing map, so the
+    -- shared resolver can create the canonical target in O(1) before caching a
+    -- positive display decision. UI and favorite-feed side effects stay deferred.
+    p3_upsert_guild_canonical = function(rec)
+      if not rec or rec.kind ~= "guild" then return nil end
+      local guild = p3_trim(rec.guildName)
+      if guild == "" or type(B.UpsertGuildBrowserChatListing) ~= "function" then return nil end
+      local diagnostics = p3_diagnostics_enabled()
+      local started = diagnostics and debugprofilestop and debugprofilestop() or nil
+      local key = type(_G.SF576_GuildKey) == "function" and _G.SF576_GuildKey(guild)
+        or string.lower(guild):gsub("[^%w]+", "")
+
+      B._sfP3SuppressGuildSideEffects = true
+      local ok, err = pcall(B.UpsertGuildBrowserChatListing, B, guild, rec.author, rec.text)
+      B._sfP3SuppressGuildSideEffects = nil
+      if not ok then error(err, 0) end
+
+      local row = B.chatGuildListings and B.chatGuildListings[key] or nil
+      if not row then return nil end
+      row.sf153CanonicalKey = key
+      row.sessionOnly = true
+      rec.guildKey = key
+      rec.guildRow = row
+      rec.stableId = "guild-" .. p3_hash(key)
+      rec.resolvedId = rec.stableId
+      rec.needsGuildRefresh = true
+      rec.needsGuildFavoriteSideEffect = true
       if diagnostics and started and debugprofilestop then
         local elapsed = math.max(0, debugprofilestop() - started)
         local stats = p3_stats()
@@ -2313,6 +2426,7 @@ do
             rec._sfP3CachedLink = link
             p3_note("linksBuilt")
             p3_note("exactLinksBuilt")
+            p3_note("guildLinksBuilt")
           end
         end
         return p3_insert_guild_link(raw, guild, rec._sfP3CachedLink)
@@ -2368,8 +2482,15 @@ do
             if B.RequestPublicGroupsRefresh then B:RequestPublicGroupsRefresh() end
             rec.needsPublicRefresh = nil
           end
-        elseif rec.kind == "guild" and rec.guildName and B.UpsertGuildBrowserChatListing then
-          B:UpsertGuildBrowserChatListing(rec.guildName, rec.author, rec.text)
+        elseif rec.kind == "guild" then
+          if rec.needsGuildRefresh and B.SF151_RequestPanelRefresh then
+            B:SF151_RequestPanelRefresh("guildBrowser")
+            rec.needsGuildRefresh = nil
+          end
+          if rec.needsGuildFavoriteSideEffect and B.SFN_RecordGuildRecruitmentActivity then
+            B:SFN_RecordGuildRecruitmentActivity(rec.guildName, rec.text)
+            rec.needsGuildFavoriteSideEffect = nil
+          end
         end
       end)
       B._sfP3SuppressNotify = nil
@@ -2909,6 +3030,18 @@ do
         canonicalUpserts=stats.canonicalUpserts or 0,
         exactLinksBuilt=stats.exactLinksBuilt or 0,
         eligibleMessagesWithoutLinks=stats.eligibleMessagesWithoutLinks or 0,
+        guildCandidates=stats.guildCandidates or 0,
+        guildAccepted=stats.guildAccepted or 0,
+        guildRejected=stats.guildRejected or 0,
+        guildNameExtractionFailures=stats.guildNameExtractionFailures or 0,
+        guildLinksBuilt=stats.guildLinksBuilt or 0,
+        eligibleGuildMessagesWithoutLinks=stats.eligibleGuildMessagesWithoutLinks or 0,
+        groupCandidates=stats.groupCandidates or 0,
+        groupAccepted=stats.groupAccepted or 0,
+        unknownActivities=stats.unknownActivities or 0,
+        eligibleGroupMessagesWithoutLinks=stats.eligibleGroupMessagesWithoutLinks or 0,
+        negativeCacheHits=stats.negativeCacheHits or 0,
+        negativeCacheInvalidations=stats.negativeCacheInvalidations or 0,
         genericLinksBuilt=stats.genericLinksBuilt or 0,
         candidateMsTotal=stats.candidateMsTotal or 0,
         candidateMsMax=stats.candidateMsMax or 0,
@@ -2933,6 +3066,8 @@ do
       local parserBefore = tonumber(before.parserCalls or 0) or 0
       local upsertBefore = tonumber(before.canonicalUpserts or 0) or 0
       local linkBefore = tonumber(before.exactLinksBuilt or 0) or 0
+      local filterBefore = tonumber(before.filterReceipts or 0) or 0
+      local priorDecision = P3._renderDecisionCache and P3._renderDecisionCache[sourceKey] or nil
       P3._traceDiagnosticsEnabled = true
       local ok, display, rec, semanticKey, rejection = pcall(
         p3_resolve, "SignalFireTrace", raw, "Trace", "CHAT_MSG_CHANNEL", "source")
@@ -2945,8 +3080,10 @@ do
       end
       local after = p3_stats()
       local parsed = rec and rec.parsed or nil
-      local row = rec and rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or nil
-      local title = row and p3_exact_link_title(row) or nil
+      local row = rec and rec.kind == "guild" and rec.guildRow
+        or (rec and rec.stableId and B.publicGroups and B.publicGroups[rec.stableId] or nil)
+      local title = rec and rec.kind == "guild" and rec.guildName
+        or (row and p3_exact_link_title(row) or nil)
       local hyperlink = rec and rec._sfP3CachedLink or nil
       return {
         message=raw,
@@ -2955,6 +3092,7 @@ do
         filterCacheKey=filterKey,
         keyMatches=sourceKey == filterKey,
         candidateAccepted=rec and rec.candidateAccepted == true or false,
+        candidateReason=rec and rec.candidateReason or nil,
         rejectionReason=rejection,
         exactParserResult=parsed and "eligible" or "ineligible",
         kind=parsed and parsed.kind or nil,
@@ -2962,14 +3100,22 @@ do
         activity=parsed and parsed.activity or nil,
         activities=parsed and parsed.activities or nil,
         roles=parsed and parsed.roles or nil,
+        unknownActivity=parsed and parsed.unknownActivity or nil,
+        guildSeeker=parsed and parsed.kind == "guild" and false
+          or (B.SF151_IsGuildSeeking and B:SF151_IsGuildSeeking(raw) or false),
+        guildRecruiter=parsed and parsed.kind == "guild" or false,
+        guildName=parsed and (parsed.guildName or parsed.guild) or nil,
         stableId=rec and rec.stableId or nil,
         canonicalRowExists=row ~= nil,
         linkTitle=title,
         finalHyperlink=hyperlink,
         finalDisplay=display,
+        resolverOwner=rec and rec.resolverOwner or (priorDecision and priorDecision.ownerOrigin) or nil,
+        negativeCacheState=priorDecision and priorDecision.rec == false or false,
         parserCallCount=(tonumber(after.parserCalls or 0) or 0) - parserBefore,
         upsertCount=(tonumber(after.canonicalUpserts or 0) or 0) - upsertBefore,
         linkBuildCount=(tonumber(after.exactLinksBuilt or 0) or 0) - linkBefore,
+        filterReceiptCount=(tonumber(after.filterReceipts or 0) or 0) - filterBefore,
       }
     end
 
@@ -5225,7 +5371,7 @@ do
         local className, classFile = nil, nil
         if UnitClass then className, classFile = UnitClass("player") end
         selfRow.name = selfName
-        selfRow.version = tostring(_G.SignalFire_VERSION or "1.5.2")
+        selfRow.version = tostring(_G.SignalFire_VERSION or "1.5.3")
         selfRow.level = tostring(UnitLevel and UnitLevel("player") or "")
         selfRow.className = className or selfRow.className
         selfRow.classFile = classFile or selfRow.classFile
