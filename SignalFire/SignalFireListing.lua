@@ -1137,3 +1137,71 @@ do
     end
   until true
 end
+
+-- Regular My Listing chat destination ownership.
+do
+  local BLFG = _G.BronzeLFG
+  if BLFG then
+    local function sflpc_notice(text, success)
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffd8a600SignalFire>|r " .. tostring(text or ""),
+          success and .4 or 1, success and 1 or .82, success and .4 or 0)
+      end
+      if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage("SignalFire: " .. tostring(text or ""), 1, .82, 0, 1, UIERRORS_HOLD_TIME)
+      end
+    end
+
+    function BLFG:SFResolveListingPostDestination(listing)
+      local profile = SignalFireProfiles and SignalFireProfiles.GetActiveProfile
+        and SignalFireProfiles.GetActiveProfile() or nil
+      local profileId = tostring(profile and profile.id or "Triumvirate")
+      local destination = tostring(listing and listing.postChannel or "")
+      destination = string.gsub(string.gsub(destination, "^%s+", ""), "%s+$", "")
+      local lower = string.lower(destination)
+
+      if destination == "" or (profileId == "Ascension" and lower == "global") then
+        destination = profileId == "Ascension" and "Ascension" or "Global"
+        lower = string.lower(destination)
+      elseif lower == "ascension" then
+        destination = "Ascension"
+      elseif lower == "newcomers" then
+        destination = "Newcomers"
+      elseif lower == "global" then
+        destination = "Global"
+      end
+
+      local chatType = string.upper(destination)
+      if chatType == "SAY" or chatType == "YELL" or chatType == "PARTY"
+        or chatType == "RAID" or chatType == "GUILD" or chatType == "OFFICER"
+        or chatType == "BATTLEGROUND" then
+        return chatType, destination, nil
+      end
+
+      local channelId = GetChannelName and GetChannelName(destination) or nil
+      return "CHANNEL", destination, channelId
+    end
+
+    function BLFG:PostMyListingToChat()
+      local listing = self.myListing
+      if not listing then sflpc_notice("No active listing to post.", false); return end
+      local row = self:MirrorListingToPublic(listing)
+      local text = self:ListingRecruitmentText(listing)
+      local chatType, destination, channelId = self:SFResolveListingPostDestination(listing)
+
+      if chatType ~= "CHANNEL" and SendChatMessage then
+        SendChatMessage(text, chatType)
+        sflpc_notice("Posted listing to " .. tostring(destination) .. " chat.", true)
+      elseif channelId and channelId ~= 0 and SendChatMessage then
+        SendChatMessage(text, "CHANNEL", nil, channelId)
+        sflpc_notice("Posted listing to " .. tostring(destination) .. " chat.", true)
+      else
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+          DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00SignalFire listing:|r " .. text .. " "
+            .. (row and self:PublicChatLink(row) or ""))
+        end
+        sflpc_notice("Unable to find " .. tostring(destination) .. "; posted locally.", false)
+      end
+    end
+  end
+end
