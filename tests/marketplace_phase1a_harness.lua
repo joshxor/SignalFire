@@ -5,6 +5,7 @@ dofile(parserHarness)
 
 local B = assert(BronzeLFG, "SignalFire did not load")
 local M = assert(SignalFireMarketplace151, "Marketplace owner did not load")
+local U = assert(SignalFireMarketplaceUI151, "Marketplace UI owner did not load")
 local T = assert(SignalFireTimer151, "sleeping timer owner did not load")
 
 local testNow = 1800000000
@@ -61,7 +62,7 @@ DEFAULT_CHAT_FRAME.AddMessage = function(_, text) table.insert(statusMessages, t
 assert(B:SF151_HandlePerfSlash("marketplace status") == true,
   "Marketplace status did not use the final slash dispatcher")
 DEFAULT_CHAT_FRAME.AddMessage = originalAddMessage
-assert(statusMessages[3] == "SignalFire> runtime=inactive, generation=0, indexes=0, views=0",
+assert(statusMessages[3] == "SignalFire> runtime=inactive, panel=unbuilt, generation=0, indexes=0, views=0",
   "disabled runtime status output changed")
 assert(statusMessages[4] == "SignalFire> events=0, filters=0, timers=0, onUpdate=0, queues=0, disabledClean=true",
   "disabled zero-work status output changed")
@@ -186,7 +187,7 @@ assert(B:SFModulesApply() == true and M.runtime.byId[second.id],
 set_module("Ascension", false)
 B:SFModulesApply()
 
-assert(not _G.SignalFireMarketplaceUI151, "Phase 1A constructed Marketplace UI")
+assert(not U.panel, "Phase 1A lifecycle operations constructed Marketplace UI")
 assert(finalStatus.events == 0 and finalStatus.filters == 0 and finalStatus.onUpdate == 0,
   "Phase 1A acquired forbidden owners")
 

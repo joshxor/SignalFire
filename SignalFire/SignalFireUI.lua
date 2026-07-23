@@ -6495,6 +6495,59 @@ do
       return true
     end
 
+    function LP:RegisterPanel(key, descriptor)
+      key = tostring(key or "")
+      if key == "" or type(descriptor) ~= "table" then return false, "invalid panel descriptor" end
+      if type(descriptor.builder) ~= "function" or type(descriptor.show) ~= "function"
+        or type(descriptor.ready) ~= "function" then
+        return false, "incomplete panel descriptor"
+      end
+      local existing = self.panels[key]
+      if existing and not existing.dynamic then return false, "panel key is already statically owned" end
+      local record = existing or {}
+      record.key = key
+      record.dynamic = true
+      record.builder = descriptor.builder
+      record.show = descriptor.show
+      record.refresh = descriptor.refresh
+      record.ready = descriptor.ready
+      record.visible = descriptor.visible
+      record.hide = descriptor.hide
+      record.requiresShell = descriptor.requiresShell ~= false
+      record.dependencies = descriptor.dependencies or {}
+      record.built = record.ready(B) and true or false
+      record.building = false
+      record.failed = false
+      record.dirty = record.dirty == true
+      record.buildCount = tonumber(record.buildCount or 0) or 0
+      record.buildRequests = tonumber(record.buildRequests or 0) or 0
+      record.reuses = tonumber(record.reuses or 0) or 0
+      record.failures = tonumber(record.failures or 0) or 0
+      record.retries = tonumber(record.retries or 0) or 0
+      record.refreshWhileUnbuilt = tonumber(record.refreshWhileUnbuilt or 0) or 0
+      record.buildMsTotal = tonumber(record.buildMsTotal or 0) or 0
+      record.buildMsMax = tonumber(record.buildMsMax or 0) or 0
+      self.panels[key] = record
+      local found = false
+      for _, value in ipairs(self.order) do if value == key then found = true; break end end
+      if not found then table.insert(self.order, key) end
+      return true, record
+    end
+
+    function LP:UnregisterPanel(key)
+      key = tostring(key or "")
+      local record = self.panels[key]
+      if not record or not record.dynamic then return false end
+      if type(record.hide) == "function" then pcall(record.hide, B) end
+      record.dirty = false
+      record.building = false
+      self.panels[key] = nil
+      for index = #self.order, 1, -1 do
+        if self.order[index] == key then table.remove(self.order, index) end
+      end
+      return true
+    end
+
     function LP:EnsurePanel(key, trigger)
       local record = self.panels[key]
       if not record then return false, "unknown panel: " .. tostring(key) end
@@ -6587,6 +6640,9 @@ do
       for _, field in ipairs(fields) do
         local frame = B[field]
         if frame and frame.Hide then frame:Hide() end
+      end
+      for _, record in pairs(self.panels) do
+        if record.dynamic and type(record.hide) == "function" then pcall(record.hide, B) end
       end
     end
 
