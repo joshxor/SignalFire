@@ -61,9 +61,26 @@ assert(U:GetPanelState() == "visible" and U.buildCount == 1 and U.openCount == 1
 assert(#U.navButtons == 4 and U:ActiveScriptCount() == 4,
   "Marketplace shell navigation is incomplete")
 local firstPanel = U.panel
+assert(M:GetStatus().panel == "visible", "Marketplace status did not report its visible content frame")
+local ownerPanel = U.panel
+local stalePanel = CreateFrame("Frame")
+stalePanel:Hide()
+U.panel = stalePanel
+assert(M:GetStatus().panel == "visible",
+  "Marketplace status used a stale owner reference instead of the canonical content frame")
+U.panel = ownerPanel
+
+local visibleMessages = {}
+DEFAULT_CHAT_FRAME.AddMessage = function(_, text) table.insert(visibleMessages, text) end
+assert(B:SF151_HandlePerfSlash("marketplace status") == true,
+  "visible Marketplace status command was not handled")
+DEFAULT_CHAT_FRAME.AddMessage = originalAddMessage
+assert(string.find(visibleMessages[3] or "", "panel=visible", 1, true),
+  "visible Marketplace slash status did not report panel=visible")
 
 assert(B:ShowBrowse() == true, "Browse did not open after Marketplace")
 assert(U:GetPanelState() == "hidden", "opening another panel did not hide Marketplace")
+assert(M:GetStatus().panel == "hidden", "hidden Marketplace status was incorrect")
 local refreshes = U.refreshCount
 assert(B:SFMarketplaceRefresh() == false and U.refreshCount == refreshes
   and U.hiddenRefreshSkips >= 1, "hidden Marketplace performed refresh work")

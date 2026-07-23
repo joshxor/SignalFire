@@ -55,8 +55,10 @@ do
     end
 
     function U:GetPanelState()
-      if not self.panel then return "unbuilt" end
-      return self.panel:IsShown() and "visible" or "hidden"
+      local panel = B.marketplacePanel or self.panel
+      if not panel then return "unbuilt" end
+      if panel.IsVisible then return panel:IsVisible() and "visible" or "hidden" end
+      return panel.IsShown and panel:IsShown() and "visible" or "hidden"
     end
 
     function U:ActiveScriptCount()
