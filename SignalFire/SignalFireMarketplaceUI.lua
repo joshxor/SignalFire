@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1b"
+    U.generation = "1.5.3-marketplace-phase1c1"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -19,10 +19,13 @@ do
     -- reuse, and made inert on Disable. Nothing here is persisted.
     local TABS = {"Browse", "My Listings", "Create Listing", "Favorites"}
     local PLACEHOLDERS = {
-      ["Browse"]="No marketplace listings.",
       ["My Listings"]="No active listings.",
       ["Create Listing"]="No draft listing.",
       ["Favorites"]="No favorite listings.",
+    }
+    local BROWSE_COLUMNS = {
+      {"Player", 88}, {"Type", 92}, {"Profession", 96}, {"Item / Recipe", 150},
+      {"Location", 90}, {"Availability", 94}, {"Price / Tip", 86}, {"Expires", 66},
     }
 
     local function mktui_emit(text)
@@ -93,7 +96,16 @@ do
       if not PLACEHOLDERS[tab] then tab = "Browse" end
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
-      self.placeholder:SetText(PLACEHOLDERS[tab])
+      local browse = tab == "Browse"
+      if self.browseShell then
+        if browse then self.browseShell:Show() else self.browseShell:Hide() end
+      end
+      if browse then
+        self.placeholder:Hide()
+      else
+        self.placeholder:SetText(PLACEHOLDERS[tab])
+        self.placeholder:Show()
+      end
       for _, button in ipairs(self.navButtons) do
         local selected = button.marketplaceTab == tab
         button:SetBackdropColor(selected and .24 or .04, selected and .16 or .04,
@@ -136,8 +148,42 @@ do
 
       self.sectionTitle = mktui_font(panel, "Browse", 15, 1, .82, .22)
       self.sectionTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -112)
-      self.placeholder = mktui_font(panel, PLACEHOLDERS.Browse, 12, .72, .72, .72)
+      self.placeholder = mktui_font(panel, "", 12, .72, .72, .72)
       self.placeholder:SetPoint("TOPLEFT", self.sectionTitle, "BOTTOMLEFT", 0, -18)
+
+      -- Browse is intentionally a presentation-only shell in 1C-1.  The
+      -- reserved scroll region owns no listing rows or data binding yet.
+      local browseShell = CreateFrame("Frame", nil, panel)
+      browseShell:SetWidth(780); browseShell:SetHeight(352)
+      browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
+      local header = CreateFrame("Frame", nil, browseShell)
+      header:SetWidth(780); header:SetHeight(24)
+      header:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
+      mktui_backdrop(header, .90)
+      self.browseTableHeaders = {}
+      local x = 8
+      for _, column in ipairs(BROWSE_COLUMNS) do
+        local label = mktui_font(header, column[1], 10, .9, .76, .32)
+        label:SetWidth(column[2]); label:SetJustifyH("LEFT")
+        label:SetPoint("LEFT", header, "LEFT", x, 0)
+        table.insert(self.browseTableHeaders, label)
+        x = x + column[2]
+      end
+
+      local scroll = CreateFrame("ScrollFrame", nil, browseShell)
+      scroll:SetWidth(780); scroll:SetHeight(320)
+      scroll:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
+      mktui_backdrop(scroll, .72)
+      local rows = CreateFrame("Frame", nil, scroll)
+      rows:SetWidth(760); rows:SetHeight(320)
+      rows:SetPoint("TOPLEFT", scroll, "TOPLEFT", 8, -8)
+      scroll:SetScrollChild(rows)
+      self.browseScrollArea = scroll
+      self.browseRowsArea = rows
+      self.browseRowCount = 0
+      self.browseEmptyState = mktui_font(rows, "No marketplace listings available.", 12, .72, .72, .72)
+      self.browseEmptyState:SetPoint("CENTER", rows, "CENTER", 0, 0)
+      self.browseShell = browseShell
 
       self.panel = panel
       B.marketplacePanel = panel
