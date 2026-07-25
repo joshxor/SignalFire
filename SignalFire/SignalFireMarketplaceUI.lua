@@ -370,7 +370,8 @@ do
         local name = mktui_font(detail, field, 10, .9, .76, .32)
         name:SetWidth(105); name:SetJustifyH("LEFT"); name:SetPoint("TOPLEFT", detail, "TOPLEFT", 12 + column, y)
         local value = mktui_font(detail, "", 11, .86, .82, .68)
-        value:SetWidth(250); value:SetJustifyH("LEFT"); value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, y)
+        value:SetWidth(250); value:SetHeight(38); value:SetJustifyH("LEFT"); value:SetJustifyV("TOP")
+        value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, y)
         if value.SetNonSpaceWrap then value:SetNonSpaceWrap(false) end
         self.detailValues[index] = value
       end
