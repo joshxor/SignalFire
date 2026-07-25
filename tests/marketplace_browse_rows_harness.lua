@@ -12,7 +12,7 @@ assert(U.browseEmptyState:IsShown() and #U.browseRows == 8, "empty Browse pool i
 local function create(index)
   return assert(B:SFMarketplaceCreateListing({owner="Owner" .. index, listingType="Crafting Offer",
     profession="Alchemy", itemName="Item" .. index, recipeName=index == 1 and "Recipe" or "",
-    priceMode=index == 1 and "Tip" or "Fixed Price", priceCopper=index == 2 and 12345 or 0,
+    priceMode=index == 1 and "Tip" or "Fixed Price", priceCopper=index == 10 and 12345 or 0,
     location="Dalaran", availability="Available Now", expiresAt=time() + 7200}))
 end
 local first = create(1)

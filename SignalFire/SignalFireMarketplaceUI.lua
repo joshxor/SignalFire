@@ -119,7 +119,7 @@ do
           table.insert(active, row)
         end
       end
-      self.browseSnapshot = {generation=runtime.dataGeneration, total=#active, rows=active, stamp=stamp}
+      self.browseSnapshot = {generation=runtime.dataGeneration, total=#active, rows=active}
       self.browseSnapshotGeneration, self.browseSnapshotProfile = runtime.dataGeneration, runtime.profile
       return self.browseSnapshot
     end
@@ -131,6 +131,7 @@ do
       end
       local snapshot = self:BuildBrowseSnapshot()
       if not snapshot then return false end
+      local stamp = tonumber(time and time() or 0) or 0
       local shown = math.min(8, snapshot.total)
       if shown == 0 then self.browseEmptyState:Show() else self.browseEmptyState:Hide() end
       self.browseSummary:SetText(snapshot.total > 8 and ("Showing 8 of " .. tostring(snapshot.total)) or "")
@@ -140,7 +141,7 @@ do
           local item = row.itemName
           if row.recipeName and row.recipeName ~= "" and row.recipeName ~= row.itemName then item = item .. " / " .. row.recipeName end
           local values = {row.owner, row.listingType, row.profession, item, row.location, row.availability,
-            mktui_price(row), mktui_remaining(row.expiresAt, snapshot.stamp)}
+            mktui_price(row), mktui_remaining(row.expiresAt, stamp)}
           local signature = table.concat(values, "\31")
           if rowControl.signature ~= signature then
             for column, value in ipairs(values) do rowControl.labels[column]:SetText(value) end
