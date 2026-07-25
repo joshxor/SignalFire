@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c2"
+    U.generation = "1.5.3-marketplace-phase1c3"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -99,7 +99,7 @@ do
     function U:OnMarketplaceDataChanged()
       self:ClearBrowseSnapshot()
       if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" then
-        self:RenderBrowse()
+        if self.selectedListingId then self:RenderDetail() else self:RenderBrowse() end
       end
     end
 
@@ -147,15 +147,59 @@ do
             for column, value in ipairs(values) do rowControl.labels[column]:SetText(value) end
             rowControl.signature = signature
           end
+          rowControl.listingId = row.id
           rowControl:Show()
         else
           rowControl:Hide()
-          rowControl.signature = nil
+          rowControl.signature, rowControl.listingId = nil, nil
         end
       end
       self.browseRowCount, self.browseDirty = shown, false
       return true
     end
+
+    function U:ClearSelection()
+      self.selectedListingId, self.detailSignature, self.detailDirty = nil, nil, false
+    end
+
+    function U:ShowBrowseTable()
+      self:ClearSelection()
+      if self.browseDetail then self.browseDetail:Hide() end
+      if self.browseTableHeader then self.browseTableHeader:Show() end
+      if self.browseScrollArea then self.browseScrollArea:Show() end
+      if self.browseSummary then self.browseSummary:Show() end
+      return self:RenderBrowse()
+    end
+
+    function U:RenderDetail()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Browse" then self.detailDirty = true; return false end
+      local id, stamp = tostring(self.selectedListingId or ""), tonumber(time and time() or 0) or 0
+      local row = id ~= "" and M:GetListing(id) or nil
+      if not row or row.id ~= id or row.profile ~= self.profile or tonumber(row.expiresAt or 0) <= stamp then return self:ShowBrowseTable() end
+      local values = {row.owner, row.listingType, row.profession, row.itemName,
+        mktui_text(row.recipeName) ~= "" and row.recipeName or "None", mktui_text(row.materialsPolicy), mktui_price(row),
+        row.location, row.availability, mktui_remaining(row.expiresAt, stamp), mktui_text(row.notes) ~= "" and row.notes or "No notes."}
+      local signature = table.concat(values, "\31")
+      if self.detailSignature ~= signature then
+        for index, value in ipairs(values) do self.detailValues[index]:SetText(value) end
+        self.detailSignature = signature
+      end
+      self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide(); self.browseDetail:Show()
+      self.detailDirty = false
+      return true
+    end
+
+    function U:SelectBrowseRow(rowControl)
+      if not self.active or self.selectedTab ~= "Browse" or not rowControl or not rowControl:IsShown() then return false end
+      local id = tostring(rowControl.listingId or "")
+      local row = id ~= "" and M:GetListing(id) or nil
+      if not row or row.id ~= id then return false end
+      self.selectedListingId, self.detailSignature = id, nil
+      return self:RenderDetail()
+    end
+
+    local function mktui_row_click(rowControl) if U.active then U:SelectBrowseRow(rowControl) end end
+    local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
 
     function U:GetPanelState()
       local panel = B.marketplacePanel or self.panel
@@ -169,6 +213,8 @@ do
       for _, button in ipairs(self.navButtons or {}) do
         if button:GetScript("OnClick") then count = count + 1 end
       end
+      for _, row in ipairs(self.browseRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
+      if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
       return count
     end
 
@@ -179,6 +225,8 @@ do
         button:EnableMouse(true)
         button:SetScript("OnClick", mktui_nav_click)
       end
+      for _, row in ipairs(self.browseRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_row_click) end
+      if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
       return true
     end
 
@@ -188,12 +236,15 @@ do
         button:SetScript("OnClick", nil)
         button:EnableMouse(false)
       end
+      for _, row in ipairs(self.browseRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
+      if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
       return true
     end
 
     function U:SetTab(tab)
       if not self.active or not self.panel or not self.panel:IsShown() then return false end
       if not PLACEHOLDERS[tab] then tab = "Browse" end
+      if tab ~= "Browse" or self.selectedListingId then self:ClearSelection() end
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
       local browse = tab == "Browse"
@@ -216,7 +267,7 @@ do
           selected and .48 or .62)
       end
       self.refreshCount = self.refreshCount + 1
-      if browse then self:RenderBrowse() end
+      if browse then self:ShowBrowseTable() end
       return true
     end
 
@@ -259,6 +310,7 @@ do
       header:SetWidth(780); header:SetHeight(24)
       header:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
       mktui_backdrop(header, .90)
+      self.browseTableHeader = header
       self.browseTableHeaders = {}
       local x = 8
       for _, column in ipairs(BROWSE_COLUMNS) do
@@ -282,10 +334,11 @@ do
       self.browseRows = {}
       local rowY = -4
       for index = 1, 8 do
-        local row = CreateFrame("Frame", nil, rows)
+        local row = CreateFrame("Button", nil, rows)
         row:SetWidth(744); row:SetHeight(32)
         row:SetPoint("TOPLEFT", rows, "TOPLEFT", 0, rowY)
         mktui_backdrop(row, .55)
+        row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         row.labels, row.signature = {}, nil
         local columnX = 8
         for _, column in ipairs(BROWSE_COLUMNS) do
@@ -302,6 +355,27 @@ do
       self.browseEmptyState:SetPoint("CENTER", rows, "CENTER", 0, 0)
       self.browseSummary = mktui_font(browseShell, "", 10, .72, .72, .72)
       self.browseSummary:SetPoint("TOPRIGHT", browseShell, "TOPRIGHT", -4, 10)
+      local detail = CreateFrame("Frame", nil, browseShell)
+      detail:SetWidth(780); detail:SetHeight(352)
+      detail:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
+      mktui_backdrop(detail, .72)
+      local back = CreateFrame("Button", nil, detail)
+      back:SetWidth(116); back:SetHeight(24); back:SetPoint("TOPLEFT", detail, "TOPLEFT", 10, -10)
+      mktui_backdrop(back, .88)
+      back.label = mktui_font(back, "Back to Listings", 10, .9, .76, .32); back.label:SetPoint("CENTER")
+      self.detailBack, self.detailValues = back, {}
+      local fields = {"Player", "Listing Type", "Profession", "Item", "Recipe", "Materials Policy", "Price / Tip", "Location", "Availability", "Expires", "Notes"}
+      for index, field in ipairs(fields) do
+        local column, y = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43)
+        local name = mktui_font(detail, field, 10, .9, .76, .32)
+        name:SetWidth(105); name:SetJustifyH("LEFT"); name:SetPoint("TOPLEFT", detail, "TOPLEFT", 12 + column, y)
+        local value = mktui_font(detail, "", 11, .86, .82, .68)
+        value:SetWidth(250); value:SetHeight(38); value:SetJustifyH("LEFT"); value:SetJustifyV("TOP")
+        value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, y)
+        if value.SetNonSpaceWrap then value:SetNonSpaceWrap(false) end
+        self.detailValues[index] = value
+      end
+      detail:Hide(); self.browseDetail = detail
       self.browseShell = browseShell
 
       self.panel = panel
@@ -312,6 +386,7 @@ do
     end
 
     function U:Hide()
+      self:ClearSelection()
       if self.panel then self.panel:Hide() end
       return true
     end
@@ -358,7 +433,7 @@ do
     end
 
     function U:Enable(profile)
-      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot() end
+      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot(); self:ClearSelection() end
       self.active = true
       self.profile = tostring(profile or "")
       local ok, err = self:Register()
@@ -376,7 +451,7 @@ do
       self.selectedTab = nil
       self.temporary = nil
       self:ClearBrowseSnapshot()
-      for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature = nil end
+      for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       self.lastDisableReason = tostring(reason or "disabled")
       if wasVisible and B.frame and B.frame:IsShown() and LP.panels.browse then
         LP:Open("browse", "marketplace-disable")
@@ -426,3 +501,4 @@ do
     else U:Disable("load-disabled") end
   end
 end
+
