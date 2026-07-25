@@ -38,6 +38,11 @@ do
       return tonumber(time and time() or 0) or 0
     end
 
+    local function mktui_data_changed()
+      local ui = _G.SignalFireMarketplaceUI151
+      if ui and ui.OnMarketplaceDataChanged then ui:OnMarketplaceDataChanged() end
+    end
+
     local function mkt_trim(value)
       local text = tostring(value or "")
       text = string.gsub(text, "[%c]", " ")
@@ -418,6 +423,7 @@ do
         runtime.dataGeneration = runtime.dataGeneration + 1
         runtime.expirationRemovals = runtime.expirationRemovals + #expired
         self.expirationRemovals = self.expirationRemovals + #expired
+        mktui_data_changed()
       end
       self:PruneStaleFavorites(runtime.store, stamp)
       self:ScheduleExpiration()
@@ -452,6 +458,7 @@ do
       self:IndexListing(runtime, row)
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
+      mktui_data_changed()
       return mkt_copy(row)
     end
 
@@ -474,6 +481,7 @@ do
       self:IndexListing(runtime, row)
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
+      mktui_data_changed()
       return mkt_copy(row)
     end
 
@@ -483,6 +491,7 @@ do
       if not runtime or not self:RemovePersisted(runtime, id) then return false, "listing not found" end
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
+      mktui_data_changed()
       return true
     end
 

@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c1"
+    U.generation = "1.5.3-marketplace-phase1c2"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -55,6 +55,105 @@ do
 
     local function mktui_nav_click(button)
       if U.active and button and button.marketplaceTab then U:SetTab(button.marketplaceTab) end
+    end
+
+    local function mktui_text(value)
+      return tostring(value or "")
+    end
+
+    local function mktui_price(row)
+      if mktui_text(row.priceText) ~= "" then return row.priceText end
+      if row.priceMode == "Free" then return "Free" end
+      if row.priceMode == "Negotiable" then return "Negotiable" end
+      if row.priceMode == "Tip" then return "Tip" end
+      local copper = math.max(0, tonumber(row.priceCopper or 0) or 0)
+      local gold = math.floor(copper / 10000)
+      local silver = math.floor((copper % 10000) / 100)
+      local rest = copper % 100
+      local parts = {}
+      if gold > 0 then table.insert(parts, tostring(gold) .. "g") end
+      if silver > 0 then table.insert(parts, tostring(silver) .. "s") end
+      if rest > 0 or #parts == 0 then table.insert(parts, tostring(rest) .. "c") end
+      return table.concat(parts, " ")
+    end
+
+    local function mktui_remaining(expiresAt, stamp)
+      local left = (tonumber(expiresAt or 0) or 0) - stamp
+      if left < 60 then return "<1m" end
+      if left < 3600 then return tostring(math.floor(left / 60)) .. "m" end
+      if left < 86400 then
+        local hours = math.floor(left / 3600)
+        local minutes = math.floor((left % 3600) / 60)
+        return minutes > 0 and (tostring(hours) .. "h " .. tostring(minutes) .. "m") or (tostring(hours) .. "h")
+      end
+      return tostring(math.floor(left / 86400)) .. "d"
+    end
+
+    function U:ClearBrowseSnapshot()
+      self.browseSnapshot = nil
+      self.browseSnapshotGeneration = nil
+      self.browseSnapshotProfile = nil
+      self.browseDirty = true
+    end
+
+    function U:OnMarketplaceDataChanged()
+      self:ClearBrowseSnapshot()
+      if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" then
+        self:RenderBrowse()
+      end
+    end
+
+    function U:BuildBrowseSnapshot()
+      local runtime = M.runtime
+      if not runtime or not runtime.active or runtime.profile ~= self.profile then return nil end
+      if self.browseSnapshot and self.browseSnapshotGeneration == runtime.dataGeneration
+        and self.browseSnapshotProfile == runtime.profile then return self.browseSnapshot end
+      local stamp, active = tonumber(time and time() or 0) or 0, {}
+      for index = #(runtime.store.listingOrder or {}), 1, -1 do
+        local id = runtime.store.listingOrder[index]
+        local row = runtime.byId[id]
+        if type(row) == "table" and row.id == id and row.profile == runtime.profile
+          and type(row.owner) == "string" and type(row.listingType) == "string"
+          and type(row.profession) == "string" and type(row.itemName) == "string"
+          and tonumber(row.expiresAt or 0) > stamp then
+          table.insert(active, row)
+        end
+      end
+      self.browseSnapshot = {generation=runtime.dataGeneration, total=#active, rows=active, stamp=stamp}
+      self.browseSnapshotGeneration, self.browseSnapshotProfile = runtime.dataGeneration, runtime.profile
+      return self.browseSnapshot
+    end
+
+    function U:RenderBrowse()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Browse" then
+        self.browseDirty = true
+        return false
+      end
+      local snapshot = self:BuildBrowseSnapshot()
+      if not snapshot then return false end
+      local shown = math.min(8, snapshot.total)
+      if shown == 0 then self.browseEmptyState:Show() else self.browseEmptyState:Hide() end
+      self.browseSummary:SetText(snapshot.total > 8 and ("Showing 8 of " .. tostring(snapshot.total)) or "")
+      for index, rowControl in ipairs(self.browseRows) do
+        local row = snapshot.rows[index]
+        if row then
+          local item = row.itemName
+          if row.recipeName and row.recipeName ~= "" and row.recipeName ~= row.itemName then item = item .. " / " .. row.recipeName end
+          local values = {row.owner, row.listingType, row.profession, item, row.location, row.availability,
+            mktui_price(row), mktui_remaining(row.expiresAt, snapshot.stamp)}
+          local signature = table.concat(values, "\31")
+          if rowControl.signature ~= signature then
+            for column, value in ipairs(values) do rowControl.labels[column]:SetText(value) end
+            rowControl.signature = signature
+          end
+          rowControl:Show()
+        else
+          rowControl:Hide()
+          rowControl.signature = nil
+        end
+      end
+      self.browseRowCount, self.browseDirty = shown, false
+      return true
     end
 
     function U:GetPanelState()
@@ -116,6 +215,7 @@ do
           selected and .48 or .62)
       end
       self.refreshCount = self.refreshCount + 1
+      if browse then self:RenderBrowse() end
       return true
     end
 
@@ -151,8 +251,6 @@ do
       self.placeholder = mktui_font(panel, "", 12, .72, .72, .72)
       self.placeholder:SetPoint("TOPLEFT", self.sectionTitle, "BOTTOMLEFT", 0, -18)
 
-      -- Browse is intentionally a presentation-only shell in 1C-1.  The
-      -- reserved scroll region owns no listing rows or data binding yet.
       local browseShell = CreateFrame("Frame", nil, panel)
       browseShell:SetWidth(780); browseShell:SetHeight(352)
       browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
@@ -180,9 +278,29 @@ do
       scroll:SetScrollChild(rows)
       self.browseScrollArea = scroll
       self.browseRowsArea = rows
+      self.browseRows = {}
+      local rowY = -4
+      for index = 1, 8 do
+        local row = CreateFrame("Frame", nil, rows)
+        row:SetWidth(744); row:SetHeight(32)
+        row:SetPoint("TOPLEFT", rows, "TOPLEFT", 0, rowY)
+        mktui_backdrop(row, .55)
+        row.labels, row.signature = {}, nil
+        local columnX = 8
+        for _, column in ipairs(BROWSE_COLUMNS) do
+          local label = mktui_font(row, "", 10, .86, .82, .68)
+          label:SetWidth(column[2]); label:SetJustifyH("LEFT")
+          label:SetPoint("LEFT", row, "LEFT", columnX, 0)
+          table.insert(row.labels, label)
+          columnX = columnX + column[2]
+        end
+        row:Hide(); table.insert(self.browseRows, row); rowY = rowY - 36
+      end
       self.browseRowCount = 0
       self.browseEmptyState = mktui_font(rows, "No marketplace listings available.", 12, .72, .72, .72)
       self.browseEmptyState:SetPoint("CENTER", rows, "CENTER", 0, 0)
+      self.browseSummary = mktui_font(browseShell, "", 10, .72, .72, .72)
+      self.browseSummary:SetPoint("TOPRIGHT", browseShell, "TOPRIGHT", -4, 10)
       self.browseShell = browseShell
 
       self.panel = panel
@@ -239,6 +357,7 @@ do
     end
 
     function U:Enable(profile)
+      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot() end
       self.active = true
       self.profile = tostring(profile or "")
       local ok, err = self:Register()
@@ -255,6 +374,8 @@ do
       self:Unregister()
       self.selectedTab = nil
       self.temporary = nil
+      self:ClearBrowseSnapshot()
+      for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature = nil end
       self.lastDisableReason = tostring(reason or "disabled")
       if wasVisible and B.frame and B.frame:IsShown() and LP.panels.browse then
         LP:Open("browse", "marketplace-disable")
