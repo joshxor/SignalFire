@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c3"
+    U.generation = "1.5.3-marketplace-phase1c4a"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -139,9 +139,7 @@ do
       local last = math.min(snapshot.total, first + BROWSE_PAGE_SIZE - 1)
       local shown = snapshot.total > 0 and (last - first + 1) or 0
       if shown == 0 then self.browseEmptyState:Show() else self.browseEmptyState:Hide() end
-      self.browseSummary:SetText(snapshot.total > BROWSE_PAGE_SIZE and ("Showing " .. tostring(BROWSE_PAGE_SIZE)
-        .. " of " .. tostring(snapshot.total)) or "")
-      self.browseRange:SetText(snapshot.total > 0 and ("Showing " .. tostring(first) .. "-" .. tostring(last)
+      self.browseSummary:SetText(snapshot.total > 0 and ("Showing " .. tostring(first) .. "-" .. tostring(last)
         .. " of " .. tostring(snapshot.total)) or "")
       self.browsePageIndicator:SetText("Page " .. tostring(self.browsePage) .. " of " .. tostring(pages))
       if pages > 1 then
@@ -200,7 +198,6 @@ do
       if self.browsePrevious then self.browsePrevious:Show() end
       if self.browseNext then self.browseNext:Show() end
       if self.browsePageIndicator then self.browsePageIndicator:Show() end
-      if self.browseRange then self.browseRange:Show() end
       return self:RenderBrowse()
     end
 
@@ -218,7 +215,7 @@ do
         self.detailSignature = signature
       end
       self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
-      self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide(); self.browseRange:Hide(); self.browseDetail:Show()
+      self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide(); self.browseDetail:Show()
       self.detailDirty = false
       return true
     end
@@ -408,8 +405,6 @@ do
       mktui_backdrop(nextButton, .88)
       nextButton.label = mktui_font(nextButton, "Next", 9, .9, .76, .32); nextButton.label:SetPoint("CENTER")
       self.browsePrevious, self.browseNext, self.browsePageIndicator = previous, nextButton, page
-      self.browseRange = mktui_font(browseShell, "", 10, .72, .72, .72)
-      self.browseRange:SetPoint("LEFT", nextButton, "RIGHT", 14, 0)
       local detail = CreateFrame("Frame", nil, browseShell)
       detail:SetWidth(780); detail:SetHeight(352)
       detail:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
