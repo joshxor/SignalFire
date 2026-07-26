@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c4c"
+    U.generation = "1.5.3-marketplace-phase1c4d"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -108,6 +108,8 @@ do
       self.browseFilteredQuery = nil
       self.browseFilteredType = nil
       self.browseFilteredProfession = nil
+      self.browseFilteredLocation = nil
+      self.browseFilteredAvailability = nil
     end
 
     function U:GetAppliedBrowseQuery()
@@ -116,6 +118,8 @@ do
 
     function U:GetBrowseListingType() return tostring(self.browseListingType or "") end
     function U:GetBrowseProfessionKey() return mktui_search_key(self.browseProfessionKey) end
+    function U:GetBrowseLocationKey() return mktui_search_key(self.browseLocationKey) end
+    function U:GetBrowseAvailability() return tostring(self.browseAvailability or "") end
 
     function U:SyncBrowseFilterLabels()
       if self.browseTypeSelector and self.browseTypeSelector.label then
@@ -123,6 +127,12 @@ do
       end
       if self.browseProfessionSelector and self.browseProfessionSelector.label then
         self.browseProfessionSelector.label:SetText(self.browseProfessionLabel ~= "" and self.browseProfessionLabel or "All Professions")
+      end
+      if self.browseLocationSelector and self.browseLocationSelector.label then
+        self.browseLocationSelector.label:SetText(self.browseLocationLabel ~= "" and self.browseLocationLabel or "All Locations")
+      end
+      if self.browseAvailabilitySelector and self.browseAvailabilitySelector.label then
+        self.browseAvailabilitySelector.label:SetText(self:GetBrowseAvailability() ~= "" and self:GetBrowseAvailability() or "All Availability")
       end
     end
 
@@ -134,6 +144,24 @@ do
         if key ~= "" and not seen[key] then
           seen[key] = true
           table.insert(choices, {key=key, text=mktui_text(row.profession)})
+        end
+      end
+      table.sort(choices, function(a, b)
+        if a.key == "" then return true end
+        if b.key == "" then return false end
+        return string.lower(a.text) < string.lower(b.text)
+      end)
+      return choices
+    end
+
+    function U:GetBrowseLocationOptions(snapshot)
+      snapshot = snapshot or self:BuildBrowseSnapshot()
+      local choices, seen = {{key="", text="All Locations"}}, {}
+      for _, row in ipairs((snapshot and snapshot.rows) or {}) do
+        local key = mktui_search_key(row.locationKey)
+        if key ~= "" and not seen[key] then
+          seen[key] = true
+          table.insert(choices, {key=key, text=mktui_text(row.location)})
         end
       end
       table.sort(choices, function(a, b)
@@ -158,20 +186,44 @@ do
       return self:RenderBrowse()
     end
 
+    function U:ApplyBrowseLocation(locationKey, locationLabel)
+      if not self.active then return false end
+      locationKey, locationLabel = mktui_search_key(locationKey), mktui_text(locationLabel)
+      if self:GetBrowseLocationKey() == locationKey then return false end
+      self.browseLocationKey, self.browseLocationLabel, self.browsePage = locationKey, locationKey ~= "" and locationLabel or "", 1
+      self:ClearBrowseFilteredView()
+      self:SyncBrowseFilterLabels()
+      return self:RenderBrowse()
+    end
+
+    function U:ApplyBrowseAvailability(availability)
+      if not self.active then return false end
+      availability = tostring(availability or "")
+      if self:GetBrowseAvailability() == availability then return false end
+      self.browseAvailability, self.browsePage = availability, 1
+      self:ClearBrowseFilteredView()
+      self:SyncBrowseFilterLabels()
+      return self:RenderBrowse()
+    end
+
     function U:BuildBrowseFilteredView()
       local snapshot = self:BuildBrowseSnapshot()
       if not snapshot then return nil end
       local query = self:GetAppliedBrowseQuery()
       local listingType, professionKey = self:GetBrowseListingType(), self:GetBrowseProfessionKey()
+      local locationKey, availability = self:GetBrowseLocationKey(), self:GetBrowseAvailability()
       if self.browseFilteredView and self.browseFilteredGeneration == snapshot.generation
         and self.browseFilteredProfile == self.profile and self.browseFilteredQuery == query
-        and self.browseFilteredType == listingType and self.browseFilteredProfession == professionKey then
+        and self.browseFilteredType == listingType and self.browseFilteredProfession == professionKey
+        and self.browseFilteredLocation == locationKey and self.browseFilteredAvailability == availability then
         return self.browseFilteredView
       end
       local rows = {}
       for _, row in ipairs(snapshot.rows) do
         if (listingType == "" or row.listingType == listingType)
           and (professionKey == "" or mktui_search_key(row.professionKey) == professionKey)
+          and (locationKey == "" or mktui_search_key(row.locationKey) == locationKey)
+          and (availability == "" or row.availability == availability)
           and (query == "" or (string.find(mktui_search_key(row.itemName), query, 1, true)
             or string.find(mktui_search_key(row.itemKey), query, 1, true)
             or string.find(mktui_search_key(row.recipeName), query, 1, true)
@@ -179,9 +231,10 @@ do
           table.insert(rows, row)
         end
       end
-      self.browseFilteredView = {generation=snapshot.generation, total=#rows, rows=rows, query=query, listingType=listingType, professionKey=professionKey}
+      self.browseFilteredView = {generation=snapshot.generation, total=#rows, rows=rows, query=query, listingType=listingType, professionKey=professionKey, locationKey=locationKey, availability=availability}
       self.browseFilteredGeneration, self.browseFilteredProfile, self.browseFilteredQuery = snapshot.generation, self.profile, query
       self.browseFilteredType, self.browseFilteredProfession = listingType, professionKey
+      self.browseFilteredLocation, self.browseFilteredAvailability = locationKey, availability
       return self.browseFilteredView
     end
 
@@ -253,6 +306,16 @@ do
           self:SyncBrowseFilterLabels()
         end
       end
+      local selectedLocation = self:GetBrowseLocationKey()
+      if selectedLocation ~= "" then
+        local valid = false
+        for _, option in ipairs(self:GetBrowseLocationOptions(canonical)) do if option.key == selectedLocation then valid = true break end end
+        if not valid then
+          self.browseLocationKey, self.browseLocationLabel, self.browsePage = "", "", 1
+          self:ClearBrowseFilteredView()
+          self:SyncBrowseFilterLabels()
+        end
+      end
       local snapshot = self:BuildBrowseFilteredView()
       if not snapshot then return false end
       local stamp = tonumber(time and time() or 0) or 0
@@ -263,7 +326,7 @@ do
       local shown = snapshot.total > 0 and (last - first + 1) or 0
       if shown == 0 then
         local searched = self:GetAppliedBrowseQuery() ~= ""
-        local filtered = self:GetBrowseListingType() ~= "" or self:GetBrowseProfessionKey() ~= ""
+        local filtered = self:GetBrowseListingType() ~= "" or self:GetBrowseProfessionKey() ~= "" or self:GetBrowseLocationKey() ~= "" or self:GetBrowseAvailability() ~= ""
         self.browseEmptyState:SetText(searched and filtered and "No marketplace listings match your search and filters."
           or searched and "No marketplace listings match your search."
           or filtered and "No marketplace listings match your filters."
@@ -335,6 +398,8 @@ do
       if self.browseSearchLabel then self.browseSearchLabel:Show() end
       if self.browseTypeSelector then self.browseTypeSelector:Show() end
       if self.browseProfessionSelector then self.browseProfessionSelector:Show() end
+      if self.browseLocationSelector then self.browseLocationSelector:Show() end
+      if self.browseAvailabilitySelector then self.browseAvailabilitySelector:Show() end
       if self.browseSearchBox then self.browseSearchBox:Show() end
       if self.browseSearchButton then self.browseSearchButton:Show() end
       if self.browseClear then self.browseClear:Show() end
@@ -356,7 +421,7 @@ do
       end
       self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
       self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
-      self.browseSearchLabel:Hide(); self.browseTypeSelector:Hide(); self.browseProfessionSelector:Hide(); self.browseSearchBox:Hide(); self.browseSearchButton:Hide(); self.browseClear:Hide(); self.browseDetail:Show()
+      self.browseSearchLabel:Hide(); self.browseTypeSelector:Hide(); self.browseProfessionSelector:Hide(); self.browseLocationSelector:Hide(); self.browseAvailabilitySelector:Hide(); self.browseSearchBox:Hide(); self.browseSearchButton:Hide(); self.browseClear:Hide(); self.browseDetail:Show()
       self.detailDirty = false
       return true
     end
@@ -381,15 +446,21 @@ do
     local function mktui_search_escape(box) box:ClearFocus() end
     local function mktui_type_click() if U.active then U:OpenBrowseSelector("type") end end
     local function mktui_profession_click() if U.active then U:OpenBrowseSelector("profession") end end
+    local function mktui_location_click() if U.active then U:OpenBrowseSelector("location") end end
+    local function mktui_availability_click() if U.active then U:OpenBrowseSelector("availability") end end
 
     function U:CloseBrowseSelectors()
       if CloseDropDownMenus then CloseDropDownMenus() end
     end
 
     function U:OpenBrowseSelector(kind)
-      local selector = kind == "type" and self.browseTypeSelector or self.browseProfessionSelector
+      local selector = kind == "type" and self.browseTypeSelector or kind == "profession" and self.browseProfessionSelector
+        or kind == "location" and self.browseLocationSelector or self.browseAvailabilitySelector
       if not selector or not selector.menu then return false end
       if kind == "profession" then selector.options = self:GetBrowseProfessionOptions() end
+      if kind == "location" then selector.options = self:GetBrowseLocationOptions() end
+      selector.menu.ownerSelector = selector
+      UIDropDownMenu_Initialize(selector.menu, selector.menuInitializer, "MENU")
       if ToggleDropDownMenu then ToggleDropDownMenu(1, nil, selector.menu, selector, 0, 0) end
       return true
     end
@@ -414,6 +485,8 @@ do
       if self.browseClear and self.browseClear:GetScript("OnClick") then count = count + 1 end
       if self.browseTypeSelector and self.browseTypeSelector:GetScript("OnClick") then count = count + 1 end
       if self.browseProfessionSelector and self.browseProfessionSelector:GetScript("OnClick") then count = count + 1 end
+      if self.browseLocationSelector and self.browseLocationSelector:GetScript("OnClick") then count = count + 1 end
+      if self.browseAvailabilitySelector and self.browseAvailabilitySelector:GetScript("OnClick") then count = count + 1 end
       if self.browseSearchBox and self.browseSearchBox:GetScript("OnEnterPressed") then count = count + 1 end
       if self.browseSearchBox and self.browseSearchBox:GetScript("OnEscapePressed") then count = count + 1 end
       return count
@@ -434,6 +507,8 @@ do
       if self.browseClear then self.browseClear:SetScript("OnClick", mktui_clear_click) end
       if self.browseTypeSelector then self.browseTypeSelector:EnableMouse(true); self.browseTypeSelector:SetScript("OnClick", mktui_type_click) end
       if self.browseProfessionSelector then self.browseProfessionSelector:EnableMouse(true); self.browseProfessionSelector:SetScript("OnClick", mktui_profession_click) end
+      if self.browseLocationSelector then self.browseLocationSelector:EnableMouse(true); self.browseLocationSelector:SetScript("OnClick", mktui_location_click) end
+      if self.browseAvailabilitySelector then self.browseAvailabilitySelector:EnableMouse(true); self.browseAvailabilitySelector:SetScript("OnClick", mktui_availability_click) end
       if self.browseSearchBox then self.browseSearchBox:EnableMouse(true); self.browseSearchBox:SetScript("OnEnterPressed", mktui_search_enter); self.browseSearchBox:SetScript("OnEscapePressed", mktui_search_escape) end
       return true
     end
@@ -452,6 +527,8 @@ do
       if self.browseClear then self.browseClear:SetScript("OnClick", nil); self.browseClear:EnableMouse(false) end
       if self.browseTypeSelector then self.browseTypeSelector:SetScript("OnClick", nil); self.browseTypeSelector:EnableMouse(false) end
       if self.browseProfessionSelector then self.browseProfessionSelector:SetScript("OnClick", nil); self.browseProfessionSelector:EnableMouse(false) end
+      if self.browseLocationSelector then self.browseLocationSelector:SetScript("OnClick", nil); self.browseLocationSelector:EnableMouse(false) end
+      if self.browseAvailabilitySelector then self.browseAvailabilitySelector:SetScript("OnClick", nil); self.browseAvailabilitySelector:EnableMouse(false) end
       self:CloseBrowseSelectors()
       if self.browseSearchBox then self.browseSearchBox:SetScript("OnEnterPressed", nil); self.browseSearchBox:SetScript("OnEscapePressed", nil); self.browseSearchBox:EnableMouse(false); self.browseSearchBox:ClearFocus() end
       return true
@@ -477,6 +554,8 @@ do
         if self.browseSearchLabel then self.browseSearchLabel:Hide() end
         if self.browseTypeSelector then self.browseTypeSelector:Hide() end
         if self.browseProfessionSelector then self.browseProfessionSelector:Hide() end
+        if self.browseLocationSelector then self.browseLocationSelector:Hide() end
+        if self.browseAvailabilitySelector then self.browseAvailabilitySelector:Hide() end
         if self.browseSearchBox then self.browseSearchBox:Hide() end
         if self.browseSearchButton then self.browseSearchButton:Hide() end
         if self.browseClear then self.browseClear:Hide() end
@@ -545,7 +624,7 @@ do
         local menu = _G[menuName]
         if not menu then menu = CreateFrame("Frame", menuName, UIParent, "UIDropDownMenuTemplate") end
         button.menu, menu.ownerSelector = menu, button
-        UIDropDownMenu_Initialize(menu, function(self, level)
+        button.menuInitializer = function(self, level)
           if (level or 1) ~= 1 then return end
           local owner = self.ownerSelector
           for _, option in ipairs(owner.options or {}) do
@@ -557,29 +636,40 @@ do
             end
             UIDropDownMenu_AddButton(info, level)
           end
-        end, "MENU")
+        end
+        UIDropDownMenu_Initialize(menu, button.menuInitializer, "MENU")
         return button
       end
-      local typeSelector = selector(106, "SignalFireMarketplaceTypeDropdown151", {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
+      local typeSelector = selector(94, "SignalFireMarketplaceTypeDropdown151", {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
         {key="Crafting Request", text="Crafting Request"}}, function(option) U:ApplyBrowseFilter(option.key, U:GetBrowseProfessionKey(), U.browseProfessionLabel) end)
-      typeSelector:SetPoint("TOPLEFT", panel, "TOPLEFT", 96, -112)
-      local professionSelector = selector(128, "SignalFireMarketplaceProfessionDropdown151", {{key="", text="All Professions"}}, function(option)
+      typeSelector:SetPoint("TOPLEFT", panel, "TOPLEFT", 88, -112)
+      local professionSelector = selector(110, "SignalFireMarketplaceProfessionDropdown151", {{key="", text="All Professions"}}, function(option)
         U:ApplyBrowseFilter(U:GetBrowseListingType(), option.key, option.text)
       end)
-      professionSelector:SetPoint("LEFT", typeSelector, "RIGHT", 6, 0)
+      professionSelector:SetPoint("LEFT", typeSelector, "RIGHT", 4, 0)
+      local locationSelector = selector(100, "SignalFireMarketplaceLocationDropdown151", {{key="", text="All Locations"}}, function(option)
+        U:ApplyBrowseLocation(option.key, option.text)
+      end)
+      locationSelector:SetPoint("LEFT", professionSelector, "RIGHT", 4, 0)
+      local availabilitySelector = selector(102, "SignalFireMarketplaceAvailabilityDropdown151", {{key="", text="All Availability"},
+        {key="Available Now", text="Available Now"}, {key="Today", text="Today"}, {key="This Session", text="This Session"}, {key="Scheduled", text="Scheduled"}}, function(option)
+        U:ApplyBrowseAvailability(option.key)
+      end)
+      availabilitySelector:SetPoint("LEFT", locationSelector, "RIGHT", 4, 0)
       self.browseTypeSelector, self.browseProfessionSelector = typeSelector, professionSelector
-      self.browseSearchLabel = mktui_font(panel, "Search item or recipe", 10, .9, .76, .32)
-      self.browseSearchLabel:SetPoint("LEFT", professionSelector, "RIGHT", 8, 0)
+      self.browseLocationSelector, self.browseAvailabilitySelector = locationSelector, availabilitySelector
+      self.browseSearchLabel = mktui_font(panel, "Item/Recipe", 9, .9, .76, .32)
+      self.browseSearchLabel:SetPoint("LEFT", availabilitySelector, "RIGHT", 6, 0)
       local searchBox = CreateFrame("EditBox", nil, panel)
-      searchBox:SetWidth(140); searchBox:SetHeight(22); searchBox:SetPoint("LEFT", self.browseSearchLabel, "RIGHT", 8, 0)
+      searchBox:SetWidth(112); searchBox:SetHeight(22); searchBox:SetPoint("LEFT", self.browseSearchLabel, "RIGHT", 4, 0)
       searchBox:SetAutoFocus(false); searchBox:SetFontObject(ChatFontNormal); searchBox:SetTextInsets(5, 5, 2, 2)
       if searchBox.SetMaxLetters then searchBox:SetMaxLetters(100) end
       mktui_backdrop(searchBox, .92)
       local searchButton = CreateFrame("Button", nil, panel)
-      searchButton:SetWidth(52); searchButton:SetHeight(22); searchButton:SetPoint("LEFT", searchBox, "RIGHT", 7, 0)
+      searchButton:SetWidth(46); searchButton:SetHeight(22); searchButton:SetPoint("LEFT", searchBox, "RIGHT", 4, 0)
       mktui_backdrop(searchButton, .88); searchButton.label = mktui_font(searchButton, "Search", 9, .9, .76, .32); searchButton.label:SetPoint("CENTER")
       local clearButton = CreateFrame("Button", nil, panel)
-      clearButton:SetWidth(42); clearButton:SetHeight(22); clearButton:SetPoint("LEFT", searchButton, "RIGHT", 6, 0)
+      clearButton:SetWidth(40); clearButton:SetHeight(22); clearButton:SetPoint("LEFT", searchButton, "RIGHT", 4, 0)
       mktui_backdrop(clearButton, .88); clearButton.label = mktui_font(clearButton, "Clear", 9, .9, .76, .32); clearButton.label:SetPoint("CENTER")
       self.browseSearchBox, self.browseSearchButton, self.browseClear = searchBox, searchButton, clearButton
       self:SyncBrowseFilterLabels()
@@ -727,6 +817,7 @@ do
       if self.profile ~= tostring(profile or "") then
         self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearSelection(); self.browsePage = 1; self.browseSearchQuery = ""
         self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
+        self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
         if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
         self:SyncBrowseFilterLabels()
       end
@@ -748,6 +839,7 @@ do
       self.browsePage = 1
       self.browseSearchQuery = ""
       self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
+      self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
       self:SyncBrowseFilterLabels()
       if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
       self.temporary = nil

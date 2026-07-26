@@ -25,13 +25,16 @@ function CloseDropDownMenus() end
 local B, U = assert(BronzeLFG), assert(SignalFireMarketplaceUI151)
 BronzeLFG_DB.options.serverProfile = "Ascension"
 BronzeLFG_DB.options.modulesByProfile = {Ascension={tradeskillMarketplace=true}}
-assert(B:SFModulesApply() and not U.browseTypeSelector and not U.browseProfessionSelector,
+assert(B:SFModulesApply() and not U.browseTypeSelector and not U.browseProfessionSelector and not U.browseLocationSelector and not U.browseAvailabilitySelector,
   "filter selectors were built eagerly")
-assert(B:ShowMarketplace() and U.browseTypeSelector and U.browseProfessionSelector,
+assert(B:ShowMarketplace() and U.browseTypeSelector and U.browseProfessionSelector and U.browseLocationSelector and U.browseAvailabilitySelector,
   "filter selectors were not built lazily")
 assert(U.browseTypeSelector.menu:GetName() == "SignalFireMarketplaceTypeDropdown151"
   and U.browseProfessionSelector.menu:GetName() == "SignalFireMarketplaceProfessionDropdown151"
-  and U.browseTypeSelector.menu ~= U.browseProfessionSelector.menu and dropdownCreates == 2,
+  and U.browseLocationSelector.menu:GetName() == "SignalFireMarketplaceLocationDropdown151"
+  and U.browseAvailabilitySelector.menu:GetName() == "SignalFireMarketplaceAvailabilityDropdown151"
+  and U.browseTypeSelector.menu ~= U.browseProfessionSelector.menu and U.browseLocationSelector.menu ~= U.browseAvailabilitySelector.menu
+  and dropdownCreates == 4,
   "Marketplace dropdown menus are not distinct named 3.3.5-compatible frames")
 assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions",
   "filter defaults are incorrect")
@@ -244,7 +247,7 @@ assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessio
   and U:GetAppliedBrowseQuery() == "" and U.browsePage == 1, "disable retained stale filter state or labels")
 BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = true; B:SFModulesApply()
 assert(B:ShowMarketplace() and U.browseTypeSelector == typeButton and U.browseProfessionSelector == professionButton
-  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 2
+  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 4
   and U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
-  and U:ActiveScriptCount() == 21, "re-enable duplicated selectors, menus, or scripts")
+  and U:ActiveScriptCount() == 23, "re-enable duplicated selectors, menus, or scripts")
 print("marketplace browse type/profession filters harness: PASS")
