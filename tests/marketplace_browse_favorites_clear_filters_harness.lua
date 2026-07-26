@@ -12,8 +12,13 @@ BronzeLFG_DB.options.serverProfile = "Ascension"
 BronzeLFG_DB.options.modulesByProfile = {Ascension={tradeskillMarketplace=true}}
 assert(B:SFModulesApply() and not U.browseFavoritesButton and not U.browseClearFilters, "Pass B controls were eager")
 assert(B:ShowMarketplace() and U.browseFavoritesButton and U.browseClearFilters and #U.browseRows == 8, "Pass B controls were not lazy")
-assert(U.browseShell:GetWidth() == 780 and U.browseShell:GetHeight() == 352 and U.browseFavoritesButton:GetWidth() == 54
-  and U.browseClearFilters:GetWidth() == 64 and not U.browseFavoritesOnly and not U.browseClearFilters:IsMouseEnabled(), "toolbar defaults are wrong")
+local _, _, _, shellX, shellY = U.browseShell:GetPoint()
+assert(U.panel:GetWidth() == 820 and U.panel:GetHeight() == 520 and shellX == 20 and shellY == -140
+  and U.browseShell:GetWidth() == 780 and U.browseShell:GetHeight() == 352 and #U.browseRows == 8
+  and U.browseTypeSelector and U.browseProfessionSelector and U.browseLocationSelector and U.browseAvailabilitySelector
+  and U.browseFavoritesButton and U.browseSearchLabel and U.browseSearchBox and U.browseSearchButton and U.browseClear and U.browseClearFilters
+  and U.browseFavoritesButton:GetWidth() == 54 and U.browseClearFilters:GetWidth() == 64 and not U.browseFavoritesOnly
+  and not U.browseClearFilters:IsMouseEnabled() and U.browseSearchBox:GetText() == "" and U.browsePage == 1, "toolbar defaults are wrong")
 
 local function add(number, favored, location, availability, listingType, profession, item)
   local row = assert(B:SFMarketplaceCreateListing({owner="Owner " .. number, listingType=listingType or "Crafting Offer", profession=profession or "Alchemy",
@@ -26,13 +31,25 @@ local rows = {}
 for number = 1, 10 do rows[#rows + 1] = add(number, number <= 9, "Dalaran", "Today") end
 local similar = add(11, false, "Dalaran", "Today", "Crafting Offer", "Alchemy", "Flask Similar")
 local other = add(12, true, "Stormwind", "Scheduled", "Crafting Request", "Blacksmithing", "Sword")
+assert(U.browseSnapshot, "canonical Browse snapshot was not built after listings")
+local canonical = U.browseSnapshot
 local runtime = M.runtime
 local dataGeneration, favoritesGeneration, order = runtime.dataGeneration, runtime.favoritesGeneration, runtime.store.listingOrder
-assert(B:SFMarketplaceSetFavorite(rows[1].id, true) and runtime.favoritesGeneration == favoritesGeneration and runtime.dataGeneration == dataGeneration, "favorite no-op mutated runtime")
-assert(B:SFMarketplaceSetFavorite(similar.id, true) and runtime.favoritesGeneration == favoritesGeneration + 1 and runtime.dataGeneration == dataGeneration
-  and runtime.store.listingOrder == order and U.browseSnapshot == canonical, "favorite mutation changed listing data")
-assert(B:SFMarketplaceSetFavorite(similar.id, false), "favorite setup cleanup failed")
-local canonical = U.browseSnapshot
+local byId, byOwner, byType, byProfession, byItem = runtime.byId, runtime.byOwner, runtime.byType, runtime.byProfession, runtime.byItem
+local byLocation, byAvailability = runtime.byLocation, runtime.byAvailability
+local function assert_favorite_ownership(expectedGeneration, message)
+  assert(runtime.favoritesGeneration == expectedGeneration and runtime.dataGeneration == dataGeneration and U.browseSnapshot == canonical
+    and runtime.store.listingOrder == order and runtime.byId == byId and runtime.byOwner == byOwner and runtime.byType == byType
+    and runtime.byProfession == byProfession and runtime.byItem == byItem and runtime.byLocation == byLocation and runtime.byAvailability == byAvailability, message)
+end
+assert(B:SFMarketplaceSetFavorite(similar.id, true), "favorite exact-id mutation failed")
+assert_favorite_ownership(favoritesGeneration + 1, "favoriting replaced listing-owned data")
+assert(B:SFMarketplaceSetFavorite(similar.id, true), "favorite no-op failed")
+assert_favorite_ownership(favoritesGeneration + 1, "favorite no-op mutated runtime")
+assert(B:SFMarketplaceSetFavorite(similar.id, false), "unfavorite exact-id mutation failed")
+assert_favorite_ownership(favoritesGeneration + 2, "unfavoriting replaced listing-owned data")
+assert(B:SFMarketplaceSetFavorite(similar.id, false), "unfavorite no-op failed")
+assert_favorite_ownership(favoritesGeneration + 2, "unfavorite no-op mutated runtime")
 
 local function options(selector)
   selector:GetScript("OnClick")(selector); _G.__mktMenuButtons = {}; selector.menu.initialize(selector.menu, 1); return _G.__mktMenuButtons
@@ -46,6 +63,11 @@ choose(U.browseLocationSelector, "Dalaran"); choose(U.browseAvailabilitySelector
 U.browseSearchBox:SetText("flask"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
 U.browseFavoritesButton:GetScript("OnClick")(U.browseFavoritesButton)
 assert(U.browseFavoritesOnly and U.browseFilteredView.total == 9 and U.browseClearFilters:IsMouseEnabled(), "full AND favorites filter is incorrect")
+local expectedFavoriteIds = {}
+for number = 1, 9 do expectedFavoriteIds[rows[number].id] = true end
+for _, row in ipairs(U.browseFilteredView.rows) do
+  assert(expectedFavoriteIds[row.id] and row.id ~= similar.id and M:IsFavorite(row.id), "Favorites-only matched metadata instead of exact stable IDs")
+end
 U.browseClear:GetScript("OnClick")(U.browseClear)
 assert(U:GetAppliedBrowseQuery() == "" and U.browseFavoritesOnly and U:GetBrowseLocationKey() == "dalaran", "search Clear changed filters")
 U.browseSearchBox:SetText("flask"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
