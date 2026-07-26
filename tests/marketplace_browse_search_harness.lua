@@ -38,10 +38,28 @@ U.browseRows[1]:GetScript("OnMouseUp")(U.browseRows[1])
 assert(U.selectedListingId == pageTwoId and not U.browseSearchBox:IsShown(), "page two selection did not hide search")
 U.detailBack:GetScript("OnClick")(U.detailBack)
 assert(U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask" and U.browseSearchBox:IsShown(), "Back did not preserve search page")
-U.browseRows[1]:GetScript("OnMouseUp")(U.browseRows[1])
-local browseButton; for _, button in ipairs(U.navButtons) do if button.marketplaceTab == "Browse" then browseButton = button end end
+local browseButton, myListingsButton, createButton, favoritesButton
+for _, button in ipairs(U.navButtons) do
+  if button.marketplaceTab == "Browse" then browseButton = button
+  elseif button.marketplaceTab == "My Listings" then myListingsButton = button
+  elseif button.marketplaceTab == "Create Listing" then createButton = button
+  elseif button.marketplaceTab == "Favorites" then favoritesButton = button end
+end
+assert(browseButton and myListingsButton and createButton and favoritesButton, "Marketplace navigation is incomplete")
+if U.browseSearchBox.SetFocus then U.browseSearchBox:SetFocus() end
+myListingsButton:GetScript("OnClick")(myListingsButton)
+assert(not U.browseSearchLabel:IsShown() and not U.browseSearchBox:IsShown() and not U.browseSearchButton:IsShown() and not U.browseClear:IsShown()
+  and U:GetAppliedBrowseQuery() == "flask", "My Listings did not hide and preserve search")
+if U.browseSearchBox.HasFocus then assert(not U.browseSearchBox:HasFocus(), "tab change retained search focus") end
+createButton:GetScript("OnClick")(createButton)
+assert(not U.browseSearchLabel:IsShown() and not U.browseSearchBox:IsShown() and not U.browseSearchButton:IsShown() and not U.browseClear:IsShown(),
+  "Create Listing did not hide search")
+favoritesButton:GetScript("OnClick")(favoritesButton)
+assert(not U.browseSearchLabel:IsShown() and not U.browseSearchBox:IsShown() and not U.browseSearchButton:IsShown() and not U.browseClear:IsShown(),
+  "Favorites did not hide search")
 browseButton:GetScript("OnClick")(browseButton)
-assert(U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask", "Browse navigation did not preserve search page")
+assert(U.browseSearchLabel:IsShown() and U.browseSearchBox:IsShown() and U.browseSearchButton:IsShown() and U.browseClear:IsShown()
+  and U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask", "Browse navigation did not restore search page")
 
 U.browseSearchBox:SetText("greater")
 assert(U.browseSearchBox:GetScript("OnEnterPressed"), "EditBox lacks OnEnterPressed")

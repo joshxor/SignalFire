@@ -386,6 +386,10 @@ do
       else
         self.placeholder:SetText(PLACEHOLDERS[tab])
         self.placeholder:Show()
+        if self.browseSearchLabel then self.browseSearchLabel:Hide() end
+        if self.browseSearchBox then self.browseSearchBox:Hide() end
+        if self.browseSearchButton then self.browseSearchButton:Hide() end
+        if self.browseClear then self.browseClear:Hide() end
       end
       for _, button in ipairs(self.navButtons) do
         local selected = button.marketplaceTab == tab
@@ -435,11 +439,11 @@ do
 
       local browseShell = CreateFrame("Frame", nil, panel)
       browseShell:SetWidth(780); browseShell:SetHeight(352)
-      browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -170)
+      browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
       self.browseSearchLabel = mktui_font(panel, "Search item or recipe", 10, .9, .76, .32)
-      self.browseSearchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -142)
+      self.browseSearchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 96, -112)
       local searchBox = CreateFrame("EditBox", nil, panel)
-      searchBox:SetWidth(210); searchBox:SetHeight(22); searchBox:SetPoint("LEFT", self.browseSearchLabel, "RIGHT", 10, 0)
+      searchBox:SetWidth(190); searchBox:SetHeight(22); searchBox:SetPoint("LEFT", self.browseSearchLabel, "RIGHT", 8, 0)
       searchBox:SetAutoFocus(false); searchBox:SetFontObject(ChatFontNormal); searchBox:SetTextInsets(5, 5, 2, 2)
       if searchBox.SetMaxLetters then searchBox:SetMaxLetters(100) end
       mktui_backdrop(searchBox, .92)
