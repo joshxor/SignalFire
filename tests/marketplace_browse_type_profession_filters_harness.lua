@@ -3,6 +3,17 @@ local addonLoader = assert(arg and arg[2], "addon loader path is required")
 
 dofile(addonLoader)
 
+-- WoW 3.3.5's UIDropDownMenuTemplate concatenates the frame name during
+-- construction. Guard that real-client constraint before lazy Marketplace build.
+local baseCreateFrame, dropdownCreates = CreateFrame, 0
+CreateFrame = function(frameType, name, parent, template)
+  if template == "UIDropDownMenuTemplate" then
+    assert(type(name) == "string" and name ~= "", "UIDropDownMenuTemplate requires a named frame")
+    dropdownCreates = dropdownCreates + 1
+  end
+  return baseCreateFrame(frameType, name, parent, template)
+end
+
 -- Narrow local dropdown stub: it records the production initializer and the
 -- actual option callbacks, so this harness never calls the internal setter.
 function UIDropDownMenu_Initialize(menu, initializer) menu.initialize = initializer end
@@ -18,6 +29,10 @@ assert(B:SFModulesApply() and not U.browseTypeSelector and not U.browseProfessio
   "filter selectors were built eagerly")
 assert(B:ShowMarketplace() and U.browseTypeSelector and U.browseProfessionSelector,
   "filter selectors were not built lazily")
+assert(U.browseTypeSelector.menu:GetName() == "SignalFireMarketplaceTypeDropdown151"
+  and U.browseProfessionSelector.menu:GetName() == "SignalFireMarketplaceProfessionDropdown151"
+  and U.browseTypeSelector.menu ~= U.browseProfessionSelector.menu and dropdownCreates == 2,
+  "Marketplace dropdown menus are not distinct named 3.3.5-compatible frames")
 assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions",
   "filter defaults are incorrect")
 
@@ -221,6 +236,7 @@ assert(U:GetBrowseListingType() == "" and U:GetBrowseProfessionKey() == "" and U
   and U.browseProfessionSelector.label:GetText() == "All Professions", "hidden profile change retained stale selector labels")
 
 local typeButton, professionButton = U.browseTypeSelector, U.browseProfessionSelector
+local typeMenu, professionMenu = typeButton.menu, professionButton.menu
 BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = false; B:SFModulesApply()
 assert(typeButton:GetScript("OnClick") == nil and professionButton:GetScript("OnClick") == nil and U:ActiveScriptCount() == 0,
   "disable retained selector scripts")
@@ -228,6 +244,7 @@ assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessio
   and U:GetAppliedBrowseQuery() == "" and U.browsePage == 1, "disable retained stale filter state or labels")
 BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = true; B:SFModulesApply()
 assert(B:ShowMarketplace() and U.browseTypeSelector == typeButton and U.browseProfessionSelector == professionButton
+  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 2
   and U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
   and U:ActiveScriptCount() == 21, "re-enable duplicated selectors, menus, or scripts")
 print("marketplace browse type/profession filters harness: PASS")

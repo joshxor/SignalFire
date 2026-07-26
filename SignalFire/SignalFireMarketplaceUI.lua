@@ -530,7 +530,7 @@ do
       local browseShell = CreateFrame("Frame", nil, panel)
       browseShell:SetWidth(780); browseShell:SetHeight(352)
       browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
-      local function selector(width, options, onSelect)
+      local function selector(width, menuName, options, onSelect)
         local button = CreateFrame("Button", nil, panel)
         button:SetWidth(width); button:SetHeight(22)
         mktui_backdrop(button, .88)
@@ -542,7 +542,8 @@ do
         button.arrow = button:CreateTexture(nil, "OVERLAY")
         button.arrow:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
         button.arrow:SetWidth(12); button.arrow:SetHeight(12); button.arrow:SetPoint("RIGHT", button, "RIGHT", -3, 0)
-        local menu = CreateFrame("Frame", nil, UIParent, "UIDropDownMenuTemplate")
+        local menu = _G[menuName]
+        if not menu then menu = CreateFrame("Frame", menuName, UIParent, "UIDropDownMenuTemplate") end
         button.menu, menu.ownerSelector = menu, button
         UIDropDownMenu_Initialize(menu, function(self, level)
           if (level or 1) ~= 1 then return end
@@ -559,10 +560,10 @@ do
         end, "MENU")
         return button
       end
-      local typeSelector = selector(106, {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
+      local typeSelector = selector(106, "SignalFireMarketplaceTypeDropdown151", {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
         {key="Crafting Request", text="Crafting Request"}}, function(option) U:ApplyBrowseFilter(option.key, U:GetBrowseProfessionKey(), U.browseProfessionLabel) end)
       typeSelector:SetPoint("TOPLEFT", panel, "TOPLEFT", 96, -112)
-      local professionSelector = selector(128, {{key="", text="All Professions"}}, function(option)
+      local professionSelector = selector(128, "SignalFireMarketplaceProfessionDropdown151", {{key="", text="All Professions"}}, function(option)
         U:ApplyBrowseFilter(U:GetBrowseListingType(), option.key, option.text)
       end)
       professionSelector:SetPoint("LEFT", typeSelector, "RIGHT", 6, 0)
