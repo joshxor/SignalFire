@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c4a"
+    U.generation = "1.5.3-marketplace-phase1c4b"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -62,6 +62,10 @@ do
       return tostring(value or "")
     end
 
+    local function mktui_search_key(value)
+      return string.lower((mktui_text(value):gsub("^%s+", ""):gsub("%s+$", "")))
+    end
+
     local function mktui_price(row)
       if mktui_text(row.priceText) ~= "" then return row.priceText end
       if row.priceMode == "Free" then return "Free" end
@@ -97,8 +101,68 @@ do
       self.browseDirty = true
     end
 
+    function U:ClearBrowseFilteredView()
+      self.browseFilteredView = nil
+      self.browseFilteredGeneration = nil
+      self.browseFilteredProfile = nil
+      self.browseFilteredQuery = nil
+    end
+
+    function U:GetAppliedBrowseQuery()
+      return mktui_search_key(self.browseSearchQuery)
+    end
+
+    function U:BuildBrowseFilteredView()
+      local snapshot = self:BuildBrowseSnapshot()
+      if not snapshot then return nil end
+      local query = self:GetAppliedBrowseQuery()
+      if self.browseFilteredView and self.browseFilteredGeneration == snapshot.generation
+        and self.browseFilteredProfile == self.profile and self.browseFilteredQuery == query then
+        return self.browseFilteredView
+      end
+      local rows = {}
+      if query == "" then
+        for index, row in ipairs(snapshot.rows) do rows[index] = row end
+      else
+        for _, row in ipairs(snapshot.rows) do
+          if string.find(mktui_search_key(row.itemName), query, 1, true)
+            or string.find(mktui_search_key(row.itemKey), query, 1, true)
+            or string.find(mktui_search_key(row.recipeName), query, 1, true)
+            or string.find(mktui_search_key(row.recipeKey), query, 1, true) then
+            table.insert(rows, row)
+          end
+        end
+      end
+      self.browseFilteredView = {generation=snapshot.generation, total=#rows, rows=rows, query=query}
+      self.browseFilteredGeneration, self.browseFilteredProfile, self.browseFilteredQuery = snapshot.generation, self.profile, query
+      return self.browseFilteredView
+    end
+
+    function U:ApplyBrowseSearch()
+      if not self.active then return false end
+      local query = mktui_search_key(self.browseSearchBox and self.browseSearchBox:GetText() or "")
+      if query == "" and self.browseSearchBox then self.browseSearchBox:SetText("") end
+      if query == self:GetAppliedBrowseQuery() then
+        if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
+        return false
+      end
+      self.browseSearchQuery, self.browsePage = query, 1
+      self:ClearBrowseFilteredView()
+      if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
+      return self:RenderBrowse()
+    end
+
+    function U:ClearBrowseSearch()
+      if not self.active or self:GetAppliedBrowseQuery() == "" then return false end
+      self.browseSearchQuery, self.browsePage = "", 1
+      self:ClearBrowseFilteredView()
+      if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
+      return self:RenderBrowse()
+    end
+
     function U:OnMarketplaceDataChanged()
       self:ClearBrowseSnapshot()
+      self:ClearBrowseFilteredView()
       if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" then
         if self.selectedListingId then self:RenderDetail() else self:RenderBrowse() end
       end
@@ -130,7 +194,7 @@ do
         self.browseDirty = true
         return false
       end
-      local snapshot = self:BuildBrowseSnapshot()
+      local snapshot = self:BuildBrowseFilteredView()
       if not snapshot then return false end
       local stamp = tonumber(time and time() or 0) or 0
       local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
@@ -138,7 +202,11 @@ do
       local first = ((self.browsePage - 1) * BROWSE_PAGE_SIZE) + 1
       local last = math.min(snapshot.total, first + BROWSE_PAGE_SIZE - 1)
       local shown = snapshot.total > 0 and (last - first + 1) or 0
-      if shown == 0 then self.browseEmptyState:Show() else self.browseEmptyState:Hide() end
+      if shown == 0 then
+        self.browseEmptyState:SetText(self:GetAppliedBrowseQuery() ~= "" and "No marketplace listings match your search."
+          or "No marketplace listings available.")
+        self.browseEmptyState:Show()
+      else self.browseEmptyState:Hide() end
       self.browseSummary:SetText(snapshot.total > 0 and ("Showing " .. tostring(first) .. "-" .. tostring(last)
         .. " of " .. tostring(snapshot.total)) or "")
       self.browsePageIndicator:SetText("Page " .. tostring(self.browsePage) .. " of " .. tostring(pages))
@@ -151,6 +219,9 @@ do
       else
         self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
       end
+      local searched = self:GetAppliedBrowseQuery() ~= ""
+      self.browseClear:SetAlpha(searched and 1 or .45)
+      self.browseClear:EnableMouse(searched)
       for index, rowControl in ipairs(self.browseRows) do
         local row = snapshot.rows[first + index - 1]
         if row then
@@ -176,7 +247,7 @@ do
 
     function U:ChangeBrowsePage(delta)
       if not self.active or self.selectedTab ~= "Browse" or self.selectedListingId then return false end
-      local snapshot = self:BuildBrowseSnapshot()
+      local snapshot = self:BuildBrowseFilteredView()
       if not snapshot then return false end
       local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
       local target = math.max(1, math.min((tonumber(self.browsePage or 1) or 1) + (tonumber(delta or 0) or 0), pages))
@@ -198,6 +269,10 @@ do
       if self.browsePrevious then self.browsePrevious:Show() end
       if self.browseNext then self.browseNext:Show() end
       if self.browsePageIndicator then self.browsePageIndicator:Show() end
+      if self.browseSearchLabel then self.browseSearchLabel:Show() end
+      if self.browseSearchBox then self.browseSearchBox:Show() end
+      if self.browseSearchButton then self.browseSearchButton:Show() end
+      if self.browseClear then self.browseClear:Show() end
       return self:RenderBrowse()
     end
 
@@ -215,7 +290,8 @@ do
         self.detailSignature = signature
       end
       self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
-      self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide(); self.browseDetail:Show()
+      self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
+      self.browseSearchLabel:Hide(); self.browseSearchBox:Hide(); self.browseSearchButton:Hide(); self.browseClear:Hide(); self.browseDetail:Show()
       self.detailDirty = false
       return true
     end
@@ -233,6 +309,10 @@ do
     local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
+    local function mktui_search_click() if U.active then U:ApplyBrowseSearch() end end
+    local function mktui_clear_click() if U.active then U:ClearBrowseSearch() end end
+    local function mktui_search_enter(box) if U.active then U:ApplyBrowseSearch() else box:ClearFocus() end end
+    local function mktui_search_escape(box) box:ClearFocus() end
 
     function U:GetPanelState()
       local panel = B.marketplacePanel or self.panel
@@ -250,6 +330,10 @@ do
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
+      if self.browseSearchButton and self.browseSearchButton:GetScript("OnClick") then count = count + 1 end
+      if self.browseClear and self.browseClear:GetScript("OnClick") then count = count + 1 end
+      if self.browseSearchBox and self.browseSearchBox:GetScript("OnEnterPressed") then count = count + 1 end
+      if self.browseSearchBox and self.browseSearchBox:GetScript("OnEscapePressed") then count = count + 1 end
       return count
     end
 
@@ -264,6 +348,9 @@ do
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
+      if self.browseSearchButton then self.browseSearchButton:EnableMouse(true); self.browseSearchButton:SetScript("OnClick", mktui_search_click) end
+      if self.browseClear then self.browseClear:SetScript("OnClick", mktui_clear_click) end
+      if self.browseSearchBox then self.browseSearchBox:EnableMouse(true); self.browseSearchBox:SetScript("OnEnterPressed", mktui_search_enter); self.browseSearchBox:SetScript("OnEscapePressed", mktui_search_escape) end
       return true
     end
 
@@ -277,12 +364,16 @@ do
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
+      if self.browseSearchButton then self.browseSearchButton:SetScript("OnClick", nil); self.browseSearchButton:EnableMouse(false) end
+      if self.browseClear then self.browseClear:SetScript("OnClick", nil); self.browseClear:EnableMouse(false) end
+      if self.browseSearchBox then self.browseSearchBox:SetScript("OnEnterPressed", nil); self.browseSearchBox:SetScript("OnEscapePressed", nil); self.browseSearchBox:EnableMouse(false); self.browseSearchBox:ClearFocus() end
       return true
     end
 
     function U:SetTab(tab)
       if not self.active or not self.panel or not self.panel:IsShown() then return false end
       if not PLACEHOLDERS[tab] then tab = "Browse" end
+      if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
       if tab ~= "Browse" or self.selectedListingId then self:ClearSelection() end
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
@@ -295,6 +386,10 @@ do
       else
         self.placeholder:SetText(PLACEHOLDERS[tab])
         self.placeholder:Show()
+        if self.browseSearchLabel then self.browseSearchLabel:Hide() end
+        if self.browseSearchBox then self.browseSearchBox:Hide() end
+        if self.browseSearchButton then self.browseSearchButton:Hide() end
+        if self.browseClear then self.browseClear:Hide() end
       end
       for _, button in ipairs(self.navButtons) do
         local selected = button.marketplaceTab == tab
@@ -345,6 +440,20 @@ do
       local browseShell = CreateFrame("Frame", nil, panel)
       browseShell:SetWidth(780); browseShell:SetHeight(352)
       browseShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
+      self.browseSearchLabel = mktui_font(panel, "Search item or recipe", 10, .9, .76, .32)
+      self.browseSearchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 96, -112)
+      local searchBox = CreateFrame("EditBox", nil, panel)
+      searchBox:SetWidth(190); searchBox:SetHeight(22); searchBox:SetPoint("LEFT", self.browseSearchLabel, "RIGHT", 8, 0)
+      searchBox:SetAutoFocus(false); searchBox:SetFontObject(ChatFontNormal); searchBox:SetTextInsets(5, 5, 2, 2)
+      if searchBox.SetMaxLetters then searchBox:SetMaxLetters(100) end
+      mktui_backdrop(searchBox, .92)
+      local searchButton = CreateFrame("Button", nil, panel)
+      searchButton:SetWidth(52); searchButton:SetHeight(22); searchButton:SetPoint("LEFT", searchBox, "RIGHT", 7, 0)
+      mktui_backdrop(searchButton, .88); searchButton.label = mktui_font(searchButton, "Search", 9, .9, .76, .32); searchButton.label:SetPoint("CENTER")
+      local clearButton = CreateFrame("Button", nil, panel)
+      clearButton:SetWidth(42); clearButton:SetHeight(22); clearButton:SetPoint("LEFT", searchButton, "RIGHT", 6, 0)
+      mktui_backdrop(clearButton, .88); clearButton.label = mktui_font(clearButton, "Clear", 9, .9, .76, .32); clearButton.label:SetPoint("CENTER")
+      self.browseSearchBox, self.browseSearchButton, self.browseClear = searchBox, searchButton, clearButton
       local header = CreateFrame("Frame", nil, browseShell)
       header:SetWidth(780); header:SetHeight(24)
       header:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
@@ -437,6 +546,7 @@ do
 
     function U:Hide()
       self:ClearSelection()
+      if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
       if self.panel then self.panel:Hide() end
       return true
     end
@@ -483,7 +593,10 @@ do
     end
 
     function U:Enable(profile)
-      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot(); self:ClearSelection(); self.browsePage = 1 end
+      if self.profile ~= tostring(profile or "") then
+        self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearSelection(); self.browsePage = 1; self.browseSearchQuery = ""
+        if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
+      end
       self.active = true
       self.profile = tostring(profile or "")
       local ok, err = self:Register()
@@ -500,8 +613,11 @@ do
       self:Unregister()
       self.selectedTab = nil
       self.browsePage = 1
+      self.browseSearchQuery = ""
+      if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
       self.temporary = nil
       self:ClearBrowseSnapshot()
+      self:ClearBrowseFilteredView()
       for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       self.lastDisableReason = tostring(reason or "disabled")
       if wasVisible and B.frame and B.frame:IsShown() and LP.panels.browse then
