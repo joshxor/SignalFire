@@ -23,7 +23,7 @@ local snapshot, signature = U.browseSnapshot, U.browseRows[1].signature
 assert(U:RenderBrowse() == true and U.browseSnapshot == snapshot and U.browseRows[1].signature == signature,
   "unchanged generation did not reuse snapshot/signature")
 for index = 2, 10 do create(index) end
-assert(U.browseRowCount == 8 and U.browseSummary:GetText() == "Showing 8 of 10", "row cap summary is incorrect")
+assert(U.browseRowCount == 8 and U.browseSummary:GetText() == "Showing 1-8 of 10", "row cap summary is incorrect")
 assert(U.browseRows[1].labels[1]:GetText() == "Owner10", "newest listing is not first")
 assert(U.browseRows[1].labels[7]:GetText() == "1g 23s 45c", "fixed price formatting is incorrect")
 for index = 1, 8 do assert(U.browseRows[index]:IsShown(), "expected visible row " .. index) end

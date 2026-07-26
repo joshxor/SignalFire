@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c3"
+    U.generation = "1.5.3-marketplace-phase1c4a"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -27,6 +27,7 @@ do
       {"Player", 88}, {"Type", 92}, {"Profession", 96}, {"Item / Recipe", 150},
       {"Location", 90}, {"Availability", 94}, {"Price / Tip", 86}, {"Expires", 66},
     }
+    local BROWSE_PAGE_SIZE = 8
 
     local function mktui_emit(text)
       if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -132,11 +133,26 @@ do
       local snapshot = self:BuildBrowseSnapshot()
       if not snapshot then return false end
       local stamp = tonumber(time and time() or 0) or 0
-      local shown = math.min(8, snapshot.total)
+      local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
+      self.browsePage = math.max(1, math.min(tonumber(self.browsePage or 1) or 1, pages))
+      local first = ((self.browsePage - 1) * BROWSE_PAGE_SIZE) + 1
+      local last = math.min(snapshot.total, first + BROWSE_PAGE_SIZE - 1)
+      local shown = snapshot.total > 0 and (last - first + 1) or 0
       if shown == 0 then self.browseEmptyState:Show() else self.browseEmptyState:Hide() end
-      self.browseSummary:SetText(snapshot.total > 8 and ("Showing 8 of " .. tostring(snapshot.total)) or "")
+      self.browseSummary:SetText(snapshot.total > 0 and ("Showing " .. tostring(first) .. "-" .. tostring(last)
+        .. " of " .. tostring(snapshot.total)) or "")
+      self.browsePageIndicator:SetText("Page " .. tostring(self.browsePage) .. " of " .. tostring(pages))
+      if pages > 1 then
+        self.browsePrevious:Show(); self.browseNext:Show(); self.browsePageIndicator:Show()
+        self.browsePrevious:EnableMouse(self.browsePage > 1)
+        self.browseNext:EnableMouse(self.browsePage < pages)
+        self.browsePrevious:SetAlpha(self.browsePage > 1 and 1 or .45)
+        self.browseNext:SetAlpha(self.browsePage < pages and 1 or .45)
+      else
+        self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
+      end
       for index, rowControl in ipairs(self.browseRows) do
-        local row = snapshot.rows[index]
+        local row = snapshot.rows[first + index - 1]
         if row then
           local item = row.itemName
           if row.recipeName and row.recipeName ~= "" and row.recipeName ~= row.itemName then item = item .. " / " .. row.recipeName end
@@ -158,6 +174,17 @@ do
       return true
     end
 
+    function U:ChangeBrowsePage(delta)
+      if not self.active or self.selectedTab ~= "Browse" or self.selectedListingId then return false end
+      local snapshot = self:BuildBrowseSnapshot()
+      if not snapshot then return false end
+      local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
+      local target = math.max(1, math.min((tonumber(self.browsePage or 1) or 1) + (tonumber(delta or 0) or 0), pages))
+      if target == self.browsePage then return false end
+      self.browsePage = target
+      return self:RenderBrowse()
+    end
+
     function U:ClearSelection()
       self.selectedListingId, self.detailSignature, self.detailDirty = nil, nil, false
     end
@@ -168,6 +195,9 @@ do
       if self.browseTableHeader then self.browseTableHeader:Show() end
       if self.browseScrollArea then self.browseScrollArea:Show() end
       if self.browseSummary then self.browseSummary:Show() end
+      if self.browsePrevious then self.browsePrevious:Show() end
+      if self.browseNext then self.browseNext:Show() end
+      if self.browsePageIndicator then self.browsePageIndicator:Show() end
       return self:RenderBrowse()
     end
 
@@ -184,7 +214,8 @@ do
         for index, value in ipairs(values) do self.detailValues[index]:SetText(value) end
         self.detailSignature = signature
       end
-      self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide(); self.browseDetail:Show()
+      self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
+      self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide(); self.browseDetail:Show()
       self.detailDirty = false
       return true
     end
@@ -200,6 +231,8 @@ do
 
     local function mktui_row_click(rowControl) if U.active then U:SelectBrowseRow(rowControl) end end
     local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
+    local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
+    local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
 
     function U:GetPanelState()
       local panel = B.marketplacePanel or self.panel
@@ -215,6 +248,8 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
+      if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
+      if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
       return count
     end
 
@@ -227,6 +262,8 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_row_click) end
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
+      if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
+      if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
       return true
     end
 
@@ -238,6 +275,8 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
+      if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
+      if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
       return true
     end
 
@@ -355,6 +394,17 @@ do
       self.browseEmptyState:SetPoint("CENTER", rows, "CENTER", 0, 0)
       self.browseSummary = mktui_font(browseShell, "", 10, .72, .72, .72)
       self.browseSummary:SetPoint("TOPRIGHT", browseShell, "TOPRIGHT", -4, 10)
+      local previous = CreateFrame("Button", nil, browseShell)
+      previous:SetWidth(54); previous:SetHeight(20); previous:SetPoint("TOPLEFT", browseShell, "BOTTOMLEFT", 0, -4)
+      mktui_backdrop(previous, .88)
+      previous.label = mktui_font(previous, "Previous", 9, .9, .76, .32); previous.label:SetPoint("CENTER")
+      local page = mktui_font(browseShell, "", 10, .72, .72, .72)
+      page:SetPoint("LEFT", previous, "RIGHT", 10, 0)
+      local nextButton = CreateFrame("Button", nil, browseShell)
+      nextButton:SetWidth(38); nextButton:SetHeight(20); nextButton:SetPoint("LEFT", page, "RIGHT", 10, 0)
+      mktui_backdrop(nextButton, .88)
+      nextButton.label = mktui_font(nextButton, "Next", 9, .9, .76, .32); nextButton.label:SetPoint("CENTER")
+      self.browsePrevious, self.browseNext, self.browsePageIndicator = previous, nextButton, page
       local detail = CreateFrame("Frame", nil, browseShell)
       detail:SetWidth(780); detail:SetHeight(352)
       detail:SetPoint("TOPLEFT", browseShell, "TOPLEFT", 0, 0)
@@ -433,7 +483,7 @@ do
     end
 
     function U:Enable(profile)
-      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot(); self:ClearSelection() end
+      if self.profile ~= tostring(profile or "") then self:ClearBrowseSnapshot(); self:ClearSelection(); self.browsePage = 1 end
       self.active = true
       self.profile = tostring(profile or "")
       local ok, err = self:Register()
@@ -449,6 +499,7 @@ do
       self:DeactivateScripts()
       self:Unregister()
       self.selectedTab = nil
+      self.browsePage = 1
       self.temporary = nil
       self:ClearBrowseSnapshot()
       for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
