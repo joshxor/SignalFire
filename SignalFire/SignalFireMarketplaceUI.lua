@@ -727,7 +727,7 @@ do
         self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearSelection(); self.browsePage = 1; self.browseSearchQuery = ""
         self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
         if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
-        if self.panel and self.panel:IsShown() then self:SyncBrowseFilterLabels() end
+        self:SyncBrowseFilterLabels()
       end
       self.active = true
       self.profile = tostring(profile or "")
@@ -747,6 +747,7 @@ do
       self.browsePage = 1
       self.browseSearchQuery = ""
       self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
+      self:SyncBrowseFilterLabels()
       if self.browseSearchBox then self.browseSearchBox:SetText(""); self.browseSearchBox:ClearFocus() end
       self.temporary = nil
       self:ClearBrowseSnapshot()
