@@ -116,6 +116,98 @@ end
 browse:GetScript("OnClick")(browse)
 assert(U.browseTypeSelector:IsShown() and U.browseProfessionSelector:IsShown() and U.browsePage == 2, "Browse did not restore selectors and page")
 
+-- Keep all three controls active while exercising the bounded combined view.  Ten
+-- new Offer/Alchemy/Flask rows force a partially filled second filtered page.
+local combined = {}
+for number = 12, 21 do
+  combined[#combined + 1] = add(number, "Crafting Offer", "Alchemy", "Flask Combined " .. number)
+end
+local mutable = add(22, "Crafting Request", "Alchemy", "Flask Mutable")
+typeOptions = options(U.browseTypeSelector); typeOptions[2].func()
+professionOptions = options(U.browseProfessionSelector); professionOptions[2].func()
+U.browseSearchBox:SetText("flask"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
+assert(U.browseFilteredView.total == 10 and U.browseSummary:GetText() == "Showing 1-8 of 10",
+  "combined type, profession, and search page one is incorrect")
+local combinedSnapshot, combinedView, combinedRows = U.browseSnapshot, U.browseFilteredView, U.browseRows
+U.browseNext:GetScript("OnClick")(U.browseNext)
+assert(U.browsePage == 2 and U.browseSummary:GetText() == "Showing 9-10 of 10" and U.browseSnapshot == combinedSnapshot
+  and U.browseFilteredView == combinedView and U.browseRows == combinedRows, "combined page two did not reuse snapshot, view, and rows")
+U.browsePrevious:GetScript("OnClick")(U.browsePrevious)
+assert(U.browsePage == 1 and U.browseSummary:GetText() == "Showing 1-8 of 10" and U.browseSnapshot == combinedSnapshot
+  and U.browseFilteredView == combinedView and U.browseRows == combinedRows, "combined Previous rebuilt cache or row pool")
+U.browseNext:GetScript("OnClick")(U.browseNext)
+local combinedPageTwoId = U.browseRows[1].listingId
+U.browseRows[1]:GetScript("OnMouseUp")(U.browseRows[1])
+assert(U.selectedListingId == combinedPageTwoId, "combined page-two row lost its exact stable id")
+U.detailBack:GetScript("OnClick")(U.detailBack)
+assert(U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask" and U:GetBrowseListingType() == "Crafting Offer"
+  and U:GetBrowseProfessionKey() == "alchemy" and U.browseSummary:GetText() == "Showing 9-10 of 10",
+  "Back did not preserve full combined state")
+U.browseRows[1]:GetScript("OnMouseUp")(U.browseRows[1])
+browse:GetScript("OnClick")(browse)
+assert(U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask" and U:GetBrowseListingType() == "Crafting Offer"
+  and U:GetBrowseProfessionKey() == "alchemy" and U.browseSummary:GetText() == "Showing 9-10 of 10",
+  "Browse navigation did not preserve detail combined state")
+for _, button in ipairs({myListings, create, favorites}) do
+  button:GetScript("OnClick")(button)
+  assert(not U.browseTypeSelector:IsShown() and not U.browseProfessionSelector:IsShown(), "active-state tab did not hide selectors")
+end
+browse:GetScript("OnClick")(browse)
+assert(U.browseTypeSelector:IsShown() and U.browseProfessionSelector:IsShown() and U.browseSearchBox:IsShown()
+  and U.browsePage == 2 and U:GetAppliedBrowseQuery() == "flask" and U:GetBrowseListingType() == "Crafting Offer"
+  and U:GetBrowseProfessionKey() == "alchemy", "Browse did not restore active combined controls")
+
+local beforeMutation = U.browseFilteredView.total
+assert(B:SFMarketplaceEditListing(mutable.id, {listingType="Crafting Offer"}), "mutable listing did not enter combined results")
+assert(U.browseFilteredView.total == beforeMutation + 1, "visible edit did not enter combined results")
+local entered = false
+for _, row in ipairs(U.browseFilteredView.rows) do if row.id == mutable.id then entered = true end end
+assert(entered, "entered listing is absent from the exact combined view")
+assert(B:SFMarketplaceEditListing(mutable.id, {listingType="Crafting Request"}), "mutable listing did not leave combined results")
+assert(U.browseFilteredView.total == beforeMutation, "visible edit did not leave combined results")
+for _, row in ipairs(U.browseFilteredView.rows) do assert(row.id ~= mutable.id, "left listing remains in combined view") end
+
+-- Remove the partially filled final page through the public API; visible Browse
+-- must clamp rather than leave an empty page while retaining the active state.
+U.browsePage = 2; U:RenderBrowse()
+assert(B:SFMarketplaceRemoveListing(U.browseFilteredView.rows[9].id) and B:SFMarketplaceRemoveListing(U.browseFilteredView.rows[9].id),
+  "combined final-page removals failed")
+assert(U.browsePage == 1 and U.browseSummary:GetText() == "Showing 1-8 of 8" and U:GetAppliedBrowseQuery() == "flask"
+  and U:GetBrowseListingType() == "Crafting Offer" and U:GetBrowseProfessionKey() == "alchemy", "removal did not clamp combined page")
+
+local unique = add(23, "Crafting Offer", "Leatherworking", "Flask Unique Profession")
+professionOptions = options(U.browseProfessionSelector)
+local uniqueOption
+for _, option in ipairs(professionOptions) do if option.value == "leatherworking" then uniqueOption = option end end
+assert(uniqueOption, "unique profession option is missing")
+uniqueOption.func()
+assert(U:GetBrowseProfessionKey() == "leatherworking" and U.browseProfessionSelector.label:GetText() == "Leatherworking", "unique profession selection is incorrect")
+assert(B:SFMarketplaceRemoveListing(unique.id), "unique profession removal failed")
+assert(U:GetBrowseProfessionKey() == "" and U.browseProfessionSelector.label:GetText() == "All Professions" and U.browsePage == 1
+  and U:GetBrowseListingType() == "Crafting Offer" and U:GetAppliedBrowseQuery() == "flask", "selected profession invalidation did not preserve other state")
+
+-- Hidden mutations must only dirty Browse; instrument retained labels and row text
+-- to prove no rendering occurs until actual Browse navigation returns.
+local writes = {rows=0, type=0, profession=0, summary=0, page=0}
+local originals = {}
+local function watch(object, key)
+  originals[object] = object.SetText
+  object.SetText = function(self, value) writes[key] = writes[key] + 1; return originals[self](self, value) end
+end
+for _, row in ipairs(U.browseRows) do for _, label in ipairs(row.labels) do watch(label, "rows") end end
+watch(U.browseTypeSelector.label, "type"); watch(U.browseProfessionSelector.label, "profession")
+watch(U.browseSummary, "summary"); watch(U.browsePageIndicator, "page")
+myListings:GetScript("OnClick")(myListings)
+local hidden = add(24, "Crafting Offer", "Alchemy", "Flask Hidden Mutation")
+assert(U.browseDirty or not U.browseFilteredView, "hidden mutation did not invalidate Browse")
+assert(writes.rows == 0 and writes.type == 0 and writes.profession == 0 and writes.summary == 0 and writes.page == 0,
+  "hidden mutation wrote Browse controls")
+for object, original in pairs(originals) do object.SetText = original end
+browse:GetScript("OnClick")(browse)
+local hiddenFound = false
+for _, row in ipairs(U.browseFilteredView.rows) do if row.id == hidden.id then hiddenFound = true end end
+assert(hiddenFound and not U.browseDirty, "returning to Browse did not consume hidden mutation")
+
 -- Profile switching while hidden must reset both retained labels, not merely the
 -- backing session values.
 typeOptions[2].func(); professionOptions = options(U.browseProfessionSelector); professionOptions[2].func()
