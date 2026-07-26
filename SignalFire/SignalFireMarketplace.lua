@@ -43,6 +43,11 @@ do
       if ui and ui.OnMarketplaceDataChanged then ui:OnMarketplaceDataChanged() end
     end
 
+    local function mktui_favorites_changed()
+      local ui = _G.SignalFireMarketplaceUI151
+      if ui and ui.OnMarketplaceFavoritesChanged then ui:OnMarketplaceFavoritesChanged() end
+    end
+
     local function mkt_trim(value)
       local text = tostring(value or "")
       text = string.gsub(text, "[%c]", " ")
@@ -326,7 +331,7 @@ do
       self.runtimeSequence = self.runtimeSequence + 1
       return {
         active=true, profile=profile, store=store,
-        generation=self.runtimeSequence, dataGeneration=1, indexCount=0,
+        generation=self.runtimeSequence, dataGeneration=1, favoritesGeneration=1, indexCount=0,
         byId={}, byOwner={}, byType={}, byProfession={}, byItem={},
         byLocation={}, byAvailability={}, expiration={},
         events=0, filters=0, onUpdate=0, queues=0, views=0,
@@ -499,13 +504,22 @@ do
       local runtime = self.runtime
       id = tostring(id or "")
       if not runtime then return false, "Marketplace module is disabled" end
-      if enabled == false then runtime.store.favoritesById[id] = nil; return true end
+      if enabled == false then
+        if runtime.store.favoritesById[id] == nil then return true end
+        runtime.store.favoritesById[id] = nil
+        runtime.favoritesGeneration = (tonumber(runtime.favoritesGeneration or 0) or 0) + 1
+        mktui_favorites_changed()
+        return true
+      end
       local row = runtime.byId[id]
       if not row then return false, "listing not found" end
+      if runtime.store.favoritesById[id] ~= nil then return true end
       runtime.store.favoritesById[id] = {
         addedAt=mkt_epoch(), owner=row.owner, profession=row.profession,
         itemName=row.itemName, listingType=row.listingType,
       }
+      runtime.favoritesGeneration = (tonumber(runtime.favoritesGeneration or 0) or 0) + 1
+      mktui_favorites_changed()
       return true
     end
 
