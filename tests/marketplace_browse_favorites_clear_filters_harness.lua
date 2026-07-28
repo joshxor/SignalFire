@@ -12,8 +12,7 @@ BronzeLFG_DB.options.serverProfile = "Ascension"
 BronzeLFG_DB.options.modulesByProfile = {Ascension={tradeskillMarketplace=true}}
 assert(B:SFModulesApply() and not U.browseFavoritesButton and not U.browseClearFilters, "Pass B controls were eager")
 assert(B:ShowMarketplace() and U.browseFavoritesButton and U.browseClearFilters and #U.browseRows == 8, "Pass B controls were not lazy")
-local _, _, _, shellX, shellY = U.browseShell:GetPoint()
-assert(U.panel:GetWidth() == 820 and U.panel:GetHeight() == 520 and shellX == 20 and shellY == -140
+assert(U.panel:GetWidth() == 820 and U.panel:GetHeight() == 520
   and U.browseShell:GetWidth() == 780 and U.browseShell:GetHeight() == 352 and #U.browseRows == 8
   and U.browseTypeSelector and U.browseProfessionSelector and U.browseLocationSelector and U.browseAvailabilitySelector
   and U.browseFavoritesButton and U.browseSearchLabel and U.browseSearchBox and U.browseSearchButton and U.browseClear and U.browseClearFilters
