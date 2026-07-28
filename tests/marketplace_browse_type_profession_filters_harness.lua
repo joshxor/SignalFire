@@ -113,6 +113,7 @@ U.browseClear:GetScript("OnClick")(U.browseClear)
 typeOptions[2].func(); professionOptions = options(U.browseProfessionSelector); professionOptions[2].func()
 assert(U.browseFilteredView.total == 3 and U.browseSummary:GetText() == "Showing 1-3 of 3", "filtered page one is incorrect")
 professionOptions[1].func()
+typeOptions[1].func()
 local snapshot, view, rows = U.browseSnapshot, U.browseFilteredView, U.browseRows
 U.browseNext:GetScript("OnClick")(U.browseNext)
 assert(U.browsePage == 2 and U.browseSummary:GetText() == "Showing 9-11 of 11" and U.browseSnapshot == snapshot
