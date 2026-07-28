@@ -65,6 +65,12 @@ jobs:
           node --version
           node tests/verify_marketplace_phase1e_sources.js
 
+      - name: Run Marketplace Phase 1F source verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/verify_marketplace_phase1f_sources.js
+
       - name: Prepare Marketplace test loader
         shell: bash
         run: |
@@ -100,6 +106,7 @@ jobs:
           run_harness tests/marketplace_my_listings_harness.lua
           run_harness tests/marketplace_favorites_harness.lua
           run_harness tests/marketplace_phase1b_lazy_ui_harness.lua
+          run_harness tests/marketplace_local_actions_harness.lua
           exit "$status"
 
       - name: Read version
