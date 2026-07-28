@@ -33,6 +33,10 @@ do
       {"Availability", 88}, {"Price / Tip", 82}, {"Expires", 62},
     }
     local FAVORITES_COLUMNS = {{"Player", 92}, {"Type", 88}, {"Profession", 94}, {"Item / Recipe", 170}, {"Status", 78}, {"Favorited", 72}}
+    local EXPIRATION_LABELS = {
+      [30]="30 minutes", [60]="1 hour", [120]="2 hours",
+      [240]="4 hours", [480]="8 hours", [1440]="24 hours",
+    }
 
     local function mktui_emit(text)
       if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -65,6 +69,14 @@ do
 
     local function mktui_text(value)
       return tostring(value or "")
+    end
+
+    local function mktui_form_value_label(key, value)
+      if key == "expirationMinutes" then
+        if value == "Keep Current" then return value end
+        return EXPIRATION_LABELS[tonumber(value)] or mktui_text(value)
+      end
+      return mktui_text(value)
     end
 
     local function mktui_search_key(value)
@@ -540,7 +552,7 @@ do
       self:UpdateListingPreview()
     end
     function U:SyncFormSelectors()
-      for key, selector in pairs(self.formSelectors or {}) do if selector.label then selector.label:SetText(tostring((self.formValues or {})[key] or "")) end end
+      for key, selector in pairs(self.formSelectors or {}) do if selector.label then selector.label:SetText(mktui_form_value_label(key, (self.formValues or {})[key])) end end
     end
     function U:SetFormSelector(key, value)
       local selector = self.formSelectors and self.formSelectors[key]
@@ -568,7 +580,8 @@ do
     function U:UpdateListingPreview()
       if not self.formShell or not self.formShell:IsShown() then return false end
       local v={}; for k,c in pairs(self.formInputs) do v[k]=mktui_text(c:GetText()) end
-      local text=(v.listingType or "").." | "..(v.profession or "").." | "..(v.itemName or "")..((v.recipeName or "") ~= "" and (" / "..v.recipeName) or "").." | "..(v.materialsPolicy or "").." | "..(v.priceMode or "").." | "..(v.location or "").." | "..(v.availability or "").." | "..(v.expirationMinutes or "")
+      for _,key in ipairs({"listingType","materialsPolicy","priceMode","availability","expirationMinutes"}) do v[key]=(self.formValues or {})[key] end
+      local text=(v.listingType or "").." | "..(v.profession or "").." | "..(v.itemName or "")..((v.recipeName or "") ~= "" and (" / "..v.recipeName) or "").." | "..(v.materialsPolicy or "").." | "..(v.priceMode or "").." | "..(v.location or "").." | "..(v.availability or "").." | "..mktui_form_value_label("expirationMinutes", v.expirationMinutes)
       if self.formPreviewSignature ~= text then self.formPreview:SetText(text); self.formPreviewSignature=text end; return true
     end
     function U:SubmitListingForm()
@@ -1010,7 +1023,7 @@ do
       end
 
       self.sectionTitle = mktui_font(panel, "Browse", 15, 1, .82, .22)
-      self.sectionTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -112)
+      self.sectionTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -92)
       self.placeholder = mktui_font(panel, "", 12, .72, .72, .72)
       self.placeholder:SetPoint("TOPLEFT", self.sectionTitle, "BOTTOMLEFT", 0, -18)
 
@@ -1050,7 +1063,7 @@ do
       end
       local typeSelector = selector(85, "SignalFireMarketplaceTypeDropdown151", {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
         {key="Crafting Request", text="Crafting Request"}}, function(option) U:ApplyBrowseFilter(option.key, U:GetBrowseProfessionKey(), U.browseProfessionLabel) end)
-      typeSelector:SetPoint("TOPLEFT", self.sectionTitle, "BOTTOMLEFT", 0, -8)
+      typeSelector:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -112)
       local professionSelector = selector(96, "SignalFireMarketplaceProfessionDropdown151", {{key="", text="All Professions"}}, function(option)
         U:ApplyBrowseFilter(U:GetBrowseListingType(), option.key, option.text)
       end)
@@ -1136,7 +1149,8 @@ do
       self.browseEmptyState = mktui_font(rows, "No marketplace listings available.", 12, .72, .72, .72)
       self.browseEmptyState:SetPoint("CENTER", rows, "CENTER", 0, 0)
       self.browseSummary = mktui_font(browseShell, "", 10, .72, .72, .72)
-      self.browseSummary:SetPoint("TOPRIGHT", browseShell, "TOPRIGHT", -4, 10)
+      self.browseSummary:SetWidth(300); self.browseSummary:SetHeight(20); self.browseSummary:SetJustifyH("RIGHT")
+      self.browseSummary:SetPoint("TOPRIGHT", browseShell, "BOTTOMRIGHT", 0, -4)
       local previous = CreateFrame("Button", nil, browseShell)
       previous:SetWidth(54); previous:SetHeight(20); previous:SetPoint("TOPLEFT", browseShell, "BOTTOMLEFT", 0, -4)
       mktui_backdrop(previous, .88)
@@ -1255,20 +1269,33 @@ do
 
       local form = CreateFrame("Frame", nil, panel); form:SetWidth(780); form:SetHeight(360); form:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140); mktui_backdrop(form, .72)
       self.formShell, self.formInputs = form, {}
-      local fields = {{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"gold","Gold"},{"silver","Silver"},{"copper","Copper"},{"priceText","Price / Tip"},{"location","Location"},{"notes","Notes"}}
-      for index, field in ipairs(fields) do
-        local col, row = index <= 5 and 0 or 380, (index-1)%5; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*44)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(22); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-30-(row*44)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
+      local fields = {
+        {"profession","Profession",12,-14,-28,330}, {"itemName","Item",12,-58,-72,330},
+        {"recipeName","Recipe",12,-102,-116,330}, {"location","Location",12,-146,-160,330},
+        {"gold","Gold",392,-14,-28,330}, {"silver","Silver",392,-58,-72,330},
+        {"copper","Copper",392,-102,-116,330}, {"priceText","Price / Tip",392,-146,-160,330},
+        {"notes","Notes",12,-190,-204,744},
+      }
+      for _, field in ipairs(fields) do
+        local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",field[3],field[4]); local box=CreateFrame("EditBox",nil,form); box:SetWidth(field[6]); box:SetHeight(22); box:SetPoint("TOPLEFT",form,"TOPLEFT",field[3],field[5]); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
       end
       self.formSelectors={}
-      local selectorDefs={{"listingType","Listing Type","SignalFireMarketplaceFormTypeDropdown151",{"Crafting Offer","Crafting Request"}},{"materialsPolicy","Materials","SignalFireMarketplaceFormMaterialsDropdown151",{"Crafter Provides","Customer Provides","Split Materials","Discuss"}},{"priceMode","Price Mode","SignalFireMarketplaceFormPriceModeDropdown151",{"Fixed Price","Tip","Negotiable","Free"}},{"availability","Availability","SignalFireMarketplaceFormAvailabilityDropdown151",{"Available Now","Today","This Session","Scheduled"}},{"expirationMinutes","Expiration","SignalFireMarketplaceFormExpirationDropdown151",{30,60,120,240,480,1440}}}
-      for index, def in ipairs(selectorDefs) do
-        local key,title,name,options=def[1],def[2],def[3],def[4]; local col,row=index<=3 and 0 or 380,(index-1)%3; local label=mktui_font(form,title,10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-246-(row*44)); local button=CreateFrame("Button",nil,form); button:SetWidth(330); button:SetHeight(22); button:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-260-(row*44)); mktui_backdrop(button,.88); button.label=mktui_font(button,"",10,.9,.76,.32); button.label:SetPoint("LEFT",button,"LEFT",6,0); button.allowed={}; for _,v in ipairs(options) do button.allowed[v]=true end; if key=="expirationMinutes" then button.allowed["Keep Current"]=true end
-        local menu=_G[name] or CreateFrame("Frame",name,UIParent,"UIDropDownMenuTemplate"); button.menu=menu; button.menuInitializer=function(owner,level) if (level or 1)~=1 then return end; for _,v in ipairs(options) do local info=UIDropDownMenu_CreateInfo(); info.text=tostring(v); info.notCheckable=true; info.func=function() U:SetFormSelector(key,v); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end; if key=="expirationMinutes" and U.formMode=="edit" then local info=UIDropDownMenu_CreateInfo(); info.text="Keep Current"; info.notCheckable=true; info.func=function() U:SetFormSelector(key,"Keep Current"); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end end
+      local selectorDefs={
+        {"listingType","Listing Type","SignalFireMarketplaceFormTypeDropdown151",{"Crafting Offer","Crafting Request"},12,-236,-250},
+        {"materialsPolicy","Materials","SignalFireMarketplaceFormMaterialsDropdown151",{"Crafter Provides","Customer Provides","Split Materials","Discuss"},255,-236,-250},
+        {"priceMode","Price Mode","SignalFireMarketplaceFormPriceModeDropdown151",{"Fixed Price","Tip","Negotiable","Free"},498,-236,-250},
+        {"availability","Availability","SignalFireMarketplaceFormAvailabilityDropdown151",{"Available Now","Today","This Session","Scheduled"},12,-280,-294},
+        {"expirationMinutes","Expiration","SignalFireMarketplaceFormExpirationDropdown151",{30,60,120,240,480,1440},255,-280,-294},
+      }
+      for _, def in ipairs(selectorDefs) do
+        local key,title,name,options=def[1],def[2],def[3],def[4]; local label=mktui_font(form,title,10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",def[5],def[6]); local button=CreateFrame("Button",nil,form); button:SetWidth(230); button:SetHeight(22); button:SetPoint("TOPLEFT",form,"TOPLEFT",def[5],def[7]); mktui_backdrop(button,.88); button.label=mktui_font(button,"",10,.9,.76,.32); button.label:SetPoint("LEFT",button,"LEFT",6,0); button.allowed={}; for _,v in ipairs(options) do button.allowed[v]=true end; if key=="expirationMinutes" then button.allowed["Keep Current"]=true end
+        local menu=_G[name] or CreateFrame("Frame",name,UIParent,"UIDropDownMenuTemplate"); button.menu=menu; button.menuInitializer=function(owner,level) if (level or 1)~=1 then return end; for _,v in ipairs(options) do local info=UIDropDownMenu_CreateInfo(); info.text=mktui_form_value_label(key,v); info.notCheckable=true; info.func=function() U:SetFormSelector(key,v); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end; if key=="expirationMinutes" and U.formMode=="edit" then local info=UIDropDownMenu_CreateInfo(); info.text="Keep Current"; info.notCheckable=true; info.func=function() U:SetFormSelector(key,"Keep Current"); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end end
         self.formSelectors[key]=button
       end
-      self.formPreview=mktui_font(form,"",10,.72,.72,.72); self.formPreview:SetPoint("TOPLEFT",form,"TOPLEFT",12,-300)
-      self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",12,-316)
-      local primary=CreateFrame("Button",nil,form); primary:SetWidth(110); primary:SetHeight(24); primary:SetPoint("TOPLEFT",form,"TOPLEFT",12,-326); mktui_backdrop(primary,.88); primary.label=mktui_font(primary,"Create Listing",10,.9,.76,.32); primary.label:SetPoint("CENTER")
+      local previewLabel=mktui_font(form,"Posting Preview",10,.9,.76,.32); previewLabel:SetPoint("TOPLEFT",form,"TOPLEFT",498,-280)
+      self.formPreview=mktui_font(form,"",10,.72,.72,.72); self.formPreview:SetWidth(260); self.formPreview:SetHeight(32); self.formPreview:SetJustifyH("LEFT"); self.formPreview:SetJustifyV("TOP"); self.formPreview:SetPoint("TOPLEFT",form,"TOPLEFT",498,-294)
+      self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetWidth(450); self.formMessage:SetHeight(22); self.formMessage:SetJustifyH("LEFT"); self.formMessage:SetJustifyV("TOP"); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",310,-334)
+      local primary=CreateFrame("Button",nil,form); primary:SetWidth(120); primary:SetHeight(24); primary:SetPoint("TOPLEFT",form,"TOPLEFT",12,-330); mktui_backdrop(primary,.88); primary.label=mktui_font(primary,"Create Listing",10,.9,.76,.32); primary.label:SetPoint("CENTER")
       local cancel=CreateFrame("Button",nil,form); cancel:SetWidth(72); cancel:SetHeight(24); cancel:SetPoint("LEFT",primary,"RIGHT",8,0); mktui_backdrop(cancel,.88); cancel.label=mktui_font(cancel,"Cancel",10,.9,.76,.32); cancel.label:SetPoint("CENTER")
       self.formPrimary,self.formCancel=primary,cancel; form:Hide()
 
