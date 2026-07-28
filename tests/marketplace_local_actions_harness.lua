@@ -242,8 +242,11 @@ M.runtime.store.favoritesById[expired.id] = {
 check(U:SetTab("Favorites"), "Favorites did not reopen")
 U.favoriteSelectedId = expired.id
 check(U:RenderFavoriteDetail(), "unavailable favorite detail did not render")
-check(not U.favoriteWhisper:IsShown() and not U.favoriteLink:IsShown()
-  and U.favoriteAction:IsShown(), "unavailable favorite exposed contact actions")
+check(not U.favoriteWhisper:IsShown(), "unavailable favorite exposed Whisper")
+check(not U.favoriteLink:IsShown(), "unavailable favorite exposed Generate Link")
+check(U.favoriteAction:GetScript("OnClick")
+  and U.favoriteAction.label:GetText() == "Remove Favorite",
+  "unavailable favorite did not retain its Remove Favorite action")
 
 local controls = {
   U.detailWhisper, U.detailFavorite, U.detailLink,
