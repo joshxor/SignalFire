@@ -34,7 +34,7 @@ assert(U.browseTypeSelector.menu:GetName() == "SignalFireMarketplaceTypeDropdown
   and U.browseLocationSelector.menu:GetName() == "SignalFireMarketplaceLocationDropdown151"
   and U.browseAvailabilitySelector.menu:GetName() == "SignalFireMarketplaceAvailabilityDropdown151"
   and U.browseTypeSelector.menu ~= U.browseProfessionSelector.menu and U.browseLocationSelector.menu ~= U.browseAvailabilitySelector.menu
-  and dropdownCreates == 4,
+  and dropdownCreates == 9,
   "Marketplace dropdown menus are not distinct named 3.3.5-compatible frames")
 assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions",
   "filter defaults are incorrect")
@@ -247,7 +247,7 @@ assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessio
   and U:GetAppliedBrowseQuery() == "" and U.browsePage == 1, "disable retained stale filter state or labels")
 BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = true; B:SFModulesApply()
 assert(B:ShowMarketplace() and U.browseTypeSelector == typeButton and U.browseProfessionSelector == professionButton
-  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 4
+  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 9
   and U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
   and U:ActiveScriptCount() == 49, "re-enable duplicated selectors, menus, or scripts")
 print("marketplace browse type/profession filters harness: PASS")
