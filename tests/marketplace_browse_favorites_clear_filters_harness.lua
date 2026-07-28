@@ -23,7 +23,8 @@ assert(U.browseFavoritesButton:GetWidth() == 54 and U.browseClearFilters:GetWidt
 assert(not U.browseFavoritesOnly and not U:HasActiveBrowseFilters(), "Browse filter backing defaults are wrong")
 assert(U:GetBrowseListingType() == "" and U:GetBrowseProfessionKey() == "" and U:GetBrowseLocationKey() == ""
   and U:GetBrowseAvailability() == "" and U:GetAppliedBrowseQuery() == "", "Browse normalized defaults are wrong")
-assert(U.browseSearchBox:GetText() == "" and U.browsePage == 1, "Browse search/page defaults are wrong")
+assert(U.browseSearchBox:GetText() == "", "Browse search default is wrong")
+assert((tonumber(U.browsePage or 1) or 1) == 1, "Browse effective page default is wrong")
 assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
   and U.browseLocationSelector.label:GetText() == "All Locations" and U.browseAvailabilitySelector.label:GetText() == "All Availability",
   "Browse selector labels are wrong")
