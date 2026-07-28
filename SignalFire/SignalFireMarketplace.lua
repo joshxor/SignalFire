@@ -133,6 +133,12 @@ do
       return B.SFModuleIsEnabled and B:SFModuleIsEnabled(self.moduleKey) == true or false
     end
 
+    -- Keep UI ownership checks aligned with listing normalization.  This is
+    -- deliberately an exact, normalized key rather than display-name matching.
+    function M:GetCurrentOwnerKey()
+      return mkt_key(mkt_player())
+    end
+
     function M:ReadProfileStore(profile)
       local root = BronzeLFG_DB and BronzeLFG_DB.marketplace
       if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end

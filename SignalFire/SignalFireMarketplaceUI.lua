@@ -1,4 +1,4 @@
--- SignalFire Tradeskill Marketplace Phase 1B: lazy UI shell only.
+-- SignalFire Tradeskill Marketplace: lazy Browse and owned-listings views.
 do
   local B = _G.BronzeLFG
   local M = _G.SignalFireMarketplace151
@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1c4d"
+    U.generation = "1.5.3-marketplace-phase1d-a"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -28,6 +28,10 @@ do
       {"Location", 90}, {"Availability", 94}, {"Price / Tip", 86}, {"Expires", 66},
     }
     local BROWSE_PAGE_SIZE = 8
+    local MY_LISTINGS_COLUMNS = {
+      {"Type", 86}, {"Profession", 92}, {"Item / Recipe", 160}, {"Location", 88},
+      {"Availability", 88}, {"Price / Tip", 82}, {"Expires", 62},
+    }
 
     local function mktui_emit(text)
       if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -99,6 +103,41 @@ do
       self.browseSnapshotGeneration = nil
       self.browseSnapshotProfile = nil
       self.browseDirty = true
+    end
+
+    function U:ClearMyListingsView()
+      self.myListingsView = nil
+      self.myListingsGeneration = nil
+      self.myListingsProfile = nil
+      self.myListingsOwnerKey = nil
+      self.myListingsDirty = true
+    end
+
+    function U:GetCurrentOwnerKey()
+      return M.GetCurrentOwnerKey and M:GetCurrentOwnerKey() or ""
+    end
+
+    function U:BuildMyListingsView()
+      local runtime = M.runtime
+      if not runtime or not runtime.active or runtime.profile ~= self.profile then return nil end
+      local ownerKey = self:GetCurrentOwnerKey()
+      if ownerKey == "" then return nil end
+      if self.myListingsView and self.myListingsGeneration == runtime.dataGeneration
+        and self.myListingsProfile == runtime.profile and self.myListingsOwnerKey == ownerKey then return self.myListingsView end
+      local bucket, rows, stamp = runtime.byOwner and runtime.byOwner[ownerKey], {}, tonumber(time and time() or 0) or 0
+      -- listingOrder is the canonical creation ordering; walk it newest first and
+      -- use the owner bucket only for exact membership.
+      for index = #(runtime.store.listingOrder or {}), 1, -1 do
+        local id = runtime.store.listingOrder[index]
+        if bucket and bucket[id] then
+          local row = runtime.byId[id]
+          if type(row) == "table" and row.id == id and row.profile == runtime.profile and row.ownerKey == ownerKey
+            and tonumber(row.expiresAt or 0) > stamp then table.insert(rows, row) end
+        end
+      end
+      self.myListingsView = {generation=runtime.dataGeneration, total=#rows, rows=rows, ownerKey=ownerKey}
+      self.myListingsGeneration, self.myListingsProfile, self.myListingsOwnerKey = runtime.dataGeneration, runtime.profile, ownerKey
+      return self.myListingsView
     end
 
     function U:ClearBrowseFilteredView()
@@ -309,8 +348,11 @@ do
     function U:OnMarketplaceDataChanged()
       self:ClearBrowseSnapshot()
       self:ClearBrowseFilteredView()
+      self:ClearMyListingsView()
       if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" then
         if self.selectedListingId then self:RenderDetail() else self:RenderBrowse() end
+      elseif self.active and self:GetPanelState() == "visible" and self.selectedTab == "My Listings" then
+        if self.mySelectedListingId then self:RenderMyListingsDetail() else self:RenderMyListings() end
       end
     end
 
@@ -443,6 +485,84 @@ do
       self.selectedListingId, self.detailSignature, self.detailDirty = nil, nil, false
     end
 
+    function U:ClearMyListingsSelection()
+      self.mySelectedListingId, self.myDetailSignature, self.myDetailDirty, self.myRemoveConfirmId = nil, nil, false, nil
+    end
+
+    function U:RenderMyListings()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "My Listings" then self.myListingsDirty = true; return false end
+      local snapshot = self:BuildMyListingsView()
+      if not snapshot then return false end
+      local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
+      self.myListingsPage = math.max(1, math.min(tonumber(self.myListingsPage or 1) or 1, pages))
+      local first, last = ((self.myListingsPage - 1) * BROWSE_PAGE_SIZE) + 1, math.min(snapshot.total, ((self.myListingsPage - 1) * BROWSE_PAGE_SIZE) + BROWSE_PAGE_SIZE)
+      local shown, stamp = snapshot.total > 0 and (last - first + 1) or 0, tonumber(time and time() or 0) or 0
+      if shown == 0 then self.myListingsEmptyState:Show() else self.myListingsEmptyState:Hide() end
+      self.myListingsSummary:SetText(snapshot.total > 0 and ("Showing " .. tostring(first) .. "-" .. tostring(last) .. " of " .. tostring(snapshot.total)) or "")
+      self.myListingsPageIndicator:SetText("Page " .. tostring(self.myListingsPage) .. " of " .. tostring(pages))
+      if pages > 1 then
+        self.myListingsPrevious:Show(); self.myListingsNext:Show(); self.myListingsPageIndicator:Show()
+        self.myListingsPrevious:EnableMouse(self.myListingsPage > 1); self.myListingsNext:EnableMouse(self.myListingsPage < pages)
+        self.myListingsPrevious:SetAlpha(self.myListingsPage > 1 and 1 or .45); self.myListingsNext:SetAlpha(self.myListingsPage < pages and 1 or .45)
+      else self.myListingsPrevious:Hide(); self.myListingsNext:Hide(); self.myListingsPageIndicator:Hide() end
+      for index, control in ipairs(self.myListingsRows) do
+        local row = snapshot.rows[first + index - 1]
+        if row then
+          local item = row.itemName
+          if row.recipeName and row.recipeName ~= "" and row.recipeName ~= row.itemName then item = item .. " / " .. row.recipeName end
+          local values = {row.listingType, row.profession, item, row.location, row.availability, mktui_price(row), mktui_remaining(row.expiresAt, stamp)}
+          local signature = table.concat(values, "\31")
+          if control.signature ~= signature then for column, value in ipairs(values) do control.labels[column]:SetText(value) end; control.signature = signature end
+          control.listingId = row.id; control:Show()
+        else control:Hide(); control.signature, control.listingId = nil, nil end
+      end
+      self.myListingsRowCount, self.myListingsDirty = shown, false
+      return true
+    end
+
+    function U:ChangeMyListingsPage(delta)
+      if not self.active or self.selectedTab ~= "My Listings" or self.mySelectedListingId then return false end
+      local snapshot = self:BuildMyListingsView(); if not snapshot then return false end
+      local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE))
+      local page = math.max(1, math.min((tonumber(self.myListingsPage or 1) or 1) + (tonumber(delta or 0) or 0), pages))
+      if page == self.myListingsPage then return false end
+      self.myListingsPage = page; return self:RenderMyListings()
+    end
+
+    function U:ShowMyListingsTable()
+      self:ClearMyListingsSelection(); self.myListingsDetail:Hide(); self.myListingsTableHeader:Show(); self.myListingsScrollArea:Show(); self.myListingsSummary:Show()
+      return self:RenderMyListings()
+    end
+
+    function U:RenderMyListingsDetail()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "My Listings" then self.myDetailDirty = true; return false end
+      local id, stamp = tostring(self.mySelectedListingId or ""), tonumber(time and time() or 0) or 0
+      local row, ownerKey = id ~= "" and M:GetListing(id) or nil, self:GetCurrentOwnerKey()
+      if not row or row.id ~= id or row.profile ~= self.profile or row.ownerKey ~= ownerKey or tonumber(row.expiresAt or 0) <= stamp then return self:ShowMyListingsTable() end
+      local values = {row.owner, row.listingType, row.profession, row.itemName, mktui_text(row.recipeName) ~= "" and row.recipeName or "None", mktui_text(row.materialsPolicy), mktui_price(row), row.location, row.availability, mktui_remaining(row.expiresAt, stamp), mktui_text(row.notes) ~= "" and row.notes or "No notes."}
+      local signature = table.concat(values, "\31")
+      if self.myDetailSignature ~= signature then for index, value in ipairs(values) do self.myDetailValues[index]:SetText(value) end; self.myDetailSignature = signature end
+      self.myListingsTableHeader:Hide(); self.myListingsScrollArea:Hide(); self.myListingsSummary:Hide(); self.myListingsPrevious:Hide(); self.myListingsNext:Hide(); self.myListingsPageIndicator:Hide()
+      self.myRemoveButton.label:SetText(self.myRemoveConfirmId == id and "Confirm Remove" or "Remove Listing"); self.myListingsDetail:Show(); self.myDetailDirty = false
+      return true
+    end
+
+    function U:SelectMyListingsRow(control)
+      if not self.active or self.selectedTab ~= "My Listings" or not control or not control:IsShown() then return false end
+      local id, row = tostring(control.listingId or ""), M:GetListing(tostring(control.listingId or ""))
+      if not row or row.id ~= id or row.ownerKey ~= self:GetCurrentOwnerKey() then return false end
+      self:ClearMyListingsSelection(); self.mySelectedListingId = id; return self:RenderMyListingsDetail()
+    end
+
+    function U:RemoveMyListing()
+      local id, row = tostring(self.mySelectedListingId or ""), M:GetListing(tostring(self.mySelectedListingId or ""))
+      if not self.active or self.selectedTab ~= "My Listings" or not row or row.id ~= id or row.ownerKey ~= self:GetCurrentOwnerKey() then self:ShowMyListingsTable(); return false end
+      if self.myRemoveConfirmId ~= id then self.myRemoveConfirmId = id; return self:RenderMyListingsDetail() end
+      local ok = M:RemoveListing(id)
+      self:ClearMyListingsView(); self:ShowMyListingsTable()
+      return ok == true
+    end
+
     function U:ShowBrowseTable()
       self:ClearSelection()
       if self.browseDetail then self.browseDetail:Hide() end
@@ -496,9 +616,14 @@ do
     end
 
     local function mktui_row_click(rowControl) if U.active then U:SelectBrowseRow(rowControl) end end
+    local function mktui_my_row_click(rowControl) if U.active then U:SelectMyListingsRow(rowControl) end end
     local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
+    local function mktui_my_back_click() if U.active then U:ShowMyListingsTable() end end
+    local function mktui_my_remove_click() if U.active then U:RemoveMyListing() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
+    local function mktui_my_previous_click() if U.active then U:ChangeMyListingsPage(-1) end end
+    local function mktui_my_next_click() if U.active then U:ChangeMyListingsPage(1) end end
     local function mktui_search_click() if U.active then U:ApplyBrowseSearch() end end
     local function mktui_clear_click() if U.active then U:ClearBrowseSearch() end end
     local function mktui_search_enter(box) if U.active then U:ApplyBrowseSearch() else box:ClearFocus() end end
@@ -539,9 +664,14 @@ do
         if button:GetScript("OnClick") then count = count + 1 end
       end
       for _, row in ipairs(self.browseRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
+      for _, row in ipairs(self.myListingsRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
+      if self.myDetailBack and self.myDetailBack:GetScript("OnClick") then count = count + 1 end
+      if self.myRemoveButton and self.myRemoveButton:GetScript("OnClick") then count = count + 1 end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
+      if self.myListingsPrevious and self.myListingsPrevious:GetScript("OnClick") then count = count + 1 end
+      if self.myListingsNext and self.myListingsNext:GetScript("OnClick") then count = count + 1 end
       if self.browseSearchButton and self.browseSearchButton:GetScript("OnClick") then count = count + 1 end
       if self.browseClear and self.browseClear:GetScript("OnClick") then count = count + 1 end
       if self.browseTypeSelector and self.browseTypeSelector:GetScript("OnClick") then count = count + 1 end
@@ -563,9 +693,14 @@ do
         button:SetScript("OnClick", mktui_nav_click)
       end
       for _, row in ipairs(self.browseRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_row_click) end
+      for _, row in ipairs(self.myListingsRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_my_row_click) end
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
+      if self.myDetailBack then self.myDetailBack:EnableMouse(true); self.myDetailBack:SetScript("OnClick", mktui_my_back_click) end
+      if self.myRemoveButton then self.myRemoveButton:EnableMouse(true); self.myRemoveButton:SetScript("OnClick", mktui_my_remove_click) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
+      if self.myListingsPrevious then self.myListingsPrevious:EnableMouse(true); self.myListingsPrevious:SetScript("OnClick", mktui_my_previous_click) end
+      if self.myListingsNext then self.myListingsNext:EnableMouse(true); self.myListingsNext:SetScript("OnClick", mktui_my_next_click) end
       if self.browseSearchButton then self.browseSearchButton:EnableMouse(true); self.browseSearchButton:SetScript("OnClick", mktui_search_click) end
       if self.browseClear then self.browseClear:SetScript("OnClick", mktui_clear_click) end
       if self.browseTypeSelector then self.browseTypeSelector:EnableMouse(true); self.browseTypeSelector:SetScript("OnClick", mktui_type_click) end
@@ -585,9 +720,14 @@ do
         button:EnableMouse(false)
       end
       for _, row in ipairs(self.browseRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
+      for _, row in ipairs(self.myListingsRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
+      if self.myDetailBack then self.myDetailBack:SetScript("OnClick", nil); self.myDetailBack:EnableMouse(false) end
+      if self.myRemoveButton then self.myRemoveButton:SetScript("OnClick", nil); self.myRemoveButton:EnableMouse(false) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
+      if self.myListingsPrevious then self.myListingsPrevious:SetScript("OnClick", nil); self.myListingsPrevious:EnableMouse(false) end
+      if self.myListingsNext then self.myListingsNext:SetScript("OnClick", nil); self.myListingsNext:EnableMouse(false) end
       if self.browseSearchButton then self.browseSearchButton:SetScript("OnClick", nil); self.browseSearchButton:EnableMouse(false) end
       if self.browseClear then self.browseClear:SetScript("OnClick", nil); self.browseClear:EnableMouse(false) end
       if self.browseTypeSelector then self.browseTypeSelector:SetScript("OnClick", nil); self.browseTypeSelector:EnableMouse(false) end
@@ -607,13 +747,18 @@ do
       if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
       self:CloseBrowseSelectors()
       if tab ~= "Browse" or self.selectedListingId then self:ClearSelection() end
+      if tab ~= "My Listings" or self.mySelectedListingId then self:ClearMyListingsSelection() end
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
       local browse = tab == "Browse"
       if self.browseShell then
         if browse then self.browseShell:Show() else self.browseShell:Hide() end
       end
+      local mine = tab == "My Listings"
+      if self.myListingsShell then if mine then self.myListingsShell:Show() else self.myListingsShell:Hide() end end
       if browse then
+        self.placeholder:Hide()
+      elseif mine then
         self.placeholder:Hide()
       else
         self.placeholder:SetText(PLACEHOLDERS[tab])
@@ -639,7 +784,7 @@ do
           selected and .48 or .62)
       end
       self.refreshCount = self.refreshCount + 1
-      if browse then self:ShowBrowseTable() end
+      if browse then self:ShowBrowseTable() elseif mine then self:ShowMyListingsTable() end
       return true
     end
 
@@ -832,6 +977,58 @@ do
       detail:Hide(); self.browseDetail = detail
       self.browseShell = browseShell
 
+      local myShell = CreateFrame("Frame", nil, panel)
+      myShell:SetWidth(780); myShell:SetHeight(352); myShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
+      local myHeader = CreateFrame("Frame", nil, myShell)
+      myHeader:SetWidth(780); myHeader:SetHeight(24); myHeader:SetPoint("TOPLEFT", myShell, "TOPLEFT", 0, 0); mktui_backdrop(myHeader, .90)
+      self.myListingsTableHeader, self.myListingsTableHeaders = myHeader, {}
+      local myX = 8
+      for _, column in ipairs(MY_LISTINGS_COLUMNS) do
+        local label = mktui_font(myHeader, column[1], 10, .9, .76, .32); label:SetWidth(column[2]); label:SetJustifyH("LEFT"); label:SetPoint("LEFT", myHeader, "LEFT", myX, 0)
+        table.insert(self.myListingsTableHeaders, label); myX = myX + column[2]
+      end
+      local myScroll = CreateFrame("ScrollFrame", nil, myShell)
+      myScroll:SetWidth(780); myScroll:SetHeight(320); myScroll:SetPoint("TOPLEFT", myHeader, "BOTTOMLEFT", 0, -4); mktui_backdrop(myScroll, .72)
+      local myRowsArea = CreateFrame("Frame", nil, myScroll)
+      myRowsArea:SetWidth(760); myRowsArea:SetHeight(320); myRowsArea:SetPoint("TOPLEFT", myScroll, "TOPLEFT", 8, -8); myScroll:SetScrollChild(myRowsArea)
+      self.myListingsScrollArea, self.myListingsRowsArea, self.myListingsRows = myScroll, myRowsArea, {}
+      local myY = -4
+      for index = 1, 8 do
+        local row = CreateFrame("Button", nil, myRowsArea)
+        row:SetWidth(744); row:SetHeight(32); row:SetPoint("TOPLEFT", myRowsArea, "TOPLEFT", 0, myY); mktui_backdrop(row, .55); row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        row.labels, row.signature = {}, nil
+        local columnX = 8
+        for _, column in ipairs(MY_LISTINGS_COLUMNS) do
+          local label = mktui_font(row, "", 10, .86, .82, .68); label:SetWidth(column[2]); label:SetJustifyH("LEFT"); label:SetPoint("LEFT", row, "LEFT", columnX, 0)
+          table.insert(row.labels, label); columnX = columnX + column[2]
+        end
+        row:Hide(); table.insert(self.myListingsRows, row); myY = myY - 36
+      end
+      self.myListingsEmptyState = mktui_font(myRowsArea, "No active listings for this character.", 12, .72, .72, .72)
+      self.myListingsEmptyState:SetPoint("CENTER", myRowsArea, "CENTER", 0, 0)
+      self.myListingsSummary = mktui_font(myShell, "", 10, .72, .72, .72); self.myListingsSummary:SetPoint("TOPRIGHT", myShell, "TOPRIGHT", -4, 10)
+      local myPrevious = CreateFrame("Button", nil, myShell)
+      myPrevious:SetWidth(54); myPrevious:SetHeight(20); myPrevious:SetPoint("TOPLEFT", myShell, "BOTTOMLEFT", 0, -4); mktui_backdrop(myPrevious, .88); myPrevious.label = mktui_font(myPrevious, "Previous", 9, .9, .76, .32); myPrevious.label:SetPoint("CENTER")
+      local myPage = mktui_font(myShell, "", 10, .72, .72, .72); myPage:SetPoint("LEFT", myPrevious, "RIGHT", 10, 0)
+      local myNext = CreateFrame("Button", nil, myShell)
+      myNext:SetWidth(38); myNext:SetHeight(20); myNext:SetPoint("LEFT", myPage, "RIGHT", 10, 0); mktui_backdrop(myNext, .88); myNext.label = mktui_font(myNext, "Next", 9, .9, .76, .32); myNext.label:SetPoint("CENTER")
+      self.myListingsPrevious, self.myListingsNext, self.myListingsPageIndicator = myPrevious, myNext, myPage
+      local myDetail = CreateFrame("Frame", nil, myShell)
+      myDetail:SetWidth(780); myDetail:SetHeight(352); myDetail:SetPoint("TOPLEFT", myShell, "TOPLEFT", 0, 0); mktui_backdrop(myDetail, .72)
+      local myBack = CreateFrame("Button", nil, myDetail)
+      myBack:SetWidth(116); myBack:SetHeight(24); myBack:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 10, -10); mktui_backdrop(myBack, .88); myBack.label = mktui_font(myBack, "Back to Listings", 10, .9, .76, .32); myBack.label:SetPoint("CENTER")
+      local remove = CreateFrame("Button", nil, myDetail)
+      remove:SetWidth(116); remove:SetHeight(24); remove:SetPoint("LEFT", myBack, "RIGHT", 8, 0); mktui_backdrop(remove, .88); remove.label = mktui_font(remove, "Remove Listing", 10, .9, .76, .32); remove.label:SetPoint("CENTER")
+      self.myDetailBack, self.myRemoveButton, self.myDetailValues = myBack, remove, {}
+      for index, field in ipairs(fields) do
+        local column, y = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43)
+        local name = mktui_font(myDetail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetJustifyH("LEFT"); name:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 12 + column, y)
+        local value = mktui_font(myDetail, "", 11, .86, .82, .68); value:SetWidth(250); value:SetHeight(38); value:SetJustifyH("LEFT"); value:SetJustifyV("TOP"); value:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 120 + column, y)
+        if value.SetNonSpaceWrap then value:SetNonSpaceWrap(false) end
+        self.myDetailValues[index] = value
+      end
+      myDetail:Hide(); myShell:Hide(); self.myListingsDetail, self.myListingsShell, self.myListingsPage = myDetail, myShell, 1
+
       self.panel = panel
       B.marketplacePanel = panel
       self.buildCount = self.buildCount + 1
@@ -841,6 +1038,7 @@ do
 
     function U:Hide()
       self:ClearSelection()
+      self:ClearMyListingsSelection()
       if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
       self:CloseBrowseSelectors()
       if self.panel then self.panel:Hide() end
@@ -891,7 +1089,7 @@ do
     function U:Enable(profile)
       self:CloseBrowseSelectors()
       if self.profile ~= tostring(profile or "") then
-        self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearSelection(); self.browsePage = 1; self.browseSearchQuery = ""
+        self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearMyListingsView(); self:ClearSelection(); self:ClearMyListingsSelection(); self.browsePage = 1; self.myListingsPage = 1; self.browseSearchQuery = ""
         self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
         self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
         self.browseFavoritesOnly = false
@@ -914,6 +1112,7 @@ do
       self:Unregister()
       self.selectedTab = nil
       self.browsePage = 1
+      self.myListingsPage = 1
       self.browseSearchQuery = ""
       self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
       self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
@@ -923,7 +1122,9 @@ do
       self.temporary = nil
       self:ClearBrowseSnapshot()
       self:ClearBrowseFilteredView()
+      self:ClearMyListingsView()
       for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
+      for _, row in ipairs(self.myListingsRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       self.lastDisableReason = tostring(reason or "disabled")
       if wasVisible and B.frame and B.frame:IsShown() and LP.panels.browse then
         LP:Open("browse", "marketplace-disable")
