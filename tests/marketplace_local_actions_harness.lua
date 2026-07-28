@@ -297,6 +297,10 @@ check(U:RenderDetail(), "Browse detail did not rerender")
 check(U.detailFavorite.label:GetText() == "Favorite", "favorite label began incorrectly")
 local dataGeneration = M.runtime.dataGeneration
 local favoritesGeneration = M.runtime.favoritesGeneration
+local favoriteBrowseState = {
+  U.browseSearchQuery, U.browseListingType, U.browseProfessionKey,
+  U.browseLocationKey, U.browseAvailability, U.browseFavoritesOnly, U.browsePage,
+}
 U.detailFavorite:GetScript("OnClick")(U.detailFavorite)
 check(M:IsFavorite(other.id), "Browse favorite action did not add the favorite")
 check(M.runtime.dataGeneration == dataGeneration
@@ -305,10 +309,14 @@ check(M.runtime.dataGeneration == dataGeneration
 check(U.detailFavorite.label:GetText() == "Unfavorite", "favorite add label did not refresh")
 check(U.selectedListingId == other.id and U.browseDetail:IsShown(),
   "favorite add closed or changed Browse detail")
-check(U.browseSearchQuery == state[1] and U.browseListingType == state[2]
-  and U.browseProfessionKey == state[3] and U.browseLocationKey == state[4]
-  and U.browseAvailability == state[5] and U.browseFavoritesOnly == false
-  and U.browsePage == state[7], "favorite add changed Browse search/filter/page state")
+check(U.browseSearchQuery == favoriteBrowseState[1]
+  and U.browseListingType == favoriteBrowseState[2]
+  and U.browseProfessionKey == favoriteBrowseState[3]
+  and U.browseLocationKey == favoriteBrowseState[4]
+  and U.browseAvailability == favoriteBrowseState[5]
+  and U.browseFavoritesOnly == favoriteBrowseState[6]
+  and U.browsePage == favoriteBrowseState[7],
+  "favorite add changed Browse search/filter/page state")
 check(M:IsFavorite(unrelatedFavorite), "favorite add changed an unrelated favorite")
 U.detailFavorite:GetScript("OnClick")(U.detailFavorite)
 check(not M:IsFavorite(other.id), "Browse favorite action did not remove the favorite")
