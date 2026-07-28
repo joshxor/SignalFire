@@ -3,8 +3,8 @@ local addonLoader = assert(arg and arg[2], "addon loader path is required")
 dofile(addonLoader)
 
 local B = assert(BronzeLFG, "BronzeLFG was not loaded")
-local M = assert(B.Marketplace, "Marketplace core was not loaded")
-local U = assert(B.MarketplaceUI, "Marketplace UI was not loaded")
+local M = assert(_G.SignalFireMarketplace151, "Marketplace core was not loaded")
+local U = assert(_G.SignalFireMarketplaceUI151, "Marketplace UI was not loaded")
 
 local function check(value, message)
   if not value then error(message, 2) end

@@ -116,4 +116,4 @@ for (const file of countHarnesses) {
   }
 }
 
-console.log("Marketplace Phase 1F source verification passed");
+console.log("marketplace phase1f source verification: PASS");
