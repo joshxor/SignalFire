@@ -99,5 +99,5 @@ local favoritesButton, clearFilters = U.browseFavoritesButton, U.browseClearFilt
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = false; B:SFModulesApply()
 assert(U:ActiveScriptCount() == 0 and favoritesButton:GetScript("OnClick") == nil and clearFilters:GetScript("OnClick") == nil, "disable retained Pass B scripts")
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true; B:SFModulesApply()
-assert(B:ShowMarketplace() and U.browseFavoritesButton == favoritesButton and U.browseClearFilters == clearFilters and U:ActiveScriptCount() == 25, "re-enable duplicated Pass B controls")
+assert(B:ShowMarketplace() and U.browseFavoritesButton == favoritesButton and U.browseClearFilters == clearFilters and U:ActiveScriptCount() == 49, "re-enable duplicated Marketplace controls")
 print("marketplace browse favorites/clear filters harness: PASS")

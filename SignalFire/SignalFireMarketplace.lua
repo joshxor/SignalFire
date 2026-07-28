@@ -436,7 +436,11 @@ do
         self.expirationRemovals = self.expirationRemovals + #expired
         mktui_data_changed()
       end
-      self:PruneStaleFavorites(runtime.store, stamp)
+      local prunedFavorites = self:PruneStaleFavorites(runtime.store, stamp)
+      if prunedFavorites > 0 then
+        runtime.favoritesGeneration = runtime.favoritesGeneration + 1
+        mktui_favorites_changed()
+      end
       self:ScheduleExpiration()
       return #expired
     end

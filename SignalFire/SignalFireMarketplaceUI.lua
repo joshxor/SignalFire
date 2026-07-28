@@ -7,7 +7,7 @@ do
     local U = _G.SignalFireMarketplaceUI151 or {}
     _G.SignalFireMarketplaceUI151 = U
 
-    U.generation = "1.5.3-marketplace-phase1d-a"
+    U.generation = "1.5.3-marketplace-phase1d"
     U.panelKey = "marketplace"
     U.buildCount = tonumber(U.buildCount or 0) or 0
     U.openCount = tonumber(U.openCount or 0) or 0
@@ -32,6 +32,7 @@ do
       {"Type", 86}, {"Profession", 92}, {"Item / Recipe", 160}, {"Location", 88},
       {"Availability", 88}, {"Price / Tip", 82}, {"Expires", 62},
     }
+    local FAVORITES_COLUMNS = {{"Player", 92}, {"Type", 88}, {"Profession", 94}, {"Item / Recipe", 170}, {"Status", 78}, {"Favorited", 72}}
 
     local function mktui_emit(text)
       if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -111,6 +112,27 @@ do
       self.myListingsProfile = nil
       self.myListingsOwnerKey = nil
       self.myListingsDirty = true
+    end
+
+    function U:ClearFavoritesView()
+      self.favoritesView, self.favoritesGeneration, self.favoritesDataGeneration, self.favoritesProfile, self.favoritesDirty = nil, nil, nil, nil, true
+    end
+
+    function U:BuildFavoritesView()
+      local runtime = M.runtime
+      if not runtime or not runtime.active or runtime.profile ~= self.profile then return nil end
+      if self.favoritesView and self.favoritesGeneration == runtime.favoritesGeneration and self.favoritesDataGeneration == runtime.dataGeneration and self.favoritesProfile == runtime.profile then return self.favoritesView end
+      local rows, stamp = {}, tonumber(time and time() or 0) or 0
+      for id, summary in pairs(runtime.store.favoritesById or {}) do
+        if type(summary) == "table" then
+          local active = runtime.byId[id]
+          local row = active and tonumber(active.expiresAt or 0) > stamp and active or nil
+          table.insert(rows, {id=id, active=row ~= nil, row=row, summary=summary, addedAt=tonumber(summary.addedAt or 0) or 0})
+        end
+      end
+      table.sort(rows, function(a, b) if a.addedAt == b.addedAt then return a.id < b.id end return a.addedAt > b.addedAt end)
+      self.favoritesView = {total=#rows, rows=rows}; self.favoritesGeneration, self.favoritesDataGeneration, self.favoritesProfile = runtime.favoritesGeneration, runtime.dataGeneration, runtime.profile
+      return self.favoritesView
     end
 
     function U:GetCurrentOwnerKey()
@@ -349,18 +371,24 @@ do
       self:ClearBrowseSnapshot()
       self:ClearBrowseFilteredView()
       self:ClearMyListingsView()
+      self:ClearFavoritesView()
       if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" then
         if self.selectedListingId then self:RenderDetail() else self:RenderBrowse() end
       elseif self.active and self:GetPanelState() == "visible" and self.selectedTab == "My Listings" then
         if self.mySelectedListingId then self:RenderMyListingsDetail() else self:RenderMyListings() end
+      elseif self.active and self:GetPanelState() == "visible" and self.selectedTab == "Favorites" then
+        if self.favoriteSelectedId then self:RenderFavoriteDetail() else self:RenderFavorites() end
       end
     end
 
     function U:OnMarketplaceFavoritesChanged()
-      if not self.browseFavoritesOnly then return false end
-      self:ClearBrowseFilteredView()
+      self:ClearFavoritesView()
+      if self.browseFavoritesOnly then self:ClearBrowseFilteredView() end
       if self.active and self:GetPanelState() == "visible" and self.selectedTab == "Browse" and not self.selectedListingId then
-        return self:RenderBrowse()
+        if self.browseFavoritesOnly then return self:RenderBrowse() end
+      elseif self.active and self:GetPanelState() == "visible" and self.selectedTab == "Favorites" then
+        if self.favoriteSelectedId then return self:RenderFavoriteDetail() end
+        return self:RenderFavorites()
       end
       self.browseDirty = true
       return false
@@ -487,6 +515,56 @@ do
 
     function U:ClearMyListingsSelection()
       self.mySelectedListingId, self.myDetailSignature, self.myDetailDirty, self.myRemoveConfirmId = nil, nil, false, nil
+    end
+
+    function U:ClearFavoriteSelection() self.favoriteSelectedId, self.favoriteDetailSignature, self.favoriteDetailDirty = nil, nil, false end
+
+    function U:RenderFavorites()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Favorites" then self.favoritesDirty = true; return false end
+      local snapshot = self:BuildFavoritesView(); if not snapshot then return false end
+      local pages = math.max(1, math.ceil(snapshot.total / BROWSE_PAGE_SIZE)); self.favoritesPage = math.max(1, math.min(tonumber(self.favoritesPage or 1) or 1, pages))
+      local first, last = ((self.favoritesPage - 1) * BROWSE_PAGE_SIZE) + 1, math.min(snapshot.total, ((self.favoritesPage - 1) * BROWSE_PAGE_SIZE) + BROWSE_PAGE_SIZE)
+      local shown = snapshot.total > 0 and last - first + 1 or 0
+      if shown == 0 then self.favoritesEmptyState:Show() else self.favoritesEmptyState:Hide() end
+      self.favoritesSummary:SetText(snapshot.total > 0 and ("Showing " .. first .. "-" .. last .. " of " .. snapshot.total) or ""); self.favoritesPageIndicator:SetText("Page " .. self.favoritesPage .. " of " .. pages)
+      if pages > 1 then self.favoritesPrevious:Show(); self.favoritesNext:Show(); self.favoritesPageIndicator:Show() else self.favoritesPrevious:Hide(); self.favoritesNext:Hide(); self.favoritesPageIndicator:Hide() end
+      for index, control in ipairs(self.favoritesRows) do
+        local favorite = snapshot.rows[first + index - 1]
+        if favorite then
+          local source, status = favorite.row or favorite.summary, favorite.active and "Active" or "Unavailable"
+          local item = source.itemName or ""; if favorite.row and favorite.row.recipeName and favorite.row.recipeName ~= "" and favorite.row.recipeName ~= item then item = item .. " / " .. favorite.row.recipeName end
+          local values = {source.owner or "", source.listingType or "", source.profession or "", item, status, tostring(favorite.addedAt)}; local signature = table.concat(values, "\31")
+          if control.signature ~= signature then for column, value in ipairs(values) do control.labels[column]:SetText(value) end; control.signature = signature end
+          control.favoriteId = favorite.id; control:Show()
+        else control:Hide(); control.signature, control.favoriteId = nil, nil end
+      end
+      self.favoritesRowCount, self.favoritesDirty = shown, false; return true
+    end
+
+    function U:ShowFavoritesTable()
+      self:ClearFavoriteSelection(); self.favoritesDetail:Hide(); self.favoritesTableHeader:Show(); self.favoritesScrollArea:Show(); self.favoritesSummary:Show(); return self:RenderFavorites()
+    end
+    function U:ChangeFavoritesPage(delta)
+      local view = self:BuildFavoritesView(); if not view or self.favoriteSelectedId then return false end
+      local pages = math.max(1, math.ceil(view.total / BROWSE_PAGE_SIZE)); self.favoritesPage = math.max(1, math.min((self.favoritesPage or 1) + (delta or 0), pages)); return self:RenderFavorites()
+    end
+    function U:RenderFavoriteDetail()
+      if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Favorites" then self.favoriteDetailDirty = true; return false end
+      local id, runtime = tostring(self.favoriteSelectedId or ""), M.runtime; local summary = runtime and runtime.store.favoritesById[id]
+      if type(summary) ~= "table" then return self:ShowFavoritesTable() end
+      local row = runtime.byId[id]; if row and tonumber(row.expiresAt or 0) <= (time and time() or 0) then row = nil end
+      local values = row and {row.owner,row.listingType,row.profession,row.itemName,row.recipeName ~= "" and row.recipeName or "None",row.materialsPolicy,mktui_price(row),row.location,row.availability,mktui_remaining(row.expiresAt,time()),row.notes ~= "" and row.notes or "No notes.","Active"}
+        or {summary.owner,summary.listingType,summary.profession,summary.itemName,"","","","","","","This listing is no longer available.","Unavailable"}
+      local signature = table.concat(values, "\31"); if self.favoriteDetailSignature ~= signature then for index, value in ipairs(values) do self.favoriteDetailValues[index]:SetText(value) end; self.favoriteDetailSignature = signature end
+      self.favoriteAction.label:SetText(row and "Unfavorite" or "Remove Favorite"); self.favoritesTableHeader:Hide(); self.favoritesScrollArea:Hide(); self.favoritesSummary:Hide(); self.favoritesPrevious:Hide(); self.favoritesNext:Hide(); self.favoritesPageIndicator:Hide(); self.favoritesDetail:Show(); return true
+    end
+    function U:SelectFavoriteRow(control)
+      local id = control and tostring(control.favoriteId or "") or ""; if not self.active or self.selectedTab ~= "Favorites" or id == "" or not M:IsFavorite(id) then return false end
+      self:ClearFavoriteSelection(); self.favoriteSelectedId = id; return self:RenderFavoriteDetail()
+    end
+    function U:RemoveFavorite()
+      local id = tostring(self.favoriteSelectedId or ""); if not M:IsFavorite(id) then return self:ShowFavoritesTable() end
+      local ok = M:SetFavorite(id, false); self:ClearFavoritesView(); self:ShowFavoritesTable(); return ok == true
     end
 
     function U:RenderMyListings()
@@ -620,10 +698,15 @@ do
     local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
     local function mktui_my_back_click() if U.active then U:ShowMyListingsTable() end end
     local function mktui_my_remove_click() if U.active then U:RemoveMyListing() end end
+    local function mktui_favorite_row_click(row) if U.active then U:SelectFavoriteRow(row) end end
+    local function mktui_favorite_back_click() if U.active then U:ShowFavoritesTable() end end
+    local function mktui_favorite_action_click() if U.active then U:RemoveFavorite() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
     local function mktui_my_previous_click() if U.active then U:ChangeMyListingsPage(-1) end end
     local function mktui_my_next_click() if U.active then U:ChangeMyListingsPage(1) end end
+    local function mktui_favorite_previous_click() if U.active then U:ChangeFavoritesPage(-1) end end
+    local function mktui_favorite_next_click() if U.active then U:ChangeFavoritesPage(1) end end
     local function mktui_search_click() if U.active then U:ApplyBrowseSearch() end end
     local function mktui_clear_click() if U.active then U:ClearBrowseSearch() end end
     local function mktui_search_enter(box) if U.active then U:ApplyBrowseSearch() else box:ClearFocus() end end
@@ -665,13 +748,18 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       for _, row in ipairs(self.myListingsRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
+      for _, row in ipairs(self.favoritesRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
       if self.myDetailBack and self.myDetailBack:GetScript("OnClick") then count = count + 1 end
       if self.myRemoveButton and self.myRemoveButton:GetScript("OnClick") then count = count + 1 end
+      if self.favoriteBack and self.favoriteBack:GetScript("OnClick") then count = count + 1 end
+      if self.favoriteAction and self.favoriteAction:GetScript("OnClick") then count = count + 1 end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
       if self.myListingsPrevious and self.myListingsPrevious:GetScript("OnClick") then count = count + 1 end
       if self.myListingsNext and self.myListingsNext:GetScript("OnClick") then count = count + 1 end
+      if self.favoritesPrevious and self.favoritesPrevious:GetScript("OnClick") then count = count + 1 end
+      if self.favoritesNext and self.favoritesNext:GetScript("OnClick") then count = count + 1 end
       if self.browseSearchButton and self.browseSearchButton:GetScript("OnClick") then count = count + 1 end
       if self.browseClear and self.browseClear:GetScript("OnClick") then count = count + 1 end
       if self.browseTypeSelector and self.browseTypeSelector:GetScript("OnClick") then count = count + 1 end
@@ -694,13 +782,18 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_row_click) end
       for _, row in ipairs(self.myListingsRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_my_row_click) end
+      for _, row in ipairs(self.favoritesRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_favorite_row_click) end
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
       if self.myDetailBack then self.myDetailBack:EnableMouse(true); self.myDetailBack:SetScript("OnClick", mktui_my_back_click) end
       if self.myRemoveButton then self.myRemoveButton:EnableMouse(true); self.myRemoveButton:SetScript("OnClick", mktui_my_remove_click) end
+      if self.favoriteBack then self.favoriteBack:EnableMouse(true); self.favoriteBack:SetScript("OnClick", mktui_favorite_back_click) end
+      if self.favoriteAction then self.favoriteAction:EnableMouse(true); self.favoriteAction:SetScript("OnClick", mktui_favorite_action_click) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
       if self.myListingsPrevious then self.myListingsPrevious:EnableMouse(true); self.myListingsPrevious:SetScript("OnClick", mktui_my_previous_click) end
       if self.myListingsNext then self.myListingsNext:EnableMouse(true); self.myListingsNext:SetScript("OnClick", mktui_my_next_click) end
+      if self.favoritesPrevious then self.favoritesPrevious:EnableMouse(true); self.favoritesPrevious:SetScript("OnClick", mktui_favorite_previous_click) end
+      if self.favoritesNext then self.favoritesNext:EnableMouse(true); self.favoritesNext:SetScript("OnClick", mktui_favorite_next_click) end
       if self.browseSearchButton then self.browseSearchButton:EnableMouse(true); self.browseSearchButton:SetScript("OnClick", mktui_search_click) end
       if self.browseClear then self.browseClear:SetScript("OnClick", mktui_clear_click) end
       if self.browseTypeSelector then self.browseTypeSelector:EnableMouse(true); self.browseTypeSelector:SetScript("OnClick", mktui_type_click) end
@@ -721,13 +814,18 @@ do
       end
       for _, row in ipairs(self.browseRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       for _, row in ipairs(self.myListingsRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
+      for _, row in ipairs(self.favoritesRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
       if self.myDetailBack then self.myDetailBack:SetScript("OnClick", nil); self.myDetailBack:EnableMouse(false) end
       if self.myRemoveButton then self.myRemoveButton:SetScript("OnClick", nil); self.myRemoveButton:EnableMouse(false) end
+      if self.favoriteBack then self.favoriteBack:SetScript("OnClick", nil); self.favoriteBack:EnableMouse(false) end
+      if self.favoriteAction then self.favoriteAction:SetScript("OnClick", nil); self.favoriteAction:EnableMouse(false) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
       if self.myListingsPrevious then self.myListingsPrevious:SetScript("OnClick", nil); self.myListingsPrevious:EnableMouse(false) end
       if self.myListingsNext then self.myListingsNext:SetScript("OnClick", nil); self.myListingsNext:EnableMouse(false) end
+      if self.favoritesPrevious then self.favoritesPrevious:SetScript("OnClick", nil); self.favoritesPrevious:EnableMouse(false) end
+      if self.favoritesNext then self.favoritesNext:SetScript("OnClick", nil); self.favoritesNext:EnableMouse(false) end
       if self.browseSearchButton then self.browseSearchButton:SetScript("OnClick", nil); self.browseSearchButton:EnableMouse(false) end
       if self.browseClear then self.browseClear:SetScript("OnClick", nil); self.browseClear:EnableMouse(false) end
       if self.browseTypeSelector then self.browseTypeSelector:SetScript("OnClick", nil); self.browseTypeSelector:EnableMouse(false) end
@@ -748,6 +846,7 @@ do
       self:CloseBrowseSelectors()
       if tab ~= "Browse" or self.selectedListingId then self:ClearSelection() end
       if tab ~= "My Listings" or self.mySelectedListingId then self:ClearMyListingsSelection() end
+      if tab ~= "Favorites" or self.favoriteSelectedId then self:ClearFavoriteSelection() end
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
       local browse = tab == "Browse"
@@ -756,9 +855,12 @@ do
       end
       local mine = tab == "My Listings"
       if self.myListingsShell then if mine then self.myListingsShell:Show() else self.myListingsShell:Hide() end end
+      local favorites = tab == "Favorites"; if self.favoritesShell then if favorites then self.favoritesShell:Show() else self.favoritesShell:Hide() end end
       if browse then
         self.placeholder:Hide()
       elseif mine then
+        self.placeholder:Hide()
+      elseif favorites then
         self.placeholder:Hide()
       else
         self.placeholder:SetText(PLACEHOLDERS[tab])
@@ -784,7 +886,7 @@ do
           selected and .48 or .62)
       end
       self.refreshCount = self.refreshCount + 1
-      if browse then self:ShowBrowseTable() elseif mine then self:ShowMyListingsTable() end
+      if browse then self:ShowBrowseTable() elseif mine then self:ShowMyListingsTable() elseif favorites then self:ShowFavoritesTable() end
       return true
     end
 
@@ -1029,6 +1131,35 @@ do
       end
       myDetail:Hide(); myShell:Hide(); self.myListingsDetail, self.myListingsShell, self.myListingsPage = myDetail, myShell, 1
 
+      local favoritesShell = CreateFrame("Frame", nil, panel)
+      favoritesShell:SetWidth(780); favoritesShell:SetHeight(352); favoritesShell:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140)
+      local favoritesHeader = CreateFrame("Frame", nil, favoritesShell); favoritesHeader:SetWidth(780); favoritesHeader:SetHeight(24); favoritesHeader:SetPoint("TOPLEFT", favoritesShell, "TOPLEFT", 0, 0); mktui_backdrop(favoritesHeader, .90)
+      local x = 8
+      for _, column in ipairs(FAVORITES_COLUMNS) do local label = mktui_font(favoritesHeader, column[1], 10, .9, .76, .32); label:SetWidth(column[2]); label:SetJustifyH("LEFT"); label:SetPoint("LEFT", favoritesHeader, "LEFT", x, 0); x = x + column[2] end
+      local favoritesScroll = CreateFrame("ScrollFrame", nil, favoritesShell); favoritesScroll:SetWidth(780); favoritesScroll:SetHeight(320); favoritesScroll:SetPoint("TOPLEFT", favoritesHeader, "BOTTOMLEFT", 0, -4); mktui_backdrop(favoritesScroll, .72)
+      local favoritesArea = CreateFrame("Frame", nil, favoritesScroll); favoritesArea:SetWidth(760); favoritesArea:SetHeight(320); favoritesArea:SetPoint("TOPLEFT", favoritesScroll, "TOPLEFT", 8, -8); favoritesScroll:SetScrollChild(favoritesArea)
+      self.favoritesRows, self.favoritesTableHeader, self.favoritesScrollArea = {}, favoritesHeader, favoritesScroll
+      local y = -4
+      for index = 1, 8 do
+        local row = CreateFrame("Button", nil, favoritesArea); row:SetWidth(744); row:SetHeight(32); row:SetPoint("TOPLEFT", favoritesArea, "TOPLEFT", 0, y); mktui_backdrop(row, .55); row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight"); row.labels, row.signature = {}, nil
+        local columnX = 8
+        for _, column in ipairs(FAVORITES_COLUMNS) do local label = mktui_font(row, "", 10, .86, .82, .68); label:SetWidth(column[2]); label:SetJustifyH("LEFT"); label:SetPoint("LEFT", row, "LEFT", columnX, 0); table.insert(row.labels, label); columnX = columnX + column[2] end
+        row:Hide(); table.insert(self.favoritesRows, row); y = y - 36
+      end
+      self.favoritesEmptyState = mktui_font(favoritesArea, "No favorite listings.", 12, .72, .72, .72); self.favoritesEmptyState:SetPoint("CENTER", favoritesArea, "CENTER", 0, 0)
+      self.favoritesSummary = mktui_font(favoritesShell, "", 10, .72, .72, .72); self.favoritesSummary:SetPoint("TOPRIGHT", favoritesShell, "TOPRIGHT", -4, 10)
+      local fp = CreateFrame("Button", nil, favoritesShell); fp:SetWidth(54); fp:SetHeight(20); fp:SetPoint("TOPLEFT", favoritesShell, "BOTTOMLEFT", 0, -4); mktui_backdrop(fp, .88); fp.label = mktui_font(fp, "Previous", 9, .9, .76, .32); fp.label:SetPoint("CENTER")
+      local fi = mktui_font(favoritesShell, "", 10, .72, .72, .72); fi:SetPoint("LEFT", fp, "RIGHT", 10, 0)
+      local fn = CreateFrame("Button", nil, favoritesShell); fn:SetWidth(38); fn:SetHeight(20); fn:SetPoint("LEFT", fi, "RIGHT", 10, 0); mktui_backdrop(fn, .88); fn.label = mktui_font(fn, "Next", 9, .9, .76, .32); fn.label:SetPoint("CENTER")
+      self.favoritesPrevious, self.favoritesNext, self.favoritesPageIndicator = fp, fn, fi
+      local detail = CreateFrame("Frame", nil, favoritesShell); detail:SetWidth(780); detail:SetHeight(352); detail:SetPoint("TOPLEFT", favoritesShell, "TOPLEFT", 0, 0); mktui_backdrop(detail, .72)
+      local back = CreateFrame("Button", nil, detail); back:SetWidth(116); back:SetHeight(24); back:SetPoint("TOPLEFT", detail, "TOPLEFT", 10, -10); mktui_backdrop(back, .88); back.label = mktui_font(back, "Back to Favorites", 10, .9, .76, .32); back.label:SetPoint("CENTER")
+      local action = CreateFrame("Button", nil, detail); action:SetWidth(116); action:SetHeight(24); action:SetPoint("LEFT", back, "RIGHT", 8, 0); mktui_backdrop(action, .88); action.label = mktui_font(action, "Unfavorite", 10, .9, .76, .32); action.label:SetPoint("CENTER")
+      self.favoriteBack, self.favoriteAction, self.favoriteDetailValues = back, action, {}
+      local favoriteFields = {"Player", "Listing Type", "Profession", "Item", "Recipe", "Materials Policy", "Price / Tip", "Location", "Availability", "Expires", "Notes", "Status"}
+      for index, field in ipairs(favoriteFields) do local column, rowY = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43); local name = mktui_font(detail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetPoint("TOPLEFT", detail, "TOPLEFT", 12 + column, rowY); local value = mktui_font(detail, "", 11, .86, .82, .68); value:SetWidth(250); value:SetHeight(38); value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, rowY); self.favoriteDetailValues[index] = value end
+      detail:Hide(); favoritesShell:Hide(); self.favoritesDetail, self.favoritesShell, self.favoritesPage = detail, favoritesShell, 1
+
       self.panel = panel
       B.marketplacePanel = panel
       self.buildCount = self.buildCount + 1
@@ -1039,6 +1170,7 @@ do
     function U:Hide()
       self:ClearSelection()
       self:ClearMyListingsSelection()
+      self:ClearFavoriteSelection()
       if self.browseSearchBox then self.browseSearchBox:ClearFocus() end
       self:CloseBrowseSelectors()
       if self.panel then self.panel:Hide() end
@@ -1089,7 +1221,7 @@ do
     function U:Enable(profile)
       self:CloseBrowseSelectors()
       if self.profile ~= tostring(profile or "") then
-        self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearMyListingsView(); self:ClearSelection(); self:ClearMyListingsSelection(); self.browsePage = 1; self.myListingsPage = 1; self.browseSearchQuery = ""
+        self:ClearBrowseSnapshot(); self:ClearBrowseFilteredView(); self:ClearMyListingsView(); self:ClearFavoritesView(); self:ClearSelection(); self:ClearMyListingsSelection(); self:ClearFavoriteSelection(); self.browsePage = 1; self.myListingsPage = 1; self.favoritesPage = 1; self.browseSearchQuery = ""
         self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
         self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
         self.browseFavoritesOnly = false
@@ -1113,6 +1245,7 @@ do
       self.selectedTab = nil
       self.browsePage = 1
       self.myListingsPage = 1
+      self.favoritesPage = 1
       self.browseSearchQuery = ""
       self.browseListingType, self.browseProfessionKey, self.browseProfessionLabel = "", "", ""
       self.browseLocationKey, self.browseLocationLabel, self.browseAvailability = "", "", ""
@@ -1123,8 +1256,10 @@ do
       self:ClearBrowseSnapshot()
       self:ClearBrowseFilteredView()
       self:ClearMyListingsView()
+      self:ClearFavoritesView()
       for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       for _, row in ipairs(self.myListingsRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
+      for _, row in ipairs(self.favoritesRows or {}) do row:Hide(); row.signature, row.favoriteId = nil, nil end
       self.lastDisableReason = tostring(reason or "disabled")
       if wasVisible and B.frame and B.frame:IsShown() and LP.panels.browse then
         LP:Open("browse", "marketplace-disable")
