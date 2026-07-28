@@ -530,7 +530,7 @@ do
     function U:ResetListingForm()
       local store = M.runtime and M.runtime.store or {}; local settings = store.settings or {}
       self.formEditId, self.formReturnId = nil, nil
-      self.formValues = {listingType=settings.lastListingType or "Crafting Offer", profession=settings.lastProfession or "", itemName="", recipeName="", materialsPolicy="Discuss", priceMode="Negotiable", priceText="", location=settings.lastLocation or "", availability=settings.lastAvailability or "Available Now", expirationMinutes=tonumber(settings.defaultExpirationMinutes) or 60, notes=""}
+      self.formValues = {listingType=settings.lastListingType or "Crafting Offer", profession=settings.lastProfession or "", itemName="", recipeName="", materialsPolicy="Discuss", priceMode="Negotiable", gold=0, silver=0, copper=0, priceText="", location=settings.lastLocation or "", availability=settings.lastAvailability or "Available Now", expirationMinutes=tonumber(settings.defaultExpirationMinutes) or 60, notes=""}
       for key, control in pairs(self.formInputs or {}) do if control.SetText then control:SetText(tostring(self.formValues[key] or "")) end end
       self.formMessage, self.formPreviewSignature = nil, nil
     end
@@ -539,19 +539,35 @@ do
       if editId then
         local row = M:GetListing(editId)
         if not row or row.profile ~= self.profile or row.ownerKey ~= self:GetCurrentOwnerKey() then return false end
-        self.formEditId, self.formReturnId = row.id, row.id; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, location=row.location, availability=row.availability, expirationMinutes=0, notes=row.notes}
+        self.formEditId, self.formReturnId = row.id, row.id; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, gold=math.floor((row.priceCopper or 0)/10000), silver=math.floor(((row.priceCopper or 0)%10000)/100), copper=(row.priceCopper or 0)%100, location=row.location, availability=row.availability, expirationMinutes="Keep Current", notes=row.notes}
         for key, control in pairs(self.formInputs) do control:SetText(tostring(self.formValues[key] or "")) end
         self.formPrimary.label:SetText("Save Changes"); self.sectionTitle:SetText("Edit Listing")
       elseif not self.formValues then self:ResetListingForm(); self.formPrimary.label:SetText("Create Listing") end
       self.formShell:Show(); self.placeholder:Hide(); return true
     end
+    function U:UpdateListingPreview()
+      if not self.formShell or not self.formShell:IsShown() then return false end
+      local v={}; for k,c in pairs(self.formInputs) do v[k]=mktui_text(c:GetText()) end
+      local text=(v.listingType or "").." | "..(v.profession or "").." | "..(v.itemName or "")..((v.recipeName or "") ~= "" and (" / "..v.recipeName) or "").." | "..(v.materialsPolicy or "").." | "..(v.priceMode or "").." | "..(v.location or "").." | "..(v.availability or "").." | "..(v.expirationMinutes or "")
+      if self.formPreviewSignature ~= text then self.formPreview:SetText(text); self.formPreviewSignature=text end; return true
+    end
     function U:SubmitListingForm()
       local values = {}; for key, control in pairs(self.formInputs or {}) do values[key] = mktui_text(control:GetText()) end
       values.listingType = values.listingType ~= "" and values.listingType or "Crafting Offer"; values.materialsPolicy = values.materialsPolicy ~= "" and values.materialsPolicy or "Discuss"; values.priceMode = values.priceMode ~= "" and values.priceMode or "Negotiable"; values.availability = values.availability ~= "" and values.availability or "Available Now"
+      local choices={listingType={['Crafting Offer']=true,['Crafting Request']=true},materialsPolicy={['Crafter Provides']=true,['Customer Provides']=true,['Split Materials']=true,Discuss=true},priceMode={['Fixed Price']=true,Tip=true,Negotiable=true,Free=true},availability={['Available Now']=true,Today=true,['This Session']=true,Scheduled=true}}
       if values.profession == "" or values.itemName == "" then self.formMessage:SetText(values.profession == "" and "Profession is required." or "Item is required."); return false end
-      if not self.formEditId then values.expiresAt = (time and time() or 0) + 3600 end
+      if #values.profession>64 or #values.itemName>128 or #values.recipeName>128 or #values.priceText>80 or #values.location>64 or #values.notes>240 then self.formMessage:SetText("A field exceeds its maximum length."); return false end
+      for key in pairs(choices) do if not choices[key][values[key]] then self.formMessage:SetText("Invalid "..key.."."); return false end end
+      local gold,silver,copper=tonumber(values.gold),tonumber(values.silver),tonumber(values.copper)
+      if gold==nil or silver==nil or copper==nil or gold<0 or silver<0 or copper<0 or silver>99 or copper>99 then self.formMessage:SetText("Invalid price."); return false end
+      values.priceCopper=gold*10000+silver*100+copper; if values.priceCopper>2147483647 then self.formMessage:SetText("Price is too high."); return false end
+      if values.priceMode=='Fixed Price' and values.priceCopper<=0 and values.priceText=='' then self.formMessage:SetText("Fixed Price requires an amount or price text."); return false end
+      if values.priceMode=='Free' then values.priceCopper=0; values.priceText='' end
+      local minutes=tonumber(values.expirationMinutes); if self.formEditId and values.expirationMinutes=='Keep Current' then minutes=nil elseif not ({[30]=true,[60]=true,[120]=true,[240]=true,[480]=true,[1440]=true})[minutes] then self.formMessage:SetText("Invalid expiration."); return false end
+      if minutes then values.expiresAt=(time and time() or 0)+minutes*60 end
       local row, err = self.formEditId and M:EditListing(self.formEditId, values) or M:CreateListing(values)
       if not row then self.formMessage:SetText(tostring(err)); return false end
+      if not self.formEditId then local s=M.runtime.store.settings; s.lastListingType,s.lastProfession,s.lastLocation,s.lastAvailability,s.defaultExpirationMinutes=values.listingType,values.profession,values.location,values.availability,minutes end
       self.formMessage:SetText(self.formEditId and "Listing updated." or "Listing created."); local id = row.id; self:ResetListingForm(); self.formShell:Hide(); self:SetTab("My Listings"); self.mySelectedListingId = id; self:RenderMyListingsDetail(); return true
     end
     function U:CancelListingForm()
@@ -739,6 +755,7 @@ do
     local function mktui_favorite_action_click() if U.active then U:RemoveFavorite() end end
     local function mktui_form_submit() if U.active then U:SubmitListingForm() end end
     local function mktui_form_cancel() if U.active then U:CancelListingForm() end end
+    local function mktui_form_changed() if U.active then U:UpdateListingPreview() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
     local function mktui_my_previous_click() if U.active then U:ChangeMyListingsPage(-1) end end
@@ -795,6 +812,7 @@ do
       if self.favoriteAction and self.favoriteAction:GetScript("OnClick") then count = count + 1 end
       if self.formPrimary and self.formPrimary:GetScript("OnClick") then count = count + 1 end
       if self.formCancel and self.formCancel:GetScript("OnClick") then count = count + 1 end
+      for _, input in pairs(self.formInputs or {}) do if input:GetScript("OnTextChanged") then count=count+1 end end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
       if self.myListingsPrevious and self.myListingsPrevious:GetScript("OnClick") then count = count + 1 end
@@ -832,6 +850,7 @@ do
       if self.favoriteAction then self.favoriteAction:EnableMouse(true); self.favoriteAction:SetScript("OnClick", mktui_favorite_action_click) end
       if self.formPrimary then self.formPrimary:EnableMouse(true); self.formPrimary:SetScript("OnClick", mktui_form_submit) end
       if self.formCancel then self.formCancel:EnableMouse(true); self.formCancel:SetScript("OnClick", mktui_form_cancel) end
+      for _, input in pairs(self.formInputs or {}) do input:EnableMouse(true); input:SetScript("OnTextChanged", mktui_form_changed) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
       if self.myListingsPrevious then self.myListingsPrevious:EnableMouse(true); self.myListingsPrevious:SetScript("OnClick", mktui_my_previous_click) end
@@ -867,6 +886,7 @@ do
       if self.favoriteAction then self.favoriteAction:SetScript("OnClick", nil); self.favoriteAction:EnableMouse(false) end
       if self.formPrimary then self.formPrimary:SetScript("OnClick", nil); self.formPrimary:EnableMouse(false) end
       if self.formCancel then self.formCancel:SetScript("OnClick", nil); self.formCancel:EnableMouse(false) end
+      for _, input in pairs(self.formInputs or {}) do input:SetScript("OnTextChanged", nil); input:EnableMouse(false) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
       if self.myListingsPrevious then self.myListingsPrevious:SetScript("OnClick", nil); self.myListingsPrevious:EnableMouse(false) end
@@ -897,6 +917,7 @@ do
       self.selectedTab = tab
       self.sectionTitle:SetText(tab)
       local browse = tab == "Browse"
+      self:SetBrowseToolbarVisible(browse)
       if self.browseShell then
         if browse then self.browseShell:Show() else self.browseShell:Hide() end
       end
@@ -1204,11 +1225,12 @@ do
 
       local form = CreateFrame("Frame", nil, panel); form:SetWidth(780); form:SetHeight(360); form:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140); mktui_backdrop(form, .72)
       self.formShell, self.formInputs = form, {}
-      local fields = {{"listingType","Listing Type"},{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"materialsPolicy","Materials"},{"priceMode","Price Mode"},{"priceText","Price / Tip"},{"location","Location"},{"availability","Availability"},{"notes","Notes"}}
+      local fields = {{"listingType","Listing Type"},{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"materialsPolicy","Materials"},{"priceMode","Price Mode"},{"gold","Gold"},{"silver","Silver"},{"copper","Copper"},{"priceText","Price / Tip"},{"location","Location"},{"availability","Availability"},{"expirationMinutes","Expiration"},{"notes","Notes"}}
       for index, field in ipairs(fields) do
-        local col, row = index <= 5 and 0 or 380, (index-1)%5; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*54)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(24); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-32-(row*54)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
+        local col, row = index <= 7 and 0 or 380, (index-1)%7; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*40)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(22); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-30-(row*40)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
       end
-      self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",12,-300)
+      self.formPreview=mktui_font(form,"",10,.72,.72,.72); self.formPreview:SetPoint("TOPLEFT",form,"TOPLEFT",12,-300)
+      self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",12,-316)
       local primary=CreateFrame("Button",nil,form); primary:SetWidth(110); primary:SetHeight(24); primary:SetPoint("TOPLEFT",form,"TOPLEFT",12,-326); mktui_backdrop(primary,.88); primary.label=mktui_font(primary,"Create Listing",10,.9,.76,.32); primary.label:SetPoint("CENTER")
       local cancel=CreateFrame("Button",nil,form); cancel:SetWidth(72); cancel:SetHeight(24); cancel:SetPoint("LEFT",primary,"RIGHT",8,0); mktui_backdrop(cancel,.88); cancel.label=mktui_font(cancel,"Cancel",10,.9,.76,.32); cancel.label:SetPoint("CENTER")
       self.formPrimary,self.formCancel=primary,cancel; form:Hide()
@@ -1310,6 +1332,8 @@ do
       self:ClearBrowseFilteredView()
       self:ClearMyListingsView()
       self:ClearFavoritesView()
+      self.formValues, self.formEditId, self.formReturnId, self.formPreviewSignature = nil, nil, nil, nil
+      if self.formShell then self.formShell:Hide() end
       for _, row in ipairs(self.browseRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       for _, row in ipairs(self.myListingsRows or {}) do row:Hide(); row.signature, row.listingId = nil, nil end
       for _, row in ipairs(self.favoritesRows or {}) do row:Hide(); row.signature, row.favoriteId = nil, nil end
