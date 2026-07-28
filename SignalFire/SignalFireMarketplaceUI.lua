@@ -529,19 +529,23 @@ do
 
     function U:ResetListingForm()
       local store = M.runtime and M.runtime.store or {}; local settings = store.settings or {}
-      self.formEditId, self.formReturnId = nil, nil
+      self.formMode, self.formEditId, self.formReturnId, self.formUpdating = "create", nil, nil, true
       self.formValues = {listingType=settings.lastListingType or "Crafting Offer", profession=settings.lastProfession or "", itemName="", recipeName="", materialsPolicy="Discuss", priceMode="Negotiable", gold=0, silver=0, copper=0, priceText="", location=settings.lastLocation or "", availability=settings.lastAvailability or "Available Now", expirationMinutes=tonumber(settings.defaultExpirationMinutes) or 60, notes=""}
       for key, control in pairs(self.formInputs or {}) do if control.SetText then control:SetText(tostring(self.formValues[key] or "")) end end
-      self.formMessage, self.formPreviewSignature = nil, nil
+      self.formValidationText, self.formSuccessText, self.formPreviewSignature = nil, nil, nil
+      if self.formMessage then self.formMessage:SetText("") end
+      if self.formPreview then self.formPreview:SetText("") end
+      self.formUpdating = false
+      self:UpdateListingPreview()
     end
     function U:ShowListingForm(editId)
       if not self.formShell then return false end
       if editId then
         local row = M:GetListing(editId)
         if not row or row.profile ~= self.profile or row.ownerKey ~= self:GetCurrentOwnerKey() then return false end
-        self.formEditId, self.formReturnId = row.id, row.id; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, gold=math.floor((row.priceCopper or 0)/10000), silver=math.floor(((row.priceCopper or 0)%10000)/100), copper=(row.priceCopper or 0)%100, location=row.location, availability=row.availability, expirationMinutes="Keep Current", notes=row.notes}
+        self.formMode, self.formEditId, self.formReturnId, self.formUpdating = "edit", row.id, row.id, true; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, gold=math.floor((row.priceCopper or 0)/10000), silver=math.floor(((row.priceCopper or 0)%10000)/100), copper=(row.priceCopper or 0)%100, location=row.location, availability=row.availability, expirationMinutes="Keep Current", notes=row.notes}
         for key, control in pairs(self.formInputs) do control:SetText(tostring(self.formValues[key] or "")) end
-        self.formPrimary.label:SetText("Save Changes"); self.sectionTitle:SetText("Edit Listing")
+        self.formUpdating=false; self.formPrimary.label:SetText("Save Changes"); self.sectionTitle:SetText("Edit Listing"); self:UpdateListingPreview()
       elseif not self.formValues then self:ResetListingForm(); self.formPrimary.label:SetText("Create Listing") end
       self.formShell:Show(); self.placeholder:Hide(); return true
     end
@@ -565,10 +569,16 @@ do
       if values.priceMode=='Free' then values.priceCopper=0; values.priceText='' end
       local minutes=tonumber(values.expirationMinutes); if self.formEditId and values.expirationMinutes=='Keep Current' then minutes=nil elseif not ({[30]=true,[60]=true,[120]=true,[240]=true,[480]=true,[1440]=true})[minutes] then self.formMessage:SetText("Invalid expiration."); return false end
       if minutes then values.expiresAt=(time and time() or 0)+minutes*60 end
+      if self.formMode == "edit" then
+        local current = M:GetListing(self.formEditId)
+        if not current or current.id ~= self.formEditId or current.profile ~= self.profile or current.ownerKey ~= self:GetCurrentOwnerKey() or tonumber(current.expiresAt or 0) <= (time and time() or 0) then
+          self.formValidationText="This listing is no longer available."; self.formMessage:SetText(self.formValidationText); self.formMode,self.formEditId,self.formReturnId=nil,nil,nil; return false
+        end
+      end
       local row, err = self.formEditId and M:EditListing(self.formEditId, values) or M:CreateListing(values)
       if not row then self.formMessage:SetText(tostring(err)); return false end
       if not self.formEditId then local s=M.runtime.store.settings; s.lastListingType,s.lastProfession,s.lastLocation,s.lastAvailability,s.defaultExpirationMinutes=values.listingType,values.profession,values.location,values.availability,minutes end
-      self.formMessage:SetText(self.formEditId and "Listing updated." or "Listing created."); local id = row.id; self:ResetListingForm(); self.formShell:Hide(); self:SetTab("My Listings"); self.mySelectedListingId = id; self:RenderMyListingsDetail(); return true
+      self.formSuccessText=self.formEditId and "Listing updated." or "Listing created."; self.formMessage:SetText(self.formSuccessText); local id = row.id; self:ResetListingForm(); self.formShell:Hide(); self:SetTab("My Listings"); self.mySelectedListingId = id; self:RenderMyListingsDetail(); return true
     end
     function U:CancelListingForm()
       local id = self.formReturnId; self:ResetListingForm(); self.formShell:Hide(); if id then self:SetTab("My Listings"); self.mySelectedListingId=id; return self:RenderMyListingsDetail() end; return self:SetTab("Create Listing")
@@ -755,7 +765,7 @@ do
     local function mktui_favorite_action_click() if U.active then U:RemoveFavorite() end end
     local function mktui_form_submit() if U.active then U:SubmitListingForm() end end
     local function mktui_form_cancel() if U.active then U:CancelListingForm() end end
-    local function mktui_form_changed() if U.active then U:UpdateListingPreview() end end
+    local function mktui_form_changed() if U.active and not U.formUpdating then U:UpdateListingPreview() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
     local function mktui_my_previous_click() if U.active then U:ChangeMyListingsPage(-1) end end
