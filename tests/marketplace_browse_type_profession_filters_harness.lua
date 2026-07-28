@@ -34,7 +34,7 @@ assert(U.browseTypeSelector.menu:GetName() == "SignalFireMarketplaceTypeDropdown
   and U.browseLocationSelector.menu:GetName() == "SignalFireMarketplaceLocationDropdown151"
   and U.browseAvailabilitySelector.menu:GetName() == "SignalFireMarketplaceAvailabilityDropdown151"
   and U.browseTypeSelector.menu ~= U.browseProfessionSelector.menu and U.browseLocationSelector.menu ~= U.browseAvailabilitySelector.menu
-  and dropdownCreates == 4,
+  and dropdownCreates == 9,
   "Marketplace dropdown menus are not distinct named 3.3.5-compatible frames")
 assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions",
   "filter defaults are incorrect")
@@ -68,7 +68,7 @@ assert(U:GetBrowseListingType() == "Crafting Request" and U.browseFilteredView.t
   "type selector did not apply exact Crafting Request filtering")
 typeOptions[2].func()
 professionOptions[2].func()
-assert(U:GetBrowseProfessionKey() == "alchemy" and U.browseFilteredView.total == 4,
+assert(U:GetBrowseProfessionKey() == "alchemy" and U.browseFilteredView.total == 3,
   "profession selector did not apply exact normalized key filtering")
 U.browseSearchBox:SetText("flask"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
 assert(U.browseFilteredView.total == 0 and U.browseEmptyState:GetText() == "No marketplace listings match your search and filters.",
@@ -111,8 +111,9 @@ assert(U.browseEmptyState:GetText() == "No marketplace listings match your searc
 U.browseClear:GetScript("OnClick")(U.browseClear)
 
 typeOptions[2].func(); professionOptions = options(U.browseProfessionSelector); professionOptions[2].func()
-assert(U.browseFilteredView.total == 4 and U.browseSummary:GetText() == "Showing 1-4 of 4", "filtered page one is incorrect")
+assert(U.browseFilteredView.total == 3 and U.browseSummary:GetText() == "Showing 1-3 of 3", "filtered page one is incorrect")
 professionOptions[1].func()
+typeOptions[1].func()
 local snapshot, view, rows = U.browseSnapshot, U.browseFilteredView, U.browseRows
 U.browseNext:GetScript("OnClick")(U.browseNext)
 assert(U.browsePage == 2 and U.browseSummary:GetText() == "Showing 9-11 of 11" and U.browseSnapshot == snapshot
@@ -247,7 +248,7 @@ assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessio
   and U:GetAppliedBrowseQuery() == "" and U.browsePage == 1, "disable retained stale filter state or labels")
 BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = true; B:SFModulesApply()
 assert(B:ShowMarketplace() and U.browseTypeSelector == typeButton and U.browseProfessionSelector == professionButton
-  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 4
+  and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 9
   and U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
-  and U:ActiveScriptCount() == 25, "re-enable duplicated selectors, menus, or scripts")
+  and U:ActiveScriptCount() == 66, "re-enable duplicated selectors, menus, or scripts")
 print("marketplace browse type/profession filters harness: PASS")

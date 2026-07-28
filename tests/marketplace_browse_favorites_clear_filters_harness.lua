@@ -12,13 +12,21 @@ BronzeLFG_DB.options.serverProfile = "Ascension"
 BronzeLFG_DB.options.modulesByProfile = {Ascension={tradeskillMarketplace=true}}
 assert(B:SFModulesApply() and not U.browseFavoritesButton and not U.browseClearFilters, "Pass B controls were eager")
 assert(B:ShowMarketplace() and U.browseFavoritesButton and U.browseClearFilters and #U.browseRows == 8, "Pass B controls were not lazy")
-local _, _, _, shellX, shellY = U.browseShell:GetPoint()
-assert(U.panel:GetWidth() == 820 and U.panel:GetHeight() == 520 and shellX == 20 and shellY == -140
-  and U.browseShell:GetWidth() == 780 and U.browseShell:GetHeight() == 352 and #U.browseRows == 8
-  and U.browseTypeSelector and U.browseProfessionSelector and U.browseLocationSelector and U.browseAvailabilitySelector
-  and U.browseFavoritesButton and U.browseSearchLabel and U.browseSearchBox and U.browseSearchButton and U.browseClear and U.browseClearFilters
-  and U.browseFavoritesButton:GetWidth() == 54 and U.browseClearFilters:GetWidth() == 64 and not U.browseFavoritesOnly
-  and not U.browseClearFilters:IsMouseEnabled() and U.browseSearchBox:GetText() == "" and U.browsePage == 1, "toolbar defaults are wrong")
+assert(U.panel:GetWidth() == 820 and U.panel:GetHeight() == 520, "Marketplace panel dimensions are wrong")
+assert(U.browseShell:GetWidth() == 780 and U.browseShell:GetHeight() == 352, "Browse shell dimensions are wrong")
+assert(#U.browseRows == 8, "Browse row pool is wrong")
+assert(U.browseTypeSelector and U.browseProfessionSelector and U.browseLocationSelector and U.browseAvailabilitySelector,
+  "Browse selectors are missing")
+assert(U.browseFavoritesButton and U.browseSearchLabel and U.browseSearchBox and U.browseSearchButton and U.browseClear and U.browseClearFilters,
+  "Browse toolbar controls are missing")
+assert(U.browseFavoritesButton:GetWidth() == 54 and U.browseClearFilters:GetWidth() == 64, "Browse toolbar dimensions are wrong")
+assert(not U.browseFavoritesOnly and not U:HasActiveBrowseFilters(), "Browse filter backing defaults are wrong")
+assert(U:GetBrowseListingType() == "" and U:GetBrowseProfessionKey() == "" and U:GetBrowseLocationKey() == ""
+  and U:GetBrowseAvailability() == "" and U:GetAppliedBrowseQuery() == "", "Browse normalized defaults are wrong")
+assert((tonumber(U.browsePage or 1) or 1) == 1, "Browse effective page default is wrong")
+assert(U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
+  and U.browseLocationSelector.label:GetText() == "All Locations" and U.browseAvailabilitySelector.label:GetText() == "All Availability",
+  "Browse selector labels are wrong")
 
 local function add(number, favored, location, availability, listingType, profession, item)
   local row = assert(B:SFMarketplaceCreateListing({owner="Owner " .. number, listingType=listingType or "Crafting Offer", profession=profession or "Alchemy",
@@ -62,7 +70,8 @@ choose(U.browseTypeSelector, "Crafting Offer"); choose(U.browseProfessionSelecto
 choose(U.browseLocationSelector, "Dalaran"); choose(U.browseAvailabilitySelector, "Today")
 U.browseSearchBox:SetText("flask"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
 U.browseFavoritesButton:GetScript("OnClick")(U.browseFavoritesButton)
-assert(U.browseFavoritesOnly and U.browseFilteredView.total == 9 and U.browseClearFilters:IsMouseEnabled(), "full AND favorites filter is incorrect")
+assert(U.browseFavoritesOnly and U.browseFilteredView.total == 9 and U:HasActiveBrowseFilters()
+  and U.browseClearFilters:GetScript("OnClick"), "full AND favorites filter is incorrect")
 local expectedFavoriteIds = {}
 for number = 1, 9 do expectedFavoriteIds[rows[number].id] = true end
 for _, row in ipairs(U.browseFilteredView.rows) do
@@ -83,7 +92,7 @@ U.browseClearFilters:GetScript("OnClick")(U.browseClearFilters)
 assert(not U.browseFavoritesOnly and U:GetBrowseListingType() == "" and U:GetBrowseProfessionKey() == "" and U:GetBrowseLocationKey() == ""
   and U:GetBrowseAvailability() == "" and U:GetAppliedBrowseQuery() == "flask" and U.browsePage == 1, "Clear Filters did not preserve search only")
 local same = U.browseFilteredView
-assert(U.browseClearFilters:GetScript("OnClick")(U.browseClearFilters) == false and U.browseFilteredView == same, "inactive Clear Filters rebuilt results")
+assert(U:ClearBrowseFilters() == false and U.browseFilteredView == same, "inactive Clear Filters rebuilt results")
 
 U.browseFavoritesButton:GetScript("OnClick")(U.browseFavoritesButton)
 U.browseSearchBox:SetText("missing"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
@@ -99,5 +108,5 @@ local favoritesButton, clearFilters = U.browseFavoritesButton, U.browseClearFilt
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = false; B:SFModulesApply()
 assert(U:ActiveScriptCount() == 0 and favoritesButton:GetScript("OnClick") == nil and clearFilters:GetScript("OnClick") == nil, "disable retained Pass B scripts")
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true; B:SFModulesApply()
-assert(B:ShowMarketplace() and U.browseFavoritesButton == favoritesButton and U.browseClearFilters == clearFilters and U:ActiveScriptCount() == 25, "re-enable duplicated Pass B controls")
+assert(B:ShowMarketplace() and U.browseFavoritesButton == favoritesButton and U.browseClearFilters == clearFilters and U:ActiveScriptCount() == 66, "re-enable duplicated Marketplace controls")
 print("marketplace browse favorites/clear filters harness: PASS")

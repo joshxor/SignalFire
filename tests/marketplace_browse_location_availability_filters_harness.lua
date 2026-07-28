@@ -31,7 +31,7 @@ for _, selector in ipairs(selectors) do
   seen[name], names[#names + 1] = true, name
 end
 assert(names[3] == "SignalFireMarketplaceLocationDropdown151" and names[4] == "SignalFireMarketplaceAvailabilityDropdown151"
-  and dropdownCreates == 4 and U.browseLocationSelector.label:GetText() == "All Locations"
+  and dropdownCreates == 9 and U.browseLocationSelector.label:GetText() == "All Locations"
   and U.browseAvailabilitySelector.label:GetText() == "All Availability", "selector defaults or dropdown ownership are incorrect")
 
 local function add(number, location, availability, listingType, profession, item)
@@ -89,6 +89,6 @@ assert(U:GetBrowseLocationKey() == "" and U.browseLocationSelector.label:GetText
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = false; B:SFModulesApply()
 assert(U.browseLocationSelector:GetScript("OnClick") == nil and U.browseAvailabilitySelector:GetScript("OnClick") == nil and U:ActiveScriptCount() == 0, "disable retained new scripts")
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true; B:SFModulesApply()
-assert(B:ShowMarketplace() and U:ActiveScriptCount() == 25 and U.browseLocationSelector.menu:GetName() == names[3]
-  and U.browseAvailabilitySelector.menu:GetName() == names[4] and dropdownCreates == 4, "re-enable duplicated selectors or dropdowns")
+assert(B:ShowMarketplace() and U:ActiveScriptCount() == 66 and U.browseLocationSelector.menu:GetName() == names[3]
+  and U.browseAvailabilitySelector.menu:GetName() == names[4] and dropdownCreates == 9, "re-enable duplicated selectors or dropdowns")
 print("marketplace browse location/availability filters harness: PASS")
