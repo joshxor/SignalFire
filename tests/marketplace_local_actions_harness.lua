@@ -25,6 +25,17 @@ local function occurrences(haystack, needle)
   end
 end
 
+local function listing_signature(row)
+  local fields = {
+    "id", "owner", "ownerKey", "profile", "listingType", "profession",
+    "itemName", "recipeName", "materialsPolicy", "priceMode", "priceText",
+    "location", "availability", "notes", "createdAt", "expiresAt",
+  }
+  local values = {}
+  for _, field in ipairs(fields) do values[#values+1] = tostring(row[field] or "") end
+  return table.concat(values, "\31")
+end
+
 local function create(owner, profession, itemName, extra)
   extra = extra or {}
   local row, err = B:SFMarketplaceCreateListing({
@@ -127,6 +138,16 @@ M.IsEnabled = originalIsEnabled
 local priorCalls = 0
 local priorSetItemRef = BLFG_SetItemRef_Before565
 BLFG_SetItemRef_Before565 = function() priorCalls = priorCalls + 1 end
+local publicLinkCalls = 0
+local originalOpenPublicGroupLink = B.OpenPublicGroupLink
+B.OpenPublicGroupLink = function(_, id)
+  publicLinkCalls = publicLinkCalls + 1
+  check(id == "fixture", "existing SignalFire link payload changed")
+end
+SetItemRef("bronzelfgpub:fixture", "[Existing SignalFire]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(publicLinkCalls == 1 and priorCalls == 0,
+  "existing SignalFire hyperlink did not retain its normal dispatcher path")
+B.OpenPublicGroupLink = originalOpenPublicGroupLink
 SetItemRef("item:12345", "[Native Item]", "LeftButton", DEFAULT_CHAT_FRAME)
 SetItemRef("unknown_type:data", "[Unknown]", "LeftButton", DEFAULT_CHAT_FRAME)
 check(priorCalls == 2, "unknown/native links did not delegate exactly once each")
@@ -161,9 +182,11 @@ check(openedChats[#openedChats] == "/w Other Crafter ", "fallback whisper text i
 ChatFrame_SendTell = sendTell
 check(sentMessages == 0, "local contact action transmitted chat")
 
+local unrelatedFavorite
 for index=1,10 do
   local row = create("Browse Crafter " .. index, "Alchemy", "Flask Browse " .. index)
   check(M:SetFavorite(row.id, true), "favorite fixture creation failed")
+  if index == 1 then unrelatedFavorite = row.id end
 end
 check(M:SetFavorite(other.id, true), "selected favorite fixture failed")
 U.browseSearchQuery = "flask"
@@ -191,10 +214,41 @@ local chatMessages = {}
 local originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
 DEFAULT_CHAT_FRAME.AddMessage = function(_, message) table.insert(chatMessages, message) end
 
+local selectedBeforeInvalid = U.selectedListingId
+local unavailableBefore = #chatMessages
+check(M:HandleLocalLink(expired.id) == false, "expired local link was handled")
+check(#chatMessages == unavailableBefore+1
+  and chatMessages[#chatMessages] == "Marketplace listing is unavailable.",
+  "expired local link did not emit exactly one unavailable message")
+check(U.selectedListingId == selectedBeforeInvalid, "expired link changed the selected listing")
+unavailableBefore = #chatMessages
+check(M:HandleLocalLink(wrongProfile.id) == false, "wrong-profile local link was handled")
+check(#chatMessages == unavailableBefore+1
+  and chatMessages[#chatMessages] == "Marketplace listing is unavailable.",
+  "wrong-profile link did not emit exactly one unavailable message")
+check(U.selectedListingId == selectedBeforeInvalid, "wrong-profile link changed the selected listing")
+unavailableBefore = #chatMessages
+check(M:HandleLocalLink("mkt1:a:missing:100000:1") == false, "missing local link was handled")
+check(#chatMessages == unavailableBefore+1
+  and chatMessages[#chatMessages] == "Marketplace listing is unavailable.",
+  "missing link did not emit exactly one unavailable message")
+check(U.selectedListingId == selectedBeforeInvalid, "missing link changed the selected listing")
+
+local generatedDataGeneration = M.runtime.dataGeneration
+local generatedFavoritesGeneration = M.runtime.favoritesGeneration
+local generatedIndexCount = M.runtime.indexCount
+local generatedById, generatedByOwner = M.runtime.byId, M.runtime.byOwner
+local generatedOtherSignature = listing_signature(M.runtime.byId[other.id])
+local generatedOwnSignature = listing_signature(M.runtime.byId[own.id])
+
 U.selectedListingId = other.id
 check(U:RenderDetail(), "Browse detail did not render")
 check(U.detailWhisper:IsShown() and U.detailFavorite:IsShown() and U.detailLink:IsShown(),
   "Browse actions are not visible for an available remote listing")
+local browseTellCount = #tells
+U.detailWhisper:GetScript("OnClick")(U.detailWhisper)
+check(#tells == browseTellCount+1 and tells[#tells] == "Other Crafter",
+  "Browse Whisper did not target the exact listing owner")
 U.detailLink:GetScript("OnClick")(U.detailLink)
 check(string.find(chatMessages[#chatMessages-1], "signalfiremkt:" .. other.id, 1, true),
   "Browse link button did not print the selected link")
@@ -212,9 +266,29 @@ U.favoriteSelectedId = other.id
 check(U:RenderFavoriteDetail(), "favorite detail did not render")
 check(U.favoriteWhisper:IsShown() and U.favoriteLink:IsShown(),
   "favorite contact actions are hidden for an available remote listing")
+check(U.favoriteAction.label:GetText() == "Unfavorite",
+  "active favorite did not retain its Unfavorite action")
+local favoriteTellCount = #tells
+U.favoriteWhisper:GetScript("OnClick")(U.favoriteWhisper)
+check(#tells == favoriteTellCount+1 and tells[#tells] == "Other Crafter",
+  "Favorite Whisper did not target the exact listing owner")
 U.favoriteLink:GetScript("OnClick")(U.favoriteLink)
 check(string.find(chatMessages[#chatMessages-1], "signalfiremkt:" .. other.id, 1, true),
   "favorite link button did not print the selected link")
+check(M.runtime.dataGeneration == generatedDataGeneration
+  and M.runtime.favoritesGeneration == generatedFavoritesGeneration
+  and M.runtime.indexCount == generatedIndexCount
+  and M.runtime.byId == generatedById and M.runtime.byOwner == generatedByOwner,
+  "Generate Link mutated runtime generations or indexes")
+check(listing_signature(M.runtime.byId[other.id]) == generatedOtherSignature
+  and listing_signature(M.runtime.byId[own.id]) == generatedOwnSignature,
+  "Generate Link mutated listing data")
+check(M.runtime.byId[other.id].generatedLink == nil
+  and M.runtime.byId[other.id].localLink == nil
+  and M.runtime.byId[own.id].generatedLink == nil
+  and M.runtime.byId[own.id].localLink == nil,
+  "Generate Link persisted generated-link state")
+check(sentMessages == 0, "Generate Link selected an outgoing chat path")
 
 check(U:SetTab("Browse"), "Browse did not reopen")
 M:SetFavorite(other.id, false)
@@ -229,11 +303,28 @@ check(M.runtime.dataGeneration == dataGeneration
   and M.runtime.favoritesGeneration == favoritesGeneration+1,
   "favorite add changed the wrong generation")
 check(U.detailFavorite.label:GetText() == "Unfavorite", "favorite add label did not refresh")
+check(U.selectedListingId == other.id and U.browseDetail:IsShown(),
+  "favorite add closed or changed Browse detail")
+check(U.browseSearchQuery == state[1] and U.browseListingType == state[2]
+  and U.browseProfessionKey == state[3] and U.browseLocationKey == state[4]
+  and U.browseAvailability == state[5] and U.browseFavoritesOnly == false
+  and U.browsePage == state[7], "favorite add changed Browse search/filter/page state")
+check(M:IsFavorite(unrelatedFavorite), "favorite add changed an unrelated favorite")
 U.detailFavorite:GetScript("OnClick")(U.detailFavorite)
 check(not M:IsFavorite(other.id), "Browse favorite action did not remove the favorite")
 check(M.runtime.dataGeneration == dataGeneration
   and M.runtime.favoritesGeneration == favoritesGeneration+2,
   "favorite removal changed the wrong generation")
+check(M:IsFavorite(unrelatedFavorite), "favorite removal changed an unrelated favorite")
+
+check(M:SetFavorite(own.id, true), "own-favorite fixture failed")
+check(U:SetTab("Favorites"), "Favorites did not open for own favorite")
+U.favoriteSelectedId = own.id
+check(U:RenderFavoriteDetail(), "own active favorite detail did not render")
+check(not U.favoriteWhisper:IsShown() and U.favoriteLink:IsShown(),
+  "own active favorite has incorrect Whisper/Generate Link visibility")
+check(U.favoriteAction.label:GetText() == "Unfavorite",
+  "own active favorite did not retain its Unfavorite action")
 
 M.runtime.store.favoritesById[expired.id] = {
   addedAt=time(), owner=expired.owner, profession=expired.profession,
@@ -258,6 +349,8 @@ BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = false
 check(B:SFModulesApply(), "Marketplace disable failed")
 check(U:ActiveScriptCount() == 0, "disabled script count is not zero")
 check(B.LinkHandlers565.signalfiremkt == nil, "handler survived Marketplace disable")
+check(M.localLinkRegistered == false and M.localLinkCallback ~= nil,
+  "disable retained registered-link state or discarded the retained callback")
 for _, control in ipairs(controls) do
   check(control:GetScript("OnClick") == nil, "local-action script survived disable")
 end

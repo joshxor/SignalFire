@@ -72,7 +72,14 @@ const whisper = body(marketplace, "function M:OpenWhisper(id)");
 need(whisper, "ChatFrame_SendTell", "preferred whisper composer API");
 need(whisper, "ChatFrame_OpenChat", "whisper composer fallback API");
 need(whisper, "ChatEdit_ActivateChat", "legacy whisper composer fallback API");
+need(whisper, "row.ownerKey == self:GetCurrentOwnerKey()", "self-whisper rejection");
 forbid(whisper, "SendChatMessage", "automatic whisper transmission");
+
+const enable = body(marketplace, "function M:Enable(profile)");
+need(enable, "self:RegisterLocalLinkHandler()", "Enable-time handler registration");
+need(enable, 'self:Disable("profile-change")', "profile-change teardown before registration");
+const disable = body(marketplace, "function M:Disable(reason)");
+need(disable, "self:UnregisterLocalLinkHandler()", "Disable-time handler removal");
 
 const controls = [
   "detailWhisper",
@@ -97,11 +104,20 @@ need(ui, "function U:GenerateLocalLink(id)", "UI link-generation helper");
 need(ui, "function U:OpenExactListing(id)", "exact-listing navigation helper");
 need(ui, 'self:SetTab("Browse")', "Browse-tab exact-link navigation");
 need(ui, "self.selectedListingId=row.id", "exact listing selection");
+need(ui, "self.favoriteWhisper:Hide(); self.favoriteLink:Hide()", "unavailable Favorite action hiding");
 
 forbid(marketplace, "SendChatMessage(", "Marketplace automatic message transmission");
 forbid(ui, "SendChatMessage(", "Marketplace UI automatic message transmission");
 forbid(marketplace, "OnUpdate", "Marketplace local-action polling");
 forbid(ui, "OnUpdate", "Marketplace UI local-action polling");
+forbid(marketplace, "ChatFrame_AddMessageEventFilter", "Marketplace chat filter");
+forbid(ui, "ChatFrame_AddMessageEventFilter", "Marketplace UI chat filter");
+forbid(marketplace, "SendAddonMessage", "Marketplace addon-message networking");
+forbid(ui, "SendAddonMessage", "Marketplace UI addon-message networking");
+forbid(marketplace, "BLFG312", "Marketplace network packet");
+forbid(ui, "BLFG312", "Marketplace UI network packet");
+forbid(marketplace, "C_Timer.NewTicker", "Marketplace repeating timer");
+forbid(ui, "C_Timer.NewTicker", "Marketplace UI repeating timer");
 
 const countHarnesses = [
   "marketplace_browse_type_profession_filters_harness.lua",
