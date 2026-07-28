@@ -58,7 +58,7 @@ assert(U:GetPanelState() == "unbuilt" and U.buildCount == 0,
 assert(B:SF151_HandlePerfSlash("marketplace") == true, "enabled slash did not open Marketplace")
 assert(U:GetPanelState() == "visible" and U.buildCount == 1 and U.openCount == 1,
   "first open did not construct and show Marketplace exactly once")
-assert(#U.navButtons == 4 and U:ActiveScriptCount() == 49,
+assert(#U.navButtons == 4 and U:ActiveScriptCount() == 66,
   "Marketplace shell navigation is incomplete")
 local firstPanel = U.panel
 assert(M:GetStatus().panel == "visible", "Marketplace status did not report its visible content frame")
@@ -101,7 +101,7 @@ assert(disabled.runtime == "inactive" and disabled.panel == "hidden" and disable
 set_module("Ascension", true)
 assert(B:SFModulesApply() == true and U.registered and U.panel == firstPanel,
   "re-enable did not register the existing Marketplace frame")
-assert(U:GetPanelState() == "hidden" and U.buildCount == 1 and U:ActiveScriptCount() == 49,
+assert(U:GetPanelState() == "hidden" and U.buildCount == 1 and U:ActiveScriptCount() == 66,
   "re-enable rebuilt the frame or failed to restore scripts")
 assert(B:SF151_HandlePerfSlash("marketplace") == true and U:GetPanelState() == "visible"
   and U.panel == firstPanel and U.buildCount == 1, "re-enabled Marketplace did not reuse its frame")
