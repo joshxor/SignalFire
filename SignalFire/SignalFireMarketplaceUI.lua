@@ -381,6 +381,14 @@ do
       end
     end
 
+    function U:SetBrowseToolbarVisible(visible)
+      for _, control in ipairs({self.browseSearchLabel, self.browseTypeSelector, self.browseProfessionSelector,
+        self.browseLocationSelector, self.browseAvailabilitySelector, self.browseFavoritesButton,
+        self.browseSearchBox, self.browseSearchButton, self.browseClear, self.browseClearFilters}) do
+        if control then if visible then control:Show() else control:Hide() end end
+      end
+    end
+
     function U:OnMarketplaceFavoritesChanged()
       self:ClearFavoritesView()
       if self.browseFavoritesOnly then self:ClearBrowseFilteredView() end
@@ -519,6 +527,37 @@ do
 
     function U:ClearFavoriteSelection() self.favoriteSelectedId, self.favoriteDetailSignature, self.favoriteDetailDirty = nil, nil, false end
 
+    function U:ResetListingForm()
+      local store = M.runtime and M.runtime.store or {}; local settings = store.settings or {}
+      self.formEditId, self.formReturnId = nil, nil
+      self.formValues = {listingType=settings.lastListingType or "Crafting Offer", profession=settings.lastProfession or "", itemName="", recipeName="", materialsPolicy="Discuss", priceMode="Negotiable", priceText="", location=settings.lastLocation or "", availability=settings.lastAvailability or "Available Now", expirationMinutes=tonumber(settings.defaultExpirationMinutes) or 60, notes=""}
+      for key, control in pairs(self.formInputs or {}) do if control.SetText then control:SetText(tostring(self.formValues[key] or "")) end end
+      self.formMessage, self.formPreviewSignature = nil, nil
+    end
+    function U:ShowListingForm(editId)
+      if not self.formShell then return false end
+      if editId then
+        local row = M:GetListing(editId)
+        if not row or row.profile ~= self.profile or row.ownerKey ~= self:GetCurrentOwnerKey() then return false end
+        self.formEditId, self.formReturnId = row.id, row.id; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, location=row.location, availability=row.availability, expirationMinutes=0, notes=row.notes}
+        for key, control in pairs(self.formInputs) do control:SetText(tostring(self.formValues[key] or "")) end
+        self.formPrimary.label:SetText("Save Changes"); self.sectionTitle:SetText("Edit Listing")
+      elseif not self.formValues then self:ResetListingForm(); self.formPrimary.label:SetText("Create Listing") end
+      self.formShell:Show(); self.placeholder:Hide(); return true
+    end
+    function U:SubmitListingForm()
+      local values = {}; for key, control in pairs(self.formInputs or {}) do values[key] = mktui_text(control:GetText()) end
+      values.listingType = values.listingType ~= "" and values.listingType or "Crafting Offer"; values.materialsPolicy = values.materialsPolicy ~= "" and values.materialsPolicy or "Discuss"; values.priceMode = values.priceMode ~= "" and values.priceMode or "Negotiable"; values.availability = values.availability ~= "" and values.availability or "Available Now"
+      if values.profession == "" or values.itemName == "" then self.formMessage:SetText(values.profession == "" and "Profession is required." or "Item is required."); return false end
+      if not self.formEditId then values.expiresAt = (time and time() or 0) + 3600 end
+      local row, err = self.formEditId and M:EditListing(self.formEditId, values) or M:CreateListing(values)
+      if not row then self.formMessage:SetText(tostring(err)); return false end
+      self.formMessage:SetText(self.formEditId and "Listing updated." or "Listing created."); local id = row.id; self:ResetListingForm(); self.formShell:Hide(); self:SetTab("My Listings"); self.mySelectedListingId = id; self:RenderMyListingsDetail(); return true
+    end
+    function U:CancelListingForm()
+      local id = self.formReturnId; self:ResetListingForm(); self.formShell:Hide(); if id then self:SetTab("My Listings"); self.mySelectedListingId=id; return self:RenderMyListingsDetail() end; return self:SetTab("Create Listing")
+    end
+
     function U:RenderFavorites()
       if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Favorites" then self.favoritesDirty = true; return false end
       local snapshot = self:BuildFavoritesView(); if not snapshot then return false end
@@ -640,6 +679,11 @@ do
       self:ClearMyListingsView(); self:ShowMyListingsTable()
       return ok == true
     end
+    function U:EditMyListing()
+      local id, row = tostring(self.mySelectedListingId or ""), M:GetListing(tostring(self.mySelectedListingId or ""))
+      if not row or row.id ~= id or row.ownerKey ~= self:GetCurrentOwnerKey() or row.profile ~= self.profile then return false end
+      self.selectedTab="Create Listing"; self:ClearMyListingsSelection(); self.browseShell:Hide(); self.myListingsShell:Hide(); self.favoritesShell:Hide(); self:SetBrowseToolbarVisible(false); return self:ShowListingForm(id)
+    end
 
     function U:ShowBrowseTable()
       self:ClearSelection()
@@ -650,16 +694,7 @@ do
       if self.browsePrevious then self.browsePrevious:Show() end
       if self.browseNext then self.browseNext:Show() end
       if self.browsePageIndicator then self.browsePageIndicator:Show() end
-      if self.browseSearchLabel then self.browseSearchLabel:Show() end
-      if self.browseTypeSelector then self.browseTypeSelector:Show() end
-      if self.browseProfessionSelector then self.browseProfessionSelector:Show() end
-      if self.browseLocationSelector then self.browseLocationSelector:Show() end
-      if self.browseAvailabilitySelector then self.browseAvailabilitySelector:Show() end
-      if self.browseFavoritesButton then self.browseFavoritesButton:Show() end
-      if self.browseSearchBox then self.browseSearchBox:Show() end
-      if self.browseSearchButton then self.browseSearchButton:Show() end
-      if self.browseClear then self.browseClear:Show() end
-      if self.browseClearFilters then self.browseClearFilters:Show() end
+      self:SetBrowseToolbarVisible(true)
       return self:RenderBrowse()
     end
 
@@ -678,7 +713,7 @@ do
       end
       self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
       self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
-      self.browseSearchLabel:Hide(); self.browseTypeSelector:Hide(); self.browseProfessionSelector:Hide(); self.browseLocationSelector:Hide(); self.browseAvailabilitySelector:Hide(); self.browseFavoritesButton:Hide(); self.browseSearchBox:Hide(); self.browseSearchButton:Hide(); self.browseClear:Hide(); self.browseClearFilters:Hide(); self.browseDetail:Show()
+      self:SetBrowseToolbarVisible(false); self.browseDetail:Show()
       self.detailDirty = false
       return true
     end
@@ -698,9 +733,12 @@ do
     local function mktui_back_click() if U.active then U:ShowBrowseTable() end end
     local function mktui_my_back_click() if U.active then U:ShowMyListingsTable() end end
     local function mktui_my_remove_click() if U.active then U:RemoveMyListing() end end
+    local function mktui_my_edit_click() if U.active then U:EditMyListing() end end
     local function mktui_favorite_row_click(row) if U.active then U:SelectFavoriteRow(row) end end
     local function mktui_favorite_back_click() if U.active then U:ShowFavoritesTable() end end
     local function mktui_favorite_action_click() if U.active then U:RemoveFavorite() end end
+    local function mktui_form_submit() if U.active then U:SubmitListingForm() end end
+    local function mktui_form_cancel() if U.active then U:CancelListingForm() end end
     local function mktui_previous_click() if U.active then U:ChangeBrowsePage(-1) end end
     local function mktui_next_click() if U.active then U:ChangeBrowsePage(1) end end
     local function mktui_my_previous_click() if U.active then U:ChangeMyListingsPage(-1) end end
@@ -752,8 +790,11 @@ do
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
       if self.myDetailBack and self.myDetailBack:GetScript("OnClick") then count = count + 1 end
       if self.myRemoveButton and self.myRemoveButton:GetScript("OnClick") then count = count + 1 end
+      if self.myEditButton and self.myEditButton:GetScript("OnClick") then count = count + 1 end
       if self.favoriteBack and self.favoriteBack:GetScript("OnClick") then count = count + 1 end
       if self.favoriteAction and self.favoriteAction:GetScript("OnClick") then count = count + 1 end
+      if self.formPrimary and self.formPrimary:GetScript("OnClick") then count = count + 1 end
+      if self.formCancel and self.formCancel:GetScript("OnClick") then count = count + 1 end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
       if self.myListingsPrevious and self.myListingsPrevious:GetScript("OnClick") then count = count + 1 end
@@ -786,8 +827,11 @@ do
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
       if self.myDetailBack then self.myDetailBack:EnableMouse(true); self.myDetailBack:SetScript("OnClick", mktui_my_back_click) end
       if self.myRemoveButton then self.myRemoveButton:EnableMouse(true); self.myRemoveButton:SetScript("OnClick", mktui_my_remove_click) end
+      if self.myEditButton then self.myEditButton:EnableMouse(true); self.myEditButton:SetScript("OnClick", mktui_my_edit_click) end
       if self.favoriteBack then self.favoriteBack:EnableMouse(true); self.favoriteBack:SetScript("OnClick", mktui_favorite_back_click) end
       if self.favoriteAction then self.favoriteAction:EnableMouse(true); self.favoriteAction:SetScript("OnClick", mktui_favorite_action_click) end
+      if self.formPrimary then self.formPrimary:EnableMouse(true); self.formPrimary:SetScript("OnClick", mktui_form_submit) end
+      if self.formCancel then self.formCancel:EnableMouse(true); self.formCancel:SetScript("OnClick", mktui_form_cancel) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
       if self.myListingsPrevious then self.myListingsPrevious:EnableMouse(true); self.myListingsPrevious:SetScript("OnClick", mktui_my_previous_click) end
@@ -818,8 +862,11 @@ do
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
       if self.myDetailBack then self.myDetailBack:SetScript("OnClick", nil); self.myDetailBack:EnableMouse(false) end
       if self.myRemoveButton then self.myRemoveButton:SetScript("OnClick", nil); self.myRemoveButton:EnableMouse(false) end
+      if self.myEditButton then self.myEditButton:SetScript("OnClick", nil); self.myEditButton:EnableMouse(false) end
       if self.favoriteBack then self.favoriteBack:SetScript("OnClick", nil); self.favoriteBack:EnableMouse(false) end
       if self.favoriteAction then self.favoriteAction:SetScript("OnClick", nil); self.favoriteAction:EnableMouse(false) end
+      if self.formPrimary then self.formPrimary:SetScript("OnClick", nil); self.formPrimary:EnableMouse(false) end
+      if self.formCancel then self.formCancel:SetScript("OnClick", nil); self.formCancel:EnableMouse(false) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
       if self.myListingsPrevious then self.myListingsPrevious:SetScript("OnClick", nil); self.myListingsPrevious:EnableMouse(false) end
@@ -856,25 +903,19 @@ do
       local mine = tab == "My Listings"
       if self.myListingsShell then if mine then self.myListingsShell:Show() else self.myListingsShell:Hide() end end
       local favorites = tab == "Favorites"; if self.favoritesShell then if favorites then self.favoritesShell:Show() else self.favoritesShell:Hide() end end
+      local create = tab == "Create Listing"; if self.formShell and not create then self.formShell:Hide() end
       if browse then
         self.placeholder:Hide()
       elseif mine then
         self.placeholder:Hide()
       elseif favorites then
         self.placeholder:Hide()
+      elseif create then
+        self.placeholder:Hide(); self:ShowListingForm()
       else
         self.placeholder:SetText(PLACEHOLDERS[tab])
         self.placeholder:Show()
-        if self.browseSearchLabel then self.browseSearchLabel:Hide() end
-        if self.browseTypeSelector then self.browseTypeSelector:Hide() end
-        if self.browseProfessionSelector then self.browseProfessionSelector:Hide() end
-        if self.browseLocationSelector then self.browseLocationSelector:Hide() end
-        if self.browseAvailabilitySelector then self.browseAvailabilitySelector:Hide() end
-        if self.browseFavoritesButton then self.browseFavoritesButton:Hide() end
-        if self.browseSearchBox then self.browseSearchBox:Hide() end
-        if self.browseSearchButton then self.browseSearchButton:Hide() end
-        if self.browseClear then self.browseClear:Hide() end
-        if self.browseClearFilters then self.browseClearFilters:Hide() end
+        self:SetBrowseToolbarVisible(false)
       end
       for _, button in ipairs(self.navButtons) do
         local selected = button.marketplaceTab == tab
@@ -958,7 +999,7 @@ do
       end
       local typeSelector = selector(85, "SignalFireMarketplaceTypeDropdown151", {{key="", text="All Types"}, {key="Crafting Offer", text="Crafting Offer"},
         {key="Crafting Request", text="Crafting Request"}}, function(option) U:ApplyBrowseFilter(option.key, U:GetBrowseProfessionKey(), U.browseProfessionLabel) end)
-      typeSelector:SetPoint("TOPLEFT", panel, "TOPLEFT", 75, -112)
+      typeSelector:SetPoint("TOPLEFT", self.sectionTitle, "BOTTOMLEFT", 0, -8)
       local professionSelector = selector(96, "SignalFireMarketplaceProfessionDropdown151", {{key="", text="All Professions"}}, function(option)
         U:ApplyBrowseFilter(U:GetBrowseListingType(), option.key, option.text)
       end)
@@ -1121,7 +1162,8 @@ do
       myBack:SetWidth(116); myBack:SetHeight(24); myBack:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 10, -10); mktui_backdrop(myBack, .88); myBack.label = mktui_font(myBack, "Back to Listings", 10, .9, .76, .32); myBack.label:SetPoint("CENTER")
       local remove = CreateFrame("Button", nil, myDetail)
       remove:SetWidth(116); remove:SetHeight(24); remove:SetPoint("LEFT", myBack, "RIGHT", 8, 0); mktui_backdrop(remove, .88); remove.label = mktui_font(remove, "Remove Listing", 10, .9, .76, .32); remove.label:SetPoint("CENTER")
-      self.myDetailBack, self.myRemoveButton, self.myDetailValues = myBack, remove, {}
+      local edit = CreateFrame("Button", nil, myDetail); edit:SetWidth(88); edit:SetHeight(24); edit:SetPoint("LEFT", remove, "RIGHT", 8, 0); mktui_backdrop(edit, .88); edit.label=mktui_font(edit,"Edit Listing",10,.9,.76,.32); edit.label:SetPoint("CENTER")
+      self.myDetailBack, self.myRemoveButton, self.myEditButton, self.myDetailValues = myBack, remove, edit, {}
       for index, field in ipairs(fields) do
         local column, y = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43)
         local name = mktui_font(myDetail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetJustifyH("LEFT"); name:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 12 + column, y)
@@ -1159,6 +1201,17 @@ do
       local favoriteFields = {"Player", "Listing Type", "Profession", "Item", "Recipe", "Materials Policy", "Price / Tip", "Location", "Availability", "Expires", "Notes", "Status"}
       for index, field in ipairs(favoriteFields) do local column, rowY = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43); local name = mktui_font(detail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetPoint("TOPLEFT", detail, "TOPLEFT", 12 + column, rowY); local value = mktui_font(detail, "", 11, .86, .82, .68); value:SetWidth(250); value:SetHeight(38); value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, rowY); self.favoriteDetailValues[index] = value end
       detail:Hide(); favoritesShell:Hide(); self.favoritesDetail, self.favoritesShell, self.favoritesPage = detail, favoritesShell, 1
+
+      local form = CreateFrame("Frame", nil, panel); form:SetWidth(780); form:SetHeight(360); form:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140); mktui_backdrop(form, .72)
+      self.formShell, self.formInputs = form, {}
+      local fields = {{"listingType","Listing Type"},{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"materialsPolicy","Materials"},{"priceMode","Price Mode"},{"priceText","Price / Tip"},{"location","Location"},{"availability","Availability"},{"notes","Notes"}}
+      for index, field in ipairs(fields) do
+        local col, row = index <= 5 and 0 or 380, (index-1)%5; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*54)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(24); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-32-(row*54)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
+      end
+      self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",12,-300)
+      local primary=CreateFrame("Button",nil,form); primary:SetWidth(110); primary:SetHeight(24); primary:SetPoint("TOPLEFT",form,"TOPLEFT",12,-326); mktui_backdrop(primary,.88); primary.label=mktui_font(primary,"Create Listing",10,.9,.76,.32); primary.label:SetPoint("CENTER")
+      local cancel=CreateFrame("Button",nil,form); cancel:SetWidth(72); cancel:SetHeight(24); cancel:SetPoint("LEFT",primary,"RIGHT",8,0); mktui_backdrop(cancel,.88); cancel.label=mktui_font(cancel,"Cancel",10,.9,.76,.32); cancel.label:SetPoint("CENTER")
+      self.formPrimary,self.formCancel=primary,cancel; form:Hide()
 
       self.panel = panel
       B.marketplacePanel = panel
