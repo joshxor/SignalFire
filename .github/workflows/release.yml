@@ -58,6 +58,37 @@ jobs:
       - name: Validate Lua syntax
         run: luac5.1 -p SignalFire/*.lua
 
+      - name: Run Marketplace Phase 1E source verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          node tests/verify_marketplace_phase1e_sources.js
+
+      - name: Prepare Marketplace test loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/extract_addon_loader.js tests/parser_regression_harness.lua /tmp/signalfire-addon-loader.lua
+          test -s /tmp/signalfire-addon-loader.lua
+
+      - name: Run Marketplace Create/Edit harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          lua5.1 tests/marketplace_create_edit_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+
+      - name: Run Marketplace regression harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          lua5.1 tests/marketplace_browse_type_profession_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          lua5.1 tests/marketplace_browse_location_availability_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          lua5.1 tests/marketplace_browse_favorites_clear_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          lua5.1 tests/marketplace_my_listings_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          lua5.1 tests/marketplace_favorites_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          lua5.1 tests/marketplace_phase1b_lazy_ui_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+
       - name: Read version
         id: version
         shell: bash
