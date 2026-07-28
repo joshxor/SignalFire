@@ -81,13 +81,26 @@ jobs:
       - name: Run Marketplace regression harnesses
         shell: bash
         run: |
-          set -euo pipefail
-          lua5.1 tests/marketplace_browse_type_profession_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
-          lua5.1 tests/marketplace_browse_location_availability_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
-          lua5.1 tests/marketplace_browse_favorites_clear_filters_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
-          lua5.1 tests/marketplace_my_listings_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
-          lua5.1 tests/marketplace_favorites_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
-          lua5.1 tests/marketplace_phase1b_lazy_ui_harness.lua SignalFire /tmp/signalfire-addon-loader.lua
+          set -uo pipefail
+          status=0
+          run_harness() {
+            local harness="$1"
+            echo "::group::$harness"
+            if lua5.1 "$harness" SignalFire /tmp/signalfire-addon-loader.lua; then
+              echo "PASS: $harness"
+            else
+              echo "FAIL: $harness"
+              status=1
+            fi
+            echo "::endgroup::"
+          }
+          run_harness tests/marketplace_browse_type_profession_filters_harness.lua
+          run_harness tests/marketplace_browse_location_availability_filters_harness.lua
+          run_harness tests/marketplace_browse_favorites_clear_filters_harness.lua
+          run_harness tests/marketplace_my_listings_harness.lua
+          run_harness tests/marketplace_favorites_harness.lua
+          run_harness tests/marketplace_phase1b_lazy_ui_harness.lua
+          exit "$status"
 
       - name: Read version
         id: version
