@@ -646,11 +646,26 @@ do
       if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Favorites" then self.favoriteDetailDirty = true; return false end
       local id, runtime = tostring(self.favoriteSelectedId or ""), M.runtime; local summary = runtime and runtime.store.favoritesById[id]
       if type(summary) ~= "table" then return self:ShowFavoritesTable() end
-      local row = runtime.byId[id]; if row and tonumber(row.expiresAt or 0) <= (time and time() or 0) then row = nil end
+      local row = M:ResolveLocalLink(id)
       local values = row and {row.owner,row.listingType,row.profession,row.itemName,row.recipeName ~= "" and row.recipeName or "None",row.materialsPolicy,mktui_price(row),row.location,row.availability,mktui_remaining(row.expiresAt,time()),row.notes ~= "" and row.notes or "No notes.","Active"}
         or {summary.owner,summary.listingType,summary.profession,summary.itemName,"","","","","","","This listing is no longer available.","Unavailable"}
       local signature = table.concat(values, "\31"); if self.favoriteDetailSignature ~= signature then for index, value in ipairs(values) do self.favoriteDetailValues[index]:SetText(value) end; self.favoriteDetailSignature = signature end
-      self.favoriteAction.label:SetText(row and "Unfavorite" or "Remove Favorite"); self.favoritesTableHeader:Hide(); self.favoritesScrollArea:Hide(); self.favoritesSummary:Hide(); self.favoritesPrevious:Hide(); self.favoritesNext:Hide(); self.favoritesPageIndicator:Hide(); self.favoritesDetail:Show(); return true
+      self.favoriteAction.label:SetText(row and "Unfavorite" or "Remove Favorite")
+      self.favoriteAction:ClearAllPoints()
+      if row then
+        if row.ownerKey ~= self:GetCurrentOwnerKey() and mktui_text(row.owner) ~= "" then
+          self.favoriteWhisper:Show()
+          self.favoriteAction:SetPoint("LEFT", self.favoriteWhisper, "RIGHT", 8, 0)
+        else
+          self.favoriteWhisper:Hide()
+          self.favoriteAction:SetPoint("LEFT", self.favoriteBack, "RIGHT", 8, 0)
+        end
+        self.favoriteLink:Show()
+      else
+        self.favoriteWhisper:Hide(); self.favoriteLink:Hide()
+        self.favoriteAction:SetPoint("LEFT", self.favoriteBack, "RIGHT", 8, 0)
+      end
+      self.favoritesTableHeader:Hide(); self.favoritesScrollArea:Hide(); self.favoritesSummary:Hide(); self.favoritesPrevious:Hide(); self.favoritesNext:Hide(); self.favoritesPageIndicator:Hide(); self.favoritesDetail:Show(); return true
     end
     function U:SelectFavoriteRow(control)
       local id = control and tostring(control.favoriteId or "") or ""; if not self.active or self.selectedTab ~= "Favorites" or id == "" or not M:IsFavorite(id) then return false end
@@ -716,6 +731,7 @@ do
       if self.myDetailSignature ~= signature then for index, value in ipairs(values) do self.myDetailValues[index]:SetText(value) end; self.myDetailSignature = signature end
       self.myListingsTableHeader:Hide(); self.myListingsScrollArea:Hide(); self.myListingsSummary:Hide(); self.myListingsPrevious:Hide(); self.myListingsNext:Hide(); self.myListingsPageIndicator:Hide()
       self.myRemoveButton.label:SetText(self.myRemoveConfirmId == id and "Confirm Remove" or "Remove Listing"); self.myListingsDetail:Show(); self.myDetailDirty = false
+      self.myDetailLink:Show()
       return true
     end
 
@@ -752,6 +768,27 @@ do
       self:SetBrowseToolbarVisible(true)
       return self:RenderBrowse()
     end
+    function U:GenerateLocalLink(id)
+      local link, err = M:BuildLocalLink(id)
+      if not link then mktui_emit(err or "Marketplace listing is unavailable."); return false end
+      mktui_emit("Local Marketplace link: " .. link)
+      mktui_emit("This link resolves only in your current local Marketplace profile.")
+      return true
+    end
+    function U:WhisperListing(id)
+      return M:OpenWhisper(id)
+    end
+    function U:ToggleBrowseFavorite()
+      local id = tostring(self.selectedListingId or ""); if not M:ResolveLocalLink(id) then return false end
+      M:SetFavorite(id, not M:IsFavorite(id)); self.detailSignature=nil; return self:RenderDetail()
+    end
+    function U:OpenExactListing(id)
+      local row = M:ResolveLocalLink(id)
+      if not row then return false end
+      if not self:Open("local-link") then return false end
+      self:SetTab("Browse"); self.selectedListingId=row.id; self.detailSignature=nil
+      return self:RenderDetail()
+    end
 
     function U:RenderDetail()
       if not self.active or self:GetPanelState() ~= "visible" or self.selectedTab ~= "Browse" then self.detailDirty = true; return false end
@@ -766,6 +803,15 @@ do
         for index, value in ipairs(values) do self.detailValues[index]:SetText(value) end
         self.detailSignature = signature
       end
+      self.detailFavorite:ClearAllPoints()
+      if row.ownerKey ~= self:GetCurrentOwnerKey() and mktui_text(row.owner) ~= "" then
+        self.detailWhisper:Show()
+        self.detailFavorite:SetPoint("LEFT", self.detailWhisper, "RIGHT", 8, 0)
+      else
+        self.detailWhisper:Hide()
+        self.detailFavorite:SetPoint("LEFT", self.detailBack, "RIGHT", 8, 0)
+      end
+      self.detailFavorite.label:SetText(M:IsFavorite(id) and "Unfavorite" or "Favorite"); self.detailFavorite:Show(); self.detailLink:Show()
       self.browseTableHeader:Hide(); self.browseScrollArea:Hide(); self.browseSummary:Hide()
       self.browsePrevious:Hide(); self.browseNext:Hide(); self.browsePageIndicator:Hide()
       self:SetBrowseToolbarVisible(false); self.browseDetail:Show()
@@ -789,9 +835,15 @@ do
     local function mktui_my_back_click() if U.active then U:ShowMyListingsTable() end end
     local function mktui_my_remove_click() if U.active then U:RemoveMyListing() end end
     local function mktui_my_edit_click() if U.active then U:EditMyListing() end end
+    local function mktui_detail_whisper() if U.active then U:WhisperListing(U.selectedListingId) end end
+    local function mktui_detail_favorite() if U.active then U:ToggleBrowseFavorite() end end
+    local function mktui_detail_link() if U.active then U:GenerateLocalLink(U.selectedListingId) end end
+    local function mktui_my_detail_link() if U.active then U:GenerateLocalLink(U.mySelectedListingId) end end
     local function mktui_favorite_row_click(row) if U.active then U:SelectFavoriteRow(row) end end
     local function mktui_favorite_back_click() if U.active then U:ShowFavoritesTable() end end
     local function mktui_favorite_action_click() if U.active then U:RemoveFavorite() end end
+    local function mktui_favorite_whisper_click() if U.active then U:WhisperListing(U.favoriteSelectedId) end end
+    local function mktui_favorite_link_click() if U.active then U:GenerateLocalLink(U.favoriteSelectedId) end end
     local function mktui_form_submit() if U.active then U:SubmitListingForm() end end
     local function mktui_form_cancel() if U.active then U:CancelListingForm() end end
     local function mktui_form_changed() if U.active and not U.formUpdating then U:UpdateListingPreview() end end
@@ -844,11 +896,17 @@ do
       for _, row in ipairs(self.myListingsRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       for _, row in ipairs(self.favoritesRows or {}) do if row:GetScript("OnMouseUp") then count = count + 1 end end
       if self.detailBack and self.detailBack:GetScript("OnClick") then count = count + 1 end
+      if self.detailWhisper and self.detailWhisper:GetScript("OnClick") then count = count + 1 end
+      if self.detailFavorite and self.detailFavorite:GetScript("OnClick") then count = count + 1 end
+      if self.detailLink and self.detailLink:GetScript("OnClick") then count = count + 1 end
       if self.myDetailBack and self.myDetailBack:GetScript("OnClick") then count = count + 1 end
       if self.myRemoveButton and self.myRemoveButton:GetScript("OnClick") then count = count + 1 end
       if self.myEditButton and self.myEditButton:GetScript("OnClick") then count = count + 1 end
+      if self.myDetailLink and self.myDetailLink:GetScript("OnClick") then count = count + 1 end
       if self.favoriteBack and self.favoriteBack:GetScript("OnClick") then count = count + 1 end
       if self.favoriteAction and self.favoriteAction:GetScript("OnClick") then count = count + 1 end
+      if self.favoriteWhisper and self.favoriteWhisper:GetScript("OnClick") then count = count + 1 end
+      if self.favoriteLink and self.favoriteLink:GetScript("OnClick") then count = count + 1 end
       if self.formPrimary and self.formPrimary:GetScript("OnClick") then count = count + 1 end
       if self.formCancel and self.formCancel:GetScript("OnClick") then count = count + 1 end
       for _, input in pairs(self.formInputs or {}) do if input:GetScript("OnTextChanged") then count=count+1 end end
@@ -883,11 +941,17 @@ do
       for _, row in ipairs(self.myListingsRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_my_row_click) end
       for _, row in ipairs(self.favoritesRows or {}) do row:EnableMouse(true); row:SetScript("OnMouseUp", mktui_favorite_row_click) end
       if self.detailBack then self.detailBack:EnableMouse(true); self.detailBack:SetScript("OnClick", mktui_back_click) end
+      if self.detailWhisper then self.detailWhisper:EnableMouse(true); self.detailWhisper:SetScript("OnClick", mktui_detail_whisper) end
+      if self.detailFavorite then self.detailFavorite:EnableMouse(true); self.detailFavorite:SetScript("OnClick", mktui_detail_favorite) end
+      if self.detailLink then self.detailLink:EnableMouse(true); self.detailLink:SetScript("OnClick", mktui_detail_link) end
       if self.myDetailBack then self.myDetailBack:EnableMouse(true); self.myDetailBack:SetScript("OnClick", mktui_my_back_click) end
       if self.myRemoveButton then self.myRemoveButton:EnableMouse(true); self.myRemoveButton:SetScript("OnClick", mktui_my_remove_click) end
       if self.myEditButton then self.myEditButton:EnableMouse(true); self.myEditButton:SetScript("OnClick", mktui_my_edit_click) end
+      if self.myDetailLink then self.myDetailLink:EnableMouse(true); self.myDetailLink:SetScript("OnClick", mktui_my_detail_link) end
       if self.favoriteBack then self.favoriteBack:EnableMouse(true); self.favoriteBack:SetScript("OnClick", mktui_favorite_back_click) end
       if self.favoriteAction then self.favoriteAction:EnableMouse(true); self.favoriteAction:SetScript("OnClick", mktui_favorite_action_click) end
+      if self.favoriteWhisper then self.favoriteWhisper:EnableMouse(true); self.favoriteWhisper:SetScript("OnClick", mktui_favorite_whisper_click) end
+      if self.favoriteLink then self.favoriteLink:EnableMouse(true); self.favoriteLink:SetScript("OnClick", mktui_favorite_link_click) end
       if self.formPrimary then self.formPrimary:EnableMouse(true); self.formPrimary:SetScript("OnClick", mktui_form_submit) end
       if self.formCancel then self.formCancel:EnableMouse(true); self.formCancel:SetScript("OnClick", mktui_form_cancel) end
       for _, input in pairs(self.formInputs or {}) do input:EnableMouse(true); input:SetScript("OnTextChanged", mktui_form_changed) end
@@ -920,11 +984,17 @@ do
       for _, row in ipairs(self.myListingsRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       for _, row in ipairs(self.favoritesRows or {}) do row:SetScript("OnMouseUp", nil); row:EnableMouse(false) end
       if self.detailBack then self.detailBack:SetScript("OnClick", nil); self.detailBack:EnableMouse(false) end
+      if self.detailWhisper then self.detailWhisper:SetScript("OnClick", nil); self.detailWhisper:EnableMouse(false) end
+      if self.detailFavorite then self.detailFavorite:SetScript("OnClick", nil); self.detailFavorite:EnableMouse(false) end
+      if self.detailLink then self.detailLink:SetScript("OnClick", nil); self.detailLink:EnableMouse(false) end
       if self.myDetailBack then self.myDetailBack:SetScript("OnClick", nil); self.myDetailBack:EnableMouse(false) end
       if self.myRemoveButton then self.myRemoveButton:SetScript("OnClick", nil); self.myRemoveButton:EnableMouse(false) end
       if self.myEditButton then self.myEditButton:SetScript("OnClick", nil); self.myEditButton:EnableMouse(false) end
+      if self.myDetailLink then self.myDetailLink:SetScript("OnClick", nil); self.myDetailLink:EnableMouse(false) end
       if self.favoriteBack then self.favoriteBack:SetScript("OnClick", nil); self.favoriteBack:EnableMouse(false) end
       if self.favoriteAction then self.favoriteAction:SetScript("OnClick", nil); self.favoriteAction:EnableMouse(false) end
+      if self.favoriteWhisper then self.favoriteWhisper:SetScript("OnClick", nil); self.favoriteWhisper:EnableMouse(false) end
+      if self.favoriteLink then self.favoriteLink:SetScript("OnClick", nil); self.favoriteLink:EnableMouse(false) end
       if self.formPrimary then self.formPrimary:SetScript("OnClick", nil); self.formPrimary:EnableMouse(false) end
       if self.formCancel then self.formCancel:SetScript("OnClick", nil); self.formCancel:EnableMouse(false) end
       for _, input in pairs(self.formInputs or {}) do input:SetScript("OnTextChanged", nil); input:EnableMouse(false) end
@@ -1170,7 +1240,10 @@ do
       back:SetWidth(116); back:SetHeight(24); back:SetPoint("TOPLEFT", detail, "TOPLEFT", 10, -10)
       mktui_backdrop(back, .88)
       back.label = mktui_font(back, "Back to Listings", 10, .9, .76, .32); back.label:SetPoint("CENTER")
-      self.detailBack, self.detailValues = back, {}
+      local whisper=CreateFrame("Button",nil,detail); whisper:SetWidth(60); whisper:SetHeight(24); whisper:SetPoint("LEFT",back,"RIGHT",8,0); mktui_backdrop(whisper,.88); whisper.label=mktui_font(whisper,"Whisper",10,.9,.76,.32); whisper.label:SetPoint("CENTER")
+      local favorite=CreateFrame("Button",nil,detail); favorite:SetWidth(78); favorite:SetHeight(24); favorite:SetPoint("LEFT",whisper,"RIGHT",8,0); mktui_backdrop(favorite,.88); favorite.label=mktui_font(favorite,"Favorite",10,.9,.76,.32); favorite.label:SetPoint("CENTER")
+      local link=CreateFrame("Button",nil,detail); link:SetWidth(92); link:SetHeight(24); link:SetPoint("LEFT",favorite,"RIGHT",8,0); mktui_backdrop(link,.88); link.label=mktui_font(link,"Generate Link",10,.9,.76,.32); link.label:SetPoint("CENTER")
+      self.detailBack, self.detailWhisper, self.detailFavorite, self.detailLink, self.detailValues = back, whisper, favorite, link, {}
       local fields = {"Player", "Listing Type", "Profession", "Item", "Recipe", "Materials Policy", "Price / Tip", "Location", "Availability", "Expires", "Notes"}
       for index, field in ipairs(fields) do
         local column, y = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43)
@@ -1228,7 +1301,8 @@ do
       local remove = CreateFrame("Button", nil, myDetail)
       remove:SetWidth(116); remove:SetHeight(24); remove:SetPoint("LEFT", myBack, "RIGHT", 8, 0); mktui_backdrop(remove, .88); remove.label = mktui_font(remove, "Remove Listing", 10, .9, .76, .32); remove.label:SetPoint("CENTER")
       local edit = CreateFrame("Button", nil, myDetail); edit:SetWidth(88); edit:SetHeight(24); edit:SetPoint("LEFT", remove, "RIGHT", 8, 0); mktui_backdrop(edit, .88); edit.label=mktui_font(edit,"Edit Listing",10,.9,.76,.32); edit.label:SetPoint("CENTER")
-      self.myDetailBack, self.myRemoveButton, self.myEditButton, self.myDetailValues = myBack, remove, edit, {}
+      local myLink = CreateFrame("Button", nil, myDetail); myLink:SetWidth(92); myLink:SetHeight(24); myLink:SetPoint("LEFT", edit, "RIGHT", 8, 0); mktui_backdrop(myLink, .88); myLink.label=mktui_font(myLink,"Generate Link",10,.9,.76,.32); myLink.label:SetPoint("CENTER")
+      self.myDetailBack, self.myRemoveButton, self.myEditButton, self.myDetailLink, self.myDetailValues = myBack, remove, edit, myLink, {}
       for index, field in ipairs(fields) do
         local column, y = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43)
         local name = mktui_font(myDetail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetJustifyH("LEFT"); name:SetPoint("TOPLEFT", myDetail, "TOPLEFT", 12 + column, y)
@@ -1261,8 +1335,10 @@ do
       self.favoritesPrevious, self.favoritesNext, self.favoritesPageIndicator = fp, fn, fi
       local detail = CreateFrame("Frame", nil, favoritesShell); detail:SetWidth(780); detail:SetHeight(352); detail:SetPoint("TOPLEFT", favoritesShell, "TOPLEFT", 0, 0); mktui_backdrop(detail, .72)
       local back = CreateFrame("Button", nil, detail); back:SetWidth(116); back:SetHeight(24); back:SetPoint("TOPLEFT", detail, "TOPLEFT", 10, -10); mktui_backdrop(back, .88); back.label = mktui_font(back, "Back to Favorites", 10, .9, .76, .32); back.label:SetPoint("CENTER")
-      local action = CreateFrame("Button", nil, detail); action:SetWidth(116); action:SetHeight(24); action:SetPoint("LEFT", back, "RIGHT", 8, 0); mktui_backdrop(action, .88); action.label = mktui_font(action, "Unfavorite", 10, .9, .76, .32); action.label:SetPoint("CENTER")
-      self.favoriteBack, self.favoriteAction, self.favoriteDetailValues = back, action, {}
+      local whisper = CreateFrame("Button", nil, detail); whisper:SetWidth(60); whisper:SetHeight(24); whisper:SetPoint("LEFT", back, "RIGHT", 8, 0); mktui_backdrop(whisper, .88); whisper.label=mktui_font(whisper,"Whisper",10,.9,.76,.32); whisper.label:SetPoint("CENTER")
+      local action = CreateFrame("Button", nil, detail); action:SetWidth(116); action:SetHeight(24); action:SetPoint("LEFT", whisper, "RIGHT", 8, 0); mktui_backdrop(action, .88); action.label = mktui_font(action, "Unfavorite", 10, .9, .76, .32); action.label:SetPoint("CENTER")
+      local favoriteLink = CreateFrame("Button", nil, detail); favoriteLink:SetWidth(92); favoriteLink:SetHeight(24); favoriteLink:SetPoint("LEFT", action, "RIGHT", 8, 0); mktui_backdrop(favoriteLink, .88); favoriteLink.label=mktui_font(favoriteLink,"Generate Link",10,.9,.76,.32); favoriteLink.label:SetPoint("CENTER")
+      self.favoriteBack, self.favoriteWhisper, self.favoriteAction, self.favoriteLink, self.favoriteDetailValues = back, whisper, action, favoriteLink, {}
       local favoriteFields = {"Player", "Listing Type", "Profession", "Item", "Recipe", "Materials Policy", "Price / Tip", "Location", "Availability", "Expires", "Notes", "Status"}
       for index, field in ipairs(favoriteFields) do local column, rowY = index <= 6 and 0 or 380, -48 - (((index - 1) % 6) * 43); local name = mktui_font(detail, field, 10, .9, .76, .32); name:SetWidth(105); name:SetPoint("TOPLEFT", detail, "TOPLEFT", 12 + column, rowY); local value = mktui_font(detail, "", 11, .86, .82, .68); value:SetWidth(250); value:SetHeight(38); value:SetPoint("TOPLEFT", detail, "TOPLEFT", 120 + column, rowY); self.favoriteDetailValues[index] = value end
       detail:Hide(); favoritesShell:Hide(); self.favoritesDetail, self.favoritesShell, self.favoritesPage = detail, favoritesShell, 1

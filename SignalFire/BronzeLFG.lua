@@ -8241,6 +8241,23 @@ end
 
 -- Final SetItemRef wrapper: handles both BronzeLFG link types and strips link text safely.
 BLFG_SetItemRef_Before565 = SetItemRef
+BLFG.KnownLinkHandlerTypes565 = BLFG.KnownLinkHandlerTypes565 or {signalfiremkt=true}
+BLFG.LinkHandlers565 = BLFG.LinkHandlers565 or {}
+function BLFG:RegisterLinkHandler(typeName, owner, callback)
+  if not (self.KnownLinkHandlerTypes565 and self.KnownLinkHandlerTypes565[typeName])
+      or type(owner) ~= "table" or type(callback) ~= "function" then return false end
+  self.LinkHandlers565 = self.LinkHandlers565 or {}
+  local current = self.LinkHandlers565[typeName]
+  if current and current.owner ~= owner then return false end
+  self.LinkHandlers565[typeName] = {owner=owner, callback=callback}
+  return true
+end
+function BLFG:UnregisterLinkHandler(typeName, owner)
+  local entry = self.LinkHandlers565 and self.LinkHandlers565[typeName]
+  if not entry or entry.owner ~= owner then return false end
+  self.LinkHandlers565[typeName] = nil
+  return true
+end
 function SetItemRef(link, text, button, chatFrame)
   if _G.SignalFireStability151 and _G.SignalFireStability151.setItemRefProbe
       and _G.SignalFireStability151:ObserveSetItemRefProbe(link) then
@@ -8260,6 +8277,14 @@ function SetItemRef(link, text, button, chatFrame)
     guildName = guildName:gsub("%%20", " ")
     if BLFG and BLFG.OpenGuildBrowserLink then BLFG:OpenGuildBrowserLink(guildName) end
     return
+  end
+  if type(link) == "string" then
+    local typeName, payload = string.match(link, "^([%a%d_]+):(.*)$")
+    local entry = typeName and BLFG.LinkHandlers565 and BLFG.LinkHandlers565[typeName]
+    if entry and entry.callback then
+      pcall(entry.callback, entry.owner, payload)
+      return
+    end
   end
   if BLFG_SetItemRef_Before565 then return BLFG_SetItemRef_Before565(link, text, button, chatFrame) end
 end
