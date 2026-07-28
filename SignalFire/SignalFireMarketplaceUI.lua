@@ -532,12 +532,27 @@ do
       self.formMode, self.formEditId, self.formReturnId, self.formUpdating = "create", nil, nil, true
       self.formValues = {listingType=settings.lastListingType or "Crafting Offer", profession=settings.lastProfession or "", itemName="", recipeName="", materialsPolicy="Discuss", priceMode="Negotiable", gold=0, silver=0, copper=0, priceText="", location=settings.lastLocation or "", availability=settings.lastAvailability or "Available Now", expirationMinutes=tonumber(settings.defaultExpirationMinutes) or 60, notes=""}
       for key, control in pairs(self.formInputs or {}) do if control.SetText then control:SetText(tostring(self.formValues[key] or "")) end end
+      self:SyncFormSelectors()
       self.formValidationText, self.formSuccessText, self.formPreviewSignature = nil, nil, nil
       if self.formMessage then self.formMessage:SetText("") end
       if self.formPreview then self.formPreview:SetText("") end
       self.formUpdating = false
       self:UpdateListingPreview()
     end
+    function U:SyncFormSelectors()
+      for key, selector in pairs(self.formSelectors or {}) do if selector.label then selector.label:SetText(tostring((self.formValues or {})[key] or "")) end end
+    end
+    function U:SetFormSelector(key, value)
+      local selector = self.formSelectors and self.formSelectors[key]
+      if not selector or not selector.allowed[value] then return false end
+      self.formValues[key]=value; self:SyncFormSelectors(); self:UpdateListingPreview(); return true
+    end
+    function U:OpenFormSelector(key)
+      local selector=self.formSelectors and self.formSelectors[key]; if not selector then return false end
+      self:CloseFormSelectors(); selector.menu.ownerSelector=selector; UIDropDownMenu_Initialize(selector.menu, selector.menuInitializer, "MENU")
+      if ToggleDropDownMenu then ToggleDropDownMenu(1,nil,selector.menu,selector,0,0) end; return true
+    end
+    function U:CloseFormSelectors() if CloseDropDownMenus then CloseDropDownMenus() end end
     function U:ShowListingForm(editId)
       if not self.formShell then return false end
       if editId then
@@ -545,6 +560,7 @@ do
         if not row or row.profile ~= self.profile or row.ownerKey ~= self:GetCurrentOwnerKey() then return false end
         self.formMode, self.formEditId, self.formReturnId, self.formUpdating = "edit", row.id, row.id, true; self.formValues = {listingType=row.listingType, profession=row.profession, itemName=row.itemName, recipeName=row.recipeName, materialsPolicy=row.materialsPolicy, priceMode=row.priceMode, priceText=row.priceText, gold=math.floor((row.priceCopper or 0)/10000), silver=math.floor(((row.priceCopper or 0)%10000)/100), copper=(row.priceCopper or 0)%100, location=row.location, availability=row.availability, expirationMinutes="Keep Current", notes=row.notes}
         for key, control in pairs(self.formInputs) do control:SetText(tostring(self.formValues[key] or "")) end
+        self:SyncFormSelectors()
         self.formUpdating=false; self.formPrimary.label:SetText("Save Changes"); self.sectionTitle:SetText("Edit Listing"); self:UpdateListingPreview()
       elseif not self.formValues then self:ResetListingForm(); self.formPrimary.label:SetText("Create Listing") end
       self.formShell:Show(); self.placeholder:Hide(); return true
@@ -557,7 +573,7 @@ do
     end
     function U:SubmitListingForm()
       local values = {}; for key, control in pairs(self.formInputs or {}) do values[key] = mktui_text(control:GetText()) end
-      values.listingType = values.listingType ~= "" and values.listingType or "Crafting Offer"; values.materialsPolicy = values.materialsPolicy ~= "" and values.materialsPolicy or "Discuss"; values.priceMode = values.priceMode ~= "" and values.priceMode or "Negotiable"; values.availability = values.availability ~= "" and values.availability or "Available Now"
+      for _, key in ipairs({"listingType","materialsPolicy","priceMode","availability","expirationMinutes"}) do values[key]=(self.formValues or {})[key] end
       local choices={listingType={['Crafting Offer']=true,['Crafting Request']=true},materialsPolicy={['Crafter Provides']=true,['Customer Provides']=true,['Split Materials']=true,Discuss=true},priceMode={['Fixed Price']=true,Tip=true,Negotiable=true,Free=true},availability={['Available Now']=true,Today=true,['This Session']=true,Scheduled=true}}
       if values.profession == "" or values.itemName == "" then self.formMessage:SetText(values.profession == "" and "Profession is required." or "Item is required."); return false end
       if #values.profession>64 or #values.itemName>128 or #values.recipeName>128 or #values.priceText>80 or #values.location>64 or #values.notes>240 then self.formMessage:SetText("A field exceeds its maximum length."); return false end
@@ -823,6 +839,7 @@ do
       if self.formPrimary and self.formPrimary:GetScript("OnClick") then count = count + 1 end
       if self.formCancel and self.formCancel:GetScript("OnClick") then count = count + 1 end
       for _, input in pairs(self.formInputs or {}) do if input:GetScript("OnTextChanged") then count=count+1 end end
+      for _, selector in pairs(self.formSelectors or {}) do if selector:GetScript("OnClick") then count=count+1 end end
       if self.browsePrevious and self.browsePrevious:GetScript("OnClick") then count = count + 1 end
       if self.browseNext and self.browseNext:GetScript("OnClick") then count = count + 1 end
       if self.myListingsPrevious and self.myListingsPrevious:GetScript("OnClick") then count = count + 1 end
@@ -861,6 +878,7 @@ do
       if self.formPrimary then self.formPrimary:EnableMouse(true); self.formPrimary:SetScript("OnClick", mktui_form_submit) end
       if self.formCancel then self.formCancel:EnableMouse(true); self.formCancel:SetScript("OnClick", mktui_form_cancel) end
       for _, input in pairs(self.formInputs or {}) do input:EnableMouse(true); input:SetScript("OnTextChanged", mktui_form_changed) end
+      for key, selector in pairs(self.formSelectors or {}) do selector:EnableMouse(true); selector:SetScript("OnClick", function() U:OpenFormSelector(key) end) end
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", mktui_previous_click) end
       if self.browseNext then self.browseNext:SetScript("OnClick", mktui_next_click) end
       if self.myListingsPrevious then self.myListingsPrevious:EnableMouse(true); self.myListingsPrevious:SetScript("OnClick", mktui_my_previous_click) end
@@ -897,6 +915,8 @@ do
       if self.formPrimary then self.formPrimary:SetScript("OnClick", nil); self.formPrimary:EnableMouse(false) end
       if self.formCancel then self.formCancel:SetScript("OnClick", nil); self.formCancel:EnableMouse(false) end
       for _, input in pairs(self.formInputs or {}) do input:SetScript("OnTextChanged", nil); input:EnableMouse(false) end
+      for _, selector in pairs(self.formSelectors or {}) do selector:SetScript("OnClick", nil); selector:EnableMouse(false) end
+      self:CloseFormSelectors()
       if self.browsePrevious then self.browsePrevious:SetScript("OnClick", nil); self.browsePrevious:EnableMouse(false) end
       if self.browseNext then self.browseNext:SetScript("OnClick", nil); self.browseNext:EnableMouse(false) end
       if self.myListingsPrevious then self.myListingsPrevious:SetScript("OnClick", nil); self.myListingsPrevious:EnableMouse(false) end
@@ -1235,9 +1255,16 @@ do
 
       local form = CreateFrame("Frame", nil, panel); form:SetWidth(780); form:SetHeight(360); form:SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -140); mktui_backdrop(form, .72)
       self.formShell, self.formInputs = form, {}
-      local fields = {{"listingType","Listing Type"},{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"materialsPolicy","Materials"},{"priceMode","Price Mode"},{"gold","Gold"},{"silver","Silver"},{"copper","Copper"},{"priceText","Price / Tip"},{"location","Location"},{"availability","Availability"},{"expirationMinutes","Expiration"},{"notes","Notes"}}
+      local fields = {{"profession","Profession"},{"itemName","Item"},{"recipeName","Recipe"},{"gold","Gold"},{"silver","Silver"},{"copper","Copper"},{"priceText","Price / Tip"},{"location","Location"},{"notes","Notes"}}
       for index, field in ipairs(fields) do
-        local col, row = index <= 7 and 0 or 380, (index-1)%7; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*40)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(22); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-30-(row*40)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
+        local col, row = index <= 5 and 0 or 380, (index-1)%5; local label=mktui_font(form,field[2],10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-16-(row*44)); local box=CreateFrame("EditBox",nil,form); box:SetWidth(330); box:SetHeight(22); box:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-30-(row*44)); box:SetAutoFocus(false); box:SetFontObject(ChatFontNormal); mktui_backdrop(box,.88); self.formInputs[field[1]]=box
+      end
+      self.formSelectors={}
+      local selectorDefs={{"listingType","Listing Type","SignalFireMarketplaceFormTypeDropdown151",{"Crafting Offer","Crafting Request"}},{"materialsPolicy","Materials","SignalFireMarketplaceFormMaterialsDropdown151",{"Crafter Provides","Customer Provides","Split Materials","Discuss"}},{"priceMode","Price Mode","SignalFireMarketplaceFormPriceModeDropdown151",{"Fixed Price","Tip","Negotiable","Free"}},{"availability","Availability","SignalFireMarketplaceFormAvailabilityDropdown151",{"Available Now","Today","This Session","Scheduled"}},{"expirationMinutes","Expiration","SignalFireMarketplaceFormExpirationDropdown151",{30,60,120,240,480,1440}}}
+      for index, def in ipairs(selectorDefs) do
+        local key,title,name,options=def[1],def[2],def[3],def[4]; local col,row=index<=3 and 0 or 380,(index-1)%3; local label=mktui_font(form,title,10,.9,.76,.32); label:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-246-(row*44)); local button=CreateFrame("Button",nil,form); button:SetWidth(330); button:SetHeight(22); button:SetPoint("TOPLEFT",form,"TOPLEFT",12+col,-260-(row*44)); mktui_backdrop(button,.88); button.label=mktui_font(button,"",10,.9,.76,.32); button.label:SetPoint("LEFT",button,"LEFT",6,0); button.allowed={}; for _,v in ipairs(options) do button.allowed[v]=true end; if key=="expirationMinutes" then button.allowed["Keep Current"]=true end
+        local menu=_G[name] or CreateFrame("Frame",name,UIParent,"UIDropDownMenuTemplate"); button.menu=menu; button.menuInitializer=function(owner,level) if (level or 1)~=1 then return end; for _,v in ipairs(options) do local info=UIDropDownMenu_CreateInfo(); info.text=tostring(v); info.notCheckable=true; info.func=function() U:SetFormSelector(key,v); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end; if key=="expirationMinutes" and U.formMode=="edit" then local info=UIDropDownMenu_CreateInfo(); info.text="Keep Current"; info.notCheckable=true; info.func=function() U:SetFormSelector(key,"Keep Current"); U:CloseFormSelectors() end; UIDropDownMenu_AddButton(info,level) end end
+        self.formSelectors[key]=button
       end
       self.formPreview=mktui_font(form,"",10,.72,.72,.72); self.formPreview:SetPoint("TOPLEFT",form,"TOPLEFT",12,-300)
       self.formMessage=mktui_font(form,"",10,.9,.45,.25); self.formMessage:SetPoint("TOPLEFT",form,"TOPLEFT",12,-316)
