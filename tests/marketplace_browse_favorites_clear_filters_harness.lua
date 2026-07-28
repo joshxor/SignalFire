@@ -92,7 +92,7 @@ U.browseClearFilters:GetScript("OnClick")(U.browseClearFilters)
 assert(not U.browseFavoritesOnly and U:GetBrowseListingType() == "" and U:GetBrowseProfessionKey() == "" and U:GetBrowseLocationKey() == ""
   and U:GetBrowseAvailability() == "" and U:GetAppliedBrowseQuery() == "flask" and U.browsePage == 1, "Clear Filters did not preserve search only")
 local same = U.browseFilteredView
-assert(U.browseClearFilters:GetScript("OnClick")(U.browseClearFilters) == false and U.browseFilteredView == same, "inactive Clear Filters rebuilt results")
+assert(U:ClearBrowseFilters() == false and U.browseFilteredView == same, "inactive Clear Filters rebuilt results")
 
 U.browseFavoritesButton:GetScript("OnClick")(U.browseFavoritesButton)
 U.browseSearchBox:SetText("missing"); U.browseSearchButton:GetScript("OnClick")(U.browseSearchButton)
