@@ -89,6 +89,6 @@ assert(U:GetBrowseLocationKey() == "" and U.browseLocationSelector.label:GetText
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = false; B:SFModulesApply()
 assert(U.browseLocationSelector:GetScript("OnClick") == nil and U.browseAvailabilitySelector:GetScript("OnClick") == nil and U:ActiveScriptCount() == 0, "disable retained new scripts")
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true; B:SFModulesApply()
-assert(B:ShowMarketplace() and U:ActiveScriptCount() == 66 and U.browseLocationSelector.menu:GetName() == names[3]
+assert(B:ShowMarketplace() and U:ActiveScriptCount() == 72 and U.browseLocationSelector.menu:GetName() == names[3]
   and U.browseAvailabilitySelector.menu:GetName() == names[4] and dropdownCreates == 9, "re-enable duplicated selectors or dropdowns")
 print("marketplace browse location/availability filters harness: PASS")

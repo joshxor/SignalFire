@@ -12,6 +12,8 @@ do
     M.maximumOwnerListings = 20
     M.favoriteStaleTTL = 7 * 24 * 60 * 60
     M.expirationTaskKey = "marketplace.expiration"
+    M.maximumLocalLinkIdLength = 128
+    M.maximumLocalLinkLength = 320
     M.runtimeSequence = tonumber(M.runtimeSequence or 0) or 0
     M.expirationRemovals = tonumber(M.expirationRemovals or 0) or 0
     M.indexRepairs = tonumber(M.indexRepairs or 0) or 0
@@ -65,6 +67,15 @@ do
 
     local function mkt_key(value)
       return string.lower(mkt_text(value, 160))
+    end
+
+    local function mkt_owner_key(value)
+      local text = tostring(value or "")
+      text = string.gsub(text, "|[cC]%x%x%x%x%x%x%x%x", "")
+      text = string.gsub(text, "|[rR]", "")
+      text = mkt_text(text, 48)
+      text = string.gsub(text, "%-.*$", "")
+      return string.lower(mkt_text(text, 48))
     end
 
     local function mkt_slug(value)
@@ -136,7 +147,7 @@ do
     -- Keep UI ownership checks aligned with listing normalization.  This is
     -- deliberately an exact, normalized key rather than display-name matching.
     function M:GetCurrentOwnerKey()
-      return mkt_key(mkt_player())
+      return mkt_owner_key(mkt_player())
     end
 
     function M:ReadProfileStore(profile)
@@ -209,7 +220,7 @@ do
         id=existing and tostring(existing.id or "") or tostring(input.id or ""),
         profile=profile,
         owner=owner,
-        ownerKey=mkt_key(owner),
+        ownerKey=mkt_owner_key(owner),
         listingType=listingType,
         profession=profession,
         professionKey=mkt_key(profession),
@@ -265,20 +276,28 @@ do
           valid[textId] = row
           local sequence = tonumber(string.match(textId, ":(%d+)$") or 0) or 0
           if sequence > maximumSequence then maximumSequence = sequence end
-          if source.id ~= textId or source.schemaVersion ~= self.schemaVersion then repairs = repairs + 1 end
+          if source.id ~= textId or source.schemaVersion ~= self.schemaVersion or source.ownerKey ~= row.ownerKey then repairs = repairs + 1 end
         else
           repairs = repairs + 1
           if err then self:RecordError("migration rejected " .. textId .. ": " .. err) end
         end
       end
       store.listingsById = valid
-      local ordered = {}
-      for id in pairs(valid) do table.insert(ordered, id) end
-      table.sort(ordered, function(left, right)
+      local ordered, seen = {}, {}
+      for _, id in ipairs(store.listingOrder or {}) do
+        if valid[id] and not seen[id] then
+          seen[id] = true
+          table.insert(ordered, id)
+        end
+      end
+      local appended = {}
+      for id in pairs(valid) do if not seen[id] then table.insert(appended, id) end end
+      table.sort(appended, function(left, right)
         local a, b = valid[left], valid[right]
         if a.createdAt == b.createdAt then return left < right end
         return a.createdAt < b.createdAt
       end)
+      for _, id in ipairs(appended) do table.insert(ordered, id) end
       if #ordered > self.maximumListings then
         for index = 1, #ordered - self.maximumListings do valid[ordered[index]] = nil; repairs = repairs + 1 end
         local kept = {}
@@ -483,6 +502,62 @@ do
       return mkt_copy(row)
     end
 
+    function M:ResolveLocalLink(id)
+      if type(id) ~= "string" or id == "" or #id > self.maximumLocalLinkIdLength
+          or not string.match(id, "^mkt1:[at]:[%w%-]+:%d+:%d+$") then
+        return nil, "Marketplace listing is unavailable."
+      end
+      local runtime = self.runtime
+      if not self:IsEnabled() or not runtime or not runtime.active or runtime.profile ~= mkt_profile() then return nil, "Marketplace listing is unavailable." end
+      local row = runtime.byId[id]
+      if not row or row.id ~= id or row.profile ~= runtime.profile or tonumber(row.expiresAt or 0) <= mkt_epoch() then return nil, "Marketplace listing is unavailable." end
+      return row
+    end
+    function M:BuildLocalLink(id)
+      local row, err = self:ResolveLocalLink(id); if not row then return nil, err end
+      local profession = mkt_text(tostring(row.profession or ""):gsub("[%c|%[%]]", ""), 48)
+      local item = mkt_text(tostring(row.itemName or ""):gsub("[%c|%[%]]", ""), 96)
+      local title = mkt_text(profession .. ": " .. item, 120)
+      local link = "|cffd4a017|Hsignalfiremkt:" .. row.id .. "|h[" .. title .. "]|h|r"
+      if #link > self.maximumLocalLinkLength then return nil, "Marketplace listing is unavailable." end
+      return link
+    end
+    function M:OpenWhisper(id)
+      local row = self:ResolveLocalLink(id)
+      if not row or mkt_text(row.owner, 48) == "" or row.ownerKey == self:GetCurrentOwnerKey() then return false end
+      if ChatFrame_SendTell then ChatFrame_SendTell(row.owner); return true end
+      if ChatFrame_OpenChat then ChatFrame_OpenChat("/w " .. row.owner .. " "); return true end
+      if ChatEdit_ActivateChat and ChatFrameEditBox then
+        ChatFrameEditBox:SetText("/w " .. row.owner .. " ")
+        ChatEdit_ActivateChat(ChatFrameEditBox)
+        return true
+      end
+      return false
+    end
+    function M:HandleLocalLink(id)
+      local row = self:ResolveLocalLink(id)
+      if not row then mkt_emit("Marketplace listing is unavailable."); return false end
+      local ui = _G.SignalFireMarketplaceUI151
+      if not (ui and ui.OpenExactListing and ui:OpenExactListing(row.id)) then
+        mkt_emit("Marketplace listing is unavailable.")
+        return false
+      end
+      return true
+    end
+    function M:RegisterLocalLinkHandler()
+      if self.localLinkRegistered then return true end
+      self.localLinkCallback = self.localLinkCallback or function(_, id) return M:HandleLocalLink(id) end
+      self.localLinkRegistered = B.RegisterLinkHandler
+        and B:RegisterLinkHandler("signalfiremkt", self, self.localLinkCallback) == true or false
+      return self.localLinkRegistered
+    end
+    function M:UnregisterLocalLinkHandler()
+      local removed = B.UnregisterLinkHandler
+        and B:UnregisterLinkHandler("signalfiremkt", self) == true or false
+      self.localLinkRegistered = false
+      return removed
+    end
+
     function M:EditListing(id, changes)
       local runtime = self.runtime
       id = tostring(id or "")
@@ -556,6 +631,11 @@ do
       runtime.indexRepairs = runtime.indexRepairs + (tonumber(report.repairs or 0) or 0)
       self.indexRepairs = self.indexRepairs + (tonumber(report.repairs or 0) or 0)
       self:ExpireListings("enable")
+      if not self:RegisterLocalLinkHandler() then
+        self:RecordError("Marketplace hyperlink handler is unavailable")
+        self:Disable("link-handler-error")
+        return false, "Marketplace hyperlink handler is unavailable"
+      end
       local marketplaceUI = _G.SignalFireMarketplaceUI151
       if marketplaceUI and marketplaceUI.Enable then
         local uiOK, uiResult, uiError = pcall(marketplaceUI.Enable, marketplaceUI, profile)
@@ -570,6 +650,7 @@ do
 
     function M:Disable(reason)
       self:CancelExpiration()
+      self:UnregisterLocalLinkHandler()
       local marketplaceUI = _G.SignalFireMarketplaceUI151
       if marketplaceUI and marketplaceUI.Disable then
         local ok, err = pcall(marketplaceUI.Disable, marketplaceUI, reason)
@@ -621,7 +702,8 @@ do
         and marketplaceUI:GetPanelState() or "unbuilt"
       local uiClean = not marketplaceUI or not marketplaceUI.IsDisabledClean
         or marketplaceUI:IsDisabledClean()
-      local disabledClean = not enabled and not runtime and timers == 0 and indexes == 0 and uiClean
+      local disabledClean = not enabled and not runtime and timers == 0 and indexes == 0
+        and not self.localLinkRegistered and uiClean
       return {
         owner=self.generation, profile=profile, enabled=enabled,
         schema=type(root) == "table" and tonumber(root.schemaVersion or 0) or 0,

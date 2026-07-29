@@ -250,5 +250,5 @@ BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = true; 
 assert(B:ShowMarketplace() and U.browseTypeSelector == typeButton and U.browseProfessionSelector == professionButton
   and U.browseTypeSelector.menu == typeMenu and U.browseProfessionSelector.menu == professionMenu and dropdownCreates == 9
   and U.browseTypeSelector.label:GetText() == "All Types" and U.browseProfessionSelector.label:GetText() == "All Professions"
-  and U:ActiveScriptCount() == 66, "re-enable duplicated selectors, menus, or scripts")
+  and U:ActiveScriptCount() == 72, "re-enable duplicated selectors, menus, or scripts")
 print("marketplace browse type/profession filters harness: PASS")
