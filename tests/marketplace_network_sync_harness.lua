@@ -6,6 +6,7 @@ local M = assert(_G.SignalFireMarketplace151, "Marketplace core was not loaded")
 local N = assert(_G.SignalFireMarketplaceNetwork2A, "Marketplace network was not loaded")
 local function check(v, message) if not v then error(message, 2) end end
 BronzeLFG_DB.options.modulesByProfile = BronzeLFG_DB.options.modulesByProfile or {}
+BronzeLFG_DB.options.serverProfile = "Ascension"
 BronzeLFG_DB.options.modulesByProfile.Ascension = BronzeLFG_DB.options.modulesByProfile.Ascension or {}
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true
 check(B:SFModulesApply(), "Marketplace enable failed")
