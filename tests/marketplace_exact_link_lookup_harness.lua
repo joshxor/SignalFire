@@ -7,7 +7,7 @@ local row=assert(M:NormalizeNetworkListing({id=id,profile="Ascension",owner=Unit
 r.store.listingsById[id]=row; r.store.listingOrder[#r.store.listingOrder+1]=id; M:IndexListing(r,row)
 local sent={}; local old=B.SFN_SendExtensionPacket; B.SFN_SendExtensionPacket=function(_,typ,payload) sent[#sent+1]=payload; return true end
 ok(N:HandleLookup({"BLFG312","MKT2","L","1","Ascension",id,"lookup-1",tostring(stamp)},"Other-Realm"),"owner lookup")
-ok(#r.outgoing>0,"owner response queued"); ok(N:HandleLookup({"BLFG312","MKT2","L","2","Ascension",id,"lookup-1",tostring(stamp)},"Other-Realm")==false,"version")
+ok(#r.outgoing>0,"owner response queued"); ok(N:HandlePacket(nil,{"BLFG312","MKT2","L","2","Ascension",id,"lookup-1",tostring(stamp)},"Other-Realm")==false,"version")
 ok(N:HandleLookup({"BLFG312","MKT2","L","1","Ascension","bad","lookup-1",tostring(stamp)},"Other-Realm")==false,"stable id")
 local missing="mkt1:a:remote:100001:0002"; ok(N:RequestExactLink(missing),"request")
 ok(r.linkLookupsById[missing] and r.lookupWake,"pending wake"); ok(N:RequestExactLink(missing),"duplicate coalesces")

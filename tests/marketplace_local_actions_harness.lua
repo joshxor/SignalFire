@@ -180,9 +180,10 @@ local unavailableBefore = #chatMessages
 local selectionBeforeUnavailable = U.selectedListingId
 SetItemRef("signalfiremkt:" .. expired.id, "[Expired Marketplace]", "LeftButton", DEFAULT_CHAT_FRAME)
 check(priorCalls == 2 and #chatMessages == unavailableBefore + 1
-  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable."
+  and chatMessages[#chatMessages] == "SignalFire> Looking up Marketplace listing..."
+  and M.runtime.linkLookupsById[expired.id] ~= nil
   and U.selectedListingId == selectionBeforeUnavailable,
-  "handled Marketplace unavailable link delegated or emitted more than once")
+  "handled Marketplace missing link did not begin one bounded lookup")
 
 local marketplaceCallback = registryEntry.callback
 registryEntry.callback = function() error("Marketplace callback fixture error") end
