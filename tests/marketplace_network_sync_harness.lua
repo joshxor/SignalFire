@@ -20,11 +20,11 @@ local encoded = assert(N:Serialize(row)); local decoded = assert(N:Deserialize(e
 check(decoded.ownerKey == M:OwnerKey(row.owner), "derived owner key was trusted")
 local chunks = assert(N:Chunk(row)); check(#chunks <= 8, "chunk maximum exceeded")
 local sent = {}; local old = B.SFN_SendExtensionPacket; B.SFN_SendExtensionPacket=function(_, typ, payload) sent[#sent+1]=payload; return true end
-for _, payload in ipairs(chunks) do N.HandlePacket(N, {"BLFG312","MKT2", unpack((function() local r={} for x in string.gmatch(payload,"[^~]+") do r[#r+1]=x end return r end)())}, "Remote-Any Realm") end
+for _, payload in ipairs(chunks) do N:HandlePacket(nil, {"BLFG312","MKT2", unpack((function() local r={} for x in string.gmatch(payload,"[^~]+") do r[#r+1]=x end return r end)())}, "Remote-Any Realm") end
 B.SFN_SendExtensionPacket=old
 check(M.runtime.remoteById[row.id] ~= nil, "valid remote upsert was not retained")
 check(M.runtime.store.listingsById[row.id] == nil, "remote record was persisted")
-check(N.HandlePacket(N,{"BLFG312","MKT2","R","1",row.id,tostring(row.updatedAt)},"Remote-Any Realm"), "valid remote remove rejected")
+check(N:HandlePacket(nil,{"BLFG312","MKT2","R","1",row.id,tostring(row.updatedAt)},"Remote-Any Realm"), "valid remote remove rejected")
 check(M.runtime.remoteById[row.id] == nil, "remote remove failed")
 M:Disable("harness")
 check(not B.NetworkPacketHandlers2A.MKT2, "MKT2 teardown failed")
