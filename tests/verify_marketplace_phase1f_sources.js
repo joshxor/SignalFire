@@ -5,6 +5,7 @@ const root = path.resolve(__dirname, "..");
 const bronze = fs.readFileSync(path.join(root, "SignalFire", "BronzeLFG.lua"), "utf8");
 const marketplace = fs.readFileSync(path.join(root, "SignalFire", "SignalFireMarketplace.lua"), "utf8");
 const ui = fs.readFileSync(path.join(root, "SignalFire", "SignalFireMarketplaceUI.lua"), "utf8");
+const chat = fs.readFileSync(path.join(root, "SignalFire", "SignalFireChat.lua"), "utf8");
 
 function need(source, text, label) {
   if (!source.includes(text)) {
@@ -27,6 +28,16 @@ function body(source, declaration) {
   return source.slice(start, end < 0 ? source.length : end);
 }
 
+function finalSetItemRefBody(source) {
+  const declaration = "function SetItemRef(link, text, button, chatFrame)";
+  const start = source.lastIndexOf(declaration);
+  if (start < 0) {
+    throw new Error("Marketplace 1F source verification failed: missing final SetItemRef wrapper");
+  }
+  const end = source.indexOf("\n-- More reliable focus tokenization", start);
+  return source.slice(start, end < 0 ? source.length : end);
+}
+
 need(bronze, "BLFG.LinkHandlers565 = BLFG.LinkHandlers565 or {}", "shared link-handler registry");
 need(bronze, "function BLFG:RegisterLinkHandler(typeName, owner, callback)", "link-handler registration API");
 need(bronze, "function BLFG:UnregisterLinkHandler(typeName, owner)", "link-handler removal API");
@@ -34,6 +45,15 @@ need(bronze, "if not entry or entry.owner ~= owner then", "owner-checked unregis
 need(bronze, "BLFG.KnownLinkHandlerTypes565 = BLFG.KnownLinkHandlerTypes565 or {signalfiremkt=true}", "bounded known link-type set");
 need(bronze, 'string.match(link, "^([%a%d_]+):(.*)$")', "exact link-type parsing");
 need(bronze, "BLFG_SetItemRef_Before565(link, text, button, chatFrame)", "prior SetItemRef delegation");
+need(bronze, "local knownType = typeName and BLFG.KnownLinkHandlerTypes565", "known-type dispatcher gate");
+need(bronze, "if knownType then", "known-link consumption branch");
+need(bronze, "BLFG_565_EmitMarketplaceUnavailable", "bounded Marketplace unavailable fallback");
+need(bronze, 'typeName == "signalfiremkt"', "signalfiremkt-specific unavailable fallback");
+need(bronze, "local ok = pcall(entry.callback, entry.owner, payload)", "protected registered callback dispatch");
+const finalDispatcher = finalSetItemRefBody(bronze);
+if (finalDispatcher.indexOf("if knownType then") > finalDispatcher.indexOf("BLFG_SetItemRef_Before565")) {
+  throw new Error("Marketplace 1F source verification failed: known links can delegate before dispatcher handling");
+}
 
 const setItemRefDefinitions = (bronze.match(/function SetItemRef\(/g) || []).length;
 if (setItemRefDefinitions !== 3) {
@@ -105,6 +125,17 @@ need(ui, "function U:OpenExactListing(id)", "exact-listing navigation helper");
 need(ui, 'self:SetTab("Browse")', "Browse-tab exact-link navigation");
 need(ui, "self.selectedListingId=row.id", "exact listing selection");
 need(ui, "self.favoriteWhisper:Hide(); self.favoriteLink:Hide()", "unavailable Favorite action hiding");
+need(ui, '{"Player", 84}, {"Type", 88}, {"Profession", 92}, {"Item / Recipe", 166},', "corrected Browse leading column widths");
+need(ui, '{"Location", 86}, {"Availability", 90}, {"Price / Tip", 80}, {"Expires", 66},', "corrected Browse trailing column widths");
+need(ui, "rows:SetWidth(760)", "bounded Browse rows area width");
+need(ui, "row:SetWidth(760); row:SetHeight(32)", "bounded Browse row geometry");
+need(ui, "label:SetWidth(column[2] - 8)", "Browse cell eight-pixel gutter");
+need(ui, "label:SetHeight(28); label:SetJustifyH(\"LEFT\"); label:SetJustifyV(\"MIDDLE\")", "vertically bounded Browse row labels");
+need(ui, "if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end", "guarded Browse wrapping support");
+
+forbid(chat, 'key="raidTools"', "deferred Raid Tools catalog entry");
+forbid(chat, 'label="Raid Tools"', "Raid Tools module label");
+forbid(chat, "Deferred until after 1.5", "deferred Raid Tools catalog message");
 
 forbid(marketplace, "SendChatMessage(", "Marketplace automatic message transmission");
 forbid(ui, "SendChatMessage(", "Marketplace UI automatic message transmission");
