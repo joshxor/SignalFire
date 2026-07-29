@@ -18,7 +18,7 @@ end
 
 local first = create(" Aesri ", 1)
 for index = 2, 9 do create("Aesri", index) end
-local other = create("Aesri-Alt", 10)
+local other = create("OtherCrafter", 10)
 assert(U:SetTab("My Listings") == true and U.myListingsView.total == 9, "exact owner index view is incorrect")
 assert(#U.myListingsRows == 8 and U.myListingsRows[1].labels[3]:GetText() == "Owned Item 9", "owned rows are not newest first")
 assert(U.myListingsPage == 1 and U:ChangeMyListingsPage(1) == true and U.myListingsPage == 2, "owned paging failed")
