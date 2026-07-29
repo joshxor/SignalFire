@@ -567,7 +567,16 @@ do
     end
     function M:HandleLocalLink(id)
       local row = self:ResolveLocalLink(id)
-      if not row then mkt_emit("Marketplace listing is unavailable."); return false end
+      if not row then
+        -- A valid, missing exact ID may be supplied by another SignalFire user.
+        -- The network owns the bounded asynchronous lookup; malformed and disabled
+        -- links remain deliberately unavailable without initializing UI state.
+        local network = _G.SignalFireMarketplaceNetwork2A
+        if self:IsStableListingId(id) and self.runtime and self.runtime.active
+            and string.sub(id, 6, 6) == (self.runtime.profile == "Ascension" and "a" or "t")
+            and network and network.RequestExactLink and network:RequestExactLink(id) then return true end
+        mkt_emit("Marketplace listing is unavailable."); return false
+      end
       local ui = _G.SignalFireMarketplaceUI151
       if not (ui and ui.OpenExactListing and ui:OpenExactListing(row.id)) then
         mkt_emit("Marketplace listing is unavailable.")
@@ -791,7 +800,11 @@ do
         .. ", duplicate=" .. tostring(n.duplicate) .. ", pending=" .. tostring(n.pending)
         .. ", dedup=" .. tostring(n.dedup) .. ", outgoing=" .. tostring(n.outgoing)
         .. ", dropped=" .. tostring(n.dropped) .. ", wake=" .. tostring(n.wake)
-        .. ", handler=" .. tostring(n.handler))
+        .. ", handler=" .. tostring(n.handler) .. ", lookupSent=" .. tostring(n.lookupSent)
+        .. ", lookupReceived=" .. tostring(n.lookupReceived) .. ", lookupResponded=" .. tostring(n.lookupResponded)
+        .. ", lookupResolved=" .. tostring(n.lookupResolved) .. ", lookupTimedOut=" .. tostring(n.lookupTimedOut)
+        .. ", lookupRejected=" .. tostring(n.lookupRejected) .. ", lookupPending=" .. tostring(n.lookupPending)
+        .. ", lookupWake=" .. tostring(n.lookupWake))
       return status
     end
 

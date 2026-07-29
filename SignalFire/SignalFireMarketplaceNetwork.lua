@@ -10,6 +10,8 @@ do
     N.wakeKey = "marketplace.network.outgoing"
     N.discoveryKey, N.replayKey = "marketplace.network.discovery", "marketplace.network.replay"
     N.requesterCooldown, N.responderCooldown = 10, 10
+    N.maximumLinkLookups, N.linkLookupTTL, N.linkRequesterCooldown = 16, 6, 5
+    N.linkWakeKey = "marketplace.network.link-lookup"
     local FIELDS = {"schemaVersion","id","profile","owner","ownerKey","listingType","profession","professionKey","itemName","itemKey","recipeName","recipeKey","materialsPolicy","priceMode","priceCopper","priceText","location","locationKey","availability","notes","createdAt","updatedAt","expiresAt"}
     local function now() return math.floor(tonumber(time and time() or 0) or 0) end
     local function count(t) local n=0; for _ in pairs(t or {}) do n=n+1 end; return n end
@@ -69,6 +71,15 @@ do
       for token,p in pairs(runtime.pending or {}) do if stamp-(p.seen or 0)>N.pendingTTL then runtime.pending[token]=nil end end
       for key,seen in pairs(runtime.dedup or {}) do if stamp-seen>N.dedupTTL then runtime.dedup[key]=nil end end
       while count(runtime.dedup)>N.maximumDedup do local oldest,at=nil,nil; for k,v in pairs(runtime.dedup) do if not at or v<at then oldest,at=k,v end end; runtime.dedup[oldest]=nil end
+      for id,seen in pairs(runtime.lookupRequestedById or {}) do if stamp-seen>N.dedupTTL then runtime.lookupRequestedById[id]=nil end end
+    end
+    local function profile_code(profile) return profile=="Ascension" and "a" or (profile=="Triumvirate" and "t" or "") end
+    local function canonical_local(runtime,id)
+      for _,listed in ipairs(runtime.store.listingOrder or {}) do if listed==id then return true end end
+      return false
+    end
+    local function unavailable()
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("SignalFire> Marketplace listing is unavailable.") end
     end
     function N:Chunk(row)
       local encoded=self:Serialize(row); if not encoded then return nil end
@@ -154,13 +165,76 @@ do
       if not old then runtime.remoteOrder[#runtime.remoteOrder+1]=row.id; runtime.remoteCount=(runtime.remoteCount or 0)+1 end
       M:IndexListing(runtime,row); runtime.dataGeneration=runtime.dataGeneration+1; note("accepted")
       local ui=_G.SignalFireMarketplaceUI151; if ui and ui.OnMarketplaceDataChanged then ui:OnMarketplaceDataChanged() end
-      M:ScheduleExpiration(); return true
+      M:ScheduleExpiration(); self:ResolveLinkLookup(row); return true
+    end
+    function N:ScheduleLinkLookupWake(runtime)
+      if not runtime or not runtime.active then return false end
+      local nearest=nil
+      for _,lookup in pairs(runtime.linkLookupsById or {}) do if not nearest or lookup.expiresAt<nearest then nearest=lookup.expiresAt end end
+      if not nearest then runtime.lookupWake=false; return false end
+      if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.linkWakeKey) end
+      runtime.lookupWake=true
+      local generation,profile=runtime.generation,runtime.profile
+      if B.SF151_ScheduleDelayed then B:SF151_ScheduleDelayed(self.linkWakeKey,math.max(0,nearest-now()),function()
+        local current=M.runtime; if not current or current.generation~=generation or current.profile~=profile or not M:IsEnabled() then return end
+        current.lookupWake=false
+        local stamp=now()
+        for id,lookup in pairs(current.linkLookupsById or {}) do
+          if lookup.expiresAt<=stamp then current.linkLookupsById[id]=nil; note("lookupTimedOut"); unavailable() end
+        end
+        N:ScheduleLinkLookupWake(current)
+      end) end
+      return true
+    end
+    function N:ResolveLinkLookup(row)
+      local runtime=M.runtime; local lookup=runtime and runtime.linkLookupsById and runtime.linkLookupsById[row.id]
+      if not lookup or lookup.profile~=runtime.profile or row.profile~=runtime.profile then return false end
+      runtime.linkLookupsById[row.id]=nil; note("lookupResolved"); self:ScheduleLinkLookupWake(runtime)
+      -- This is the original click's exact ID only; HandleLocalLink retains the
+      -- established lazy UI ownership and its single unavailable fallback.
+      return M:HandleLocalLink(row.id)
+    end
+    function N:RequestExactLink(id)
+      local runtime=M.runtime; id=tostring(id or "")
+      if not runtime or not runtime.active or not M:IsEnabled() or not M:IsStableListingId(id)
+          or string.sub(id,6,6)~=profile_code(runtime.profile) then note("lookupRejected"); return false end
+      runtime.linkLookupsById,runtime.lookupRequestedById=runtime.linkLookupsById or {},runtime.lookupRequestedById or {}
+      if runtime.linkLookupsById[id] then return true end
+      local stamp=now(); if stamp-(runtime.lookupRequestedById[id] or 0)<self.linkRequesterCooldown then note("lookupRejected"); return false end
+      if count(runtime.linkLookupsById)>=self.maximumLinkLookups then note("lookupRejected"); unavailable(); return true end
+      local token="l"..tostring(runtime.generation).."-"..tostring(stamp).."-"..tostring(#id)
+      if not token_valid(token) then note("lookupRejected"); return false end
+      local payload="L~1~"..runtime.profile.."~"..id.."~"..token.."~"..tostring(stamp)
+      if #("BLFG312~MKT2~"..payload)>self.maximumPacket or not self:QueuePayload(payload) then note("lookupRejected"); return false end
+      runtime.lookupRequestedById[id]=stamp; runtime.linkLookupsById[id]={id=id,profile=runtime.profile,token=token,requestedAt=stamp,expiresAt=stamp+self.linkLookupTTL}
+      note("lookupSent")
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then DEFAULT_CHAT_FRAME:AddMessage("SignalFire> Looking up Marketplace listing...") end
+      self:ScheduleLinkLookupWake(runtime); return true
+    end
+    function N:HandleLookup(p,author)
+      local runtime=M.runtime; local profile,id,token,stamp=tostring(p[5] or ""),tostring(p[6] or ""),tostring(p[7] or ""),tostring(p[8] or "")
+      local stampValue=tonumber(stamp)
+      if #p~=8 or profile~=runtime.profile or profile_code(profile)=="" or not M:IsStableListingId(id)
+          or string.sub(id,6,6)~=profile_code(profile) or not token_valid(token) or not string.match(stamp,"^%d+$")
+          or not stampValue or math.abs(now()-stampValue)>300 then note("lookupRejected"); return false end
+      local requester=M:OwnerKey(author); if requester=="" or requester==M:GetCurrentOwnerKey() then return true end
+      local dedup="L:"..requester..":"..id
+      if runtime.dedup[dedup] and now()-runtime.dedup[dedup]<self.linkRequesterCooldown then note("duplicate"); return true end
+      runtime.dedup[dedup]=now(); note("lookupReceived"); prune(runtime)
+      local row=runtime.store.listingsById[id]
+      if not row or not canonical_local(runtime,id) or row.profile~=runtime.profile or row.ownerKey~=M:GetCurrentOwnerKey()
+          or tonumber(row.expiresAt or 0)<=now() or runtime.remoteById[id] then return true end
+      local normalized=M:NormalizeNetworkListing(row,runtime.profile)
+      if not normalized or normalized.id~=id then return true end
+      if self:QueueUpsert(row) then note("lookupResponded"); return true end
+      return false
     end
     function N:HandlePacket(_, p, author)
       local runtime=M.runtime; if not runtime or not runtime.active or not M:IsEnabled() then return false end
       note("received"); runtime.pending,runtime.dedup=runtime.pending or {},runtime.dedup or {}; prune(runtime)
       local op,version=p[3],p[4]; if tonumber(version)~=self.protocolVersion then note("rejected"); return false end
       if op=="Q" then return self:HandleDiscovery(p,author) end
+      if op=="L" then return self:HandleLookup(p,author) end
       if op=="R" then
         local id,revision=tostring(p[5] or ""),tostring(p[6] or "")
         if #p~=6 or not M:IsStableListingId(id) or not string.match(revision,"^%d+$") then note("rejected"); return false end
@@ -254,20 +328,21 @@ do
       if self.registered then return true end
       self.callback=self.callback or function(owner,p,author) return owner:HandlePacket(owner,p,author) end
       self.registered=B.RegisterNetworkPacketHandler and B:RegisterNetworkPacketHandler("MKT2",self,self.callback) == true or false
-      if self.registered then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; self:ScheduleInitial(runtime) end
+      if self.registered then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.linkLookupsById,runtime.lookupRequestedById={}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; runtime.lookupWake=false; self:ScheduleInitial(runtime) end
       return self.registered
     end
     function N:Disable()
       local runtime=M.runtime
       if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.wakeKey) end
       if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.discoveryKey); B:SF151_CancelDelayed(self.replayKey) end
-      if runtime then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; runtime.replay=nil; runtime.remoteById,runtime.remoteOrder,runtime.remoteSourceById={}, {}, {}; runtime.remoteCount=0 end
+      if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.linkWakeKey) end
+      if runtime then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.linkLookupsById,runtime.lookupRequestedById={}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; runtime.lookupWake=false; runtime.replay=nil; runtime.remoteById,runtime.remoteOrder,runtime.remoteSourceById={}, {}, {}; runtime.remoteCount=0 end
       if B.UnregisterNetworkPacketHandler then B:UnregisterNetworkPacketHandler("MKT2",self) end
       self.registered=false; return true
     end
     function N:GetDiagnostics()
       local r=M.runtime; local d=self.diagnostics or {}
-      return {network=(r and r.active and self.registered) and "active" or "inactive",remote=r and r.remoteCount or 0,sent=d.sent or 0,received=d.received or 0,accepted=d.accepted or 0,rejected=d.rejected or 0,stale=d.stale or 0,spoofed=d.spoofed or 0,duplicate=d.duplicate or 0,pending=r and count(r.pending) or 0,dedup=r and count(r.dedup) or 0,outgoing=r and #(r.outgoing or {}) or 0,dropped=d.dropped or 0,wake=r and r.wake or false,handler=self.registered==true,syncSent=d.syncSent or 0,syncReceived=d.syncReceived or 0,replayRuns=d.replayRuns or 0,replayListings=d.replayListings or 0,replayPending=r and r.replay and #r.replay.ids-r.replay.cursor+1 or 0,discoveryWake=r and r.discoveryWake or false,replayWake=r and r.replayWake or false,lastSync=r and r.lastSync or 0}
+      return {network=(r and r.active and self.registered) and "active" or "inactive",remote=r and r.remoteCount or 0,sent=d.sent or 0,received=d.received or 0,accepted=d.accepted or 0,rejected=d.rejected or 0,stale=d.stale or 0,spoofed=d.spoofed or 0,duplicate=d.duplicate or 0,pending=r and count(r.pending) or 0,dedup=r and count(r.dedup) or 0,outgoing=r and #(r.outgoing or {}) or 0,dropped=d.dropped or 0,wake=r and r.wake or false,handler=self.registered==true,syncSent=d.syncSent or 0,syncReceived=d.syncReceived or 0,replayRuns=d.replayRuns or 0,replayListings=d.replayListings or 0,replayPending=r and r.replay and #r.replay.ids-r.replay.cursor+1 or 0,discoveryWake=r and r.discoveryWake or false,replayWake=r and r.replayWake or false,lastSync=r and r.lastSync or 0,lookupSent=d.lookupSent or 0,lookupReceived=d.lookupReceived or 0,lookupResponded=d.lookupResponded or 0,lookupResolved=d.lookupResolved or 0,lookupTimedOut=d.lookupTimedOut or 0,lookupRejected=d.lookupRejected or 0,lookupPending=r and count(r.linkLookupsById) or 0,lookupWake=r and r.lookupWake or false}
     end
     if M.runtime and M.runtime.active and M:IsEnabled() then N:Enable(M.runtime) end
   end
