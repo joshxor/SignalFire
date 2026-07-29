@@ -24,8 +24,8 @@ do
       ["Favorites"]="No favorite listings.",
     }
     local BROWSE_COLUMNS = {
-      {"Player", 88}, {"Type", 92}, {"Profession", 96}, {"Item / Recipe", 150},
-      {"Location", 90}, {"Availability", 94}, {"Price / Tip", 86}, {"Expires", 66},
+      {"Player", 84}, {"Type", 88}, {"Profession", 92}, {"Item / Recipe", 166},
+      {"Location", 86}, {"Availability", 90}, {"Price / Tip", 80}, {"Expires", 66},
     }
     local BROWSE_PAGE_SIZE = 8
     local MY_LISTINGS_COLUMNS = {
@@ -1180,7 +1180,8 @@ do
       local x = 8
       for _, column in ipairs(BROWSE_COLUMNS) do
         local label = mktui_font(header, column[1], 10, .9, .76, .32)
-        label:SetWidth(column[2]); label:SetJustifyH("LEFT")
+        label:SetWidth(column[2] - 8); label:SetHeight(24); label:SetJustifyH("LEFT"); label:SetJustifyV("MIDDLE")
+        if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
         label:SetPoint("LEFT", header, "LEFT", x, 0)
         table.insert(self.browseTableHeaders, label)
         x = x + column[2]
@@ -1200,7 +1201,7 @@ do
       local rowY = -4
       for index = 1, 8 do
         local row = CreateFrame("Button", nil, rows)
-        row:SetWidth(744); row:SetHeight(32)
+        row:SetWidth(760); row:SetHeight(32)
         row:SetPoint("TOPLEFT", rows, "TOPLEFT", 0, rowY)
         mktui_backdrop(row, .55)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -1208,7 +1209,8 @@ do
         local columnX = 8
         for _, column in ipairs(BROWSE_COLUMNS) do
           local label = mktui_font(row, "", 10, .86, .82, .68)
-          label:SetWidth(column[2]); label:SetJustifyH("LEFT")
+          label:SetWidth(column[2] - 8); label:SetHeight(28); label:SetJustifyH("LEFT"); label:SetJustifyV("MIDDLE")
+          if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
           label:SetPoint("LEFT", row, "LEFT", columnX, 0)
           table.insert(row.labels, label)
           columnX = columnX + column[2]

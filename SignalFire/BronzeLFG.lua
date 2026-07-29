@@ -8243,6 +8243,11 @@ end
 BLFG_SetItemRef_Before565 = SetItemRef
 BLFG.KnownLinkHandlerTypes565 = BLFG.KnownLinkHandlerTypes565 or {signalfiremkt=true}
 BLFG.LinkHandlers565 = BLFG.LinkHandlers565 or {}
+local function BLFG_565_EmitMarketplaceUnavailable()
+  if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+    DEFAULT_CHAT_FRAME:AddMessage("SignalFire> Marketplace listing is unavailable.")
+  end
+end
 function BLFG:RegisterLinkHandler(typeName, owner, callback)
   if not (self.KnownLinkHandlerTypes565 and self.KnownLinkHandlerTypes565[typeName])
       or type(owner) ~= "table" or type(callback) ~= "function" then return false end
@@ -8280,9 +8285,15 @@ function SetItemRef(link, text, button, chatFrame)
   end
   if type(link) == "string" then
     local typeName, payload = string.match(link, "^([%a%d_]+):(.*)$")
-    local entry = typeName and BLFG.LinkHandlers565 and BLFG.LinkHandlers565[typeName]
-    if entry and entry.callback then
-      pcall(entry.callback, entry.owner, payload)
+    local knownType = typeName and BLFG.KnownLinkHandlerTypes565 and BLFG.KnownLinkHandlerTypes565[typeName]
+    if knownType then
+      local entry = BLFG.LinkHandlers565 and BLFG.LinkHandlers565[typeName]
+      if entry and entry.callback then
+        local ok = pcall(entry.callback, entry.owner, payload)
+        if not ok and typeName == "signalfiremkt" then BLFG_565_EmitMarketplaceUnavailable() end
+        return
+      end
+      if typeName == "signalfiremkt" then BLFG_565_EmitMarketplaceUnavailable() end
       return
     end
   end

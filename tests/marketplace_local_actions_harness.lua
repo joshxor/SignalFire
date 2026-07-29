@@ -52,6 +52,9 @@ BronzeLFG_DB.options.modulesByProfile = BronzeLFG_DB.options.modulesByProfile or
 BronzeLFG_DB.options.modulesByProfile.Ascension =
   BronzeLFG_DB.options.modulesByProfile.Ascension or {}
 BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace = true
+BronzeLFG_DB.options.modulesByProfile.Triumvirate =
+  BronzeLFG_DB.options.modulesByProfile.Triumvirate or {}
+BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = false
 check(B:SFModulesApply(), "Marketplace enable failed")
 check(B:ShowMarketplace(), "Marketplace UI did not open")
 check(M.runtime and M.runtime.active, "Marketplace runtime is not active")
@@ -64,6 +67,9 @@ local originalSendChatMessage = SendChatMessage
 SendChatMessage = function() sentMessages = sentMessages + 1 end
 ChatFrame_SendTell = function(owner) table.insert(tells, owner) end
 ChatFrame_OpenChat = function(text) table.insert(openedChats, text) end
+local chatMessages = {}
+local originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
+DEFAULT_CHAT_FRAME.AddMessage = function(_, message) table.insert(chatMessages, message) end
 
 local own = create("Harness", "Alchemy", "Elixir of Wisdom")
 local other = create("Other Crafter", "Alchemy", "Flask of Power")
@@ -148,6 +154,16 @@ SetItemRef("bronzelfgpub:fixture", "[Existing SignalFire]", "LeftButton", DEFAUL
 check(publicLinkCalls == 1 and priorCalls == 0,
   "existing SignalFire hyperlink did not retain its normal dispatcher path")
 B.OpenPublicGroupLink = originalOpenPublicGroupLink
+local guildLinkCalls = 0
+local originalOpenGuildBrowserLink = B.OpenGuildBrowserLink
+B.OpenGuildBrowserLink = function(_, guildName)
+  guildLinkCalls = guildLinkCalls + 1
+  check(guildName == "Fixture Guild", "existing SignalFire guild link payload changed")
+end
+SetItemRef("bronzelfgguild:Fixture%20Guild", "[Existing SignalFire Guild]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(guildLinkCalls == 1 and priorCalls == 0,
+  "existing SignalFire guild hyperlink did not retain its normal dispatcher path")
+B.OpenGuildBrowserLink = originalOpenGuildBrowserLink
 SetItemRef("item:12345", "[Native Item]", "LeftButton", DEFAULT_CHAT_FRAME)
 SetItemRef("unknown_type:data", "[Unknown]", "LeftButton", DEFAULT_CHAT_FRAME)
 check(priorCalls == 2, "unknown/native links did not delegate exactly once each")
@@ -159,6 +175,33 @@ check(B.LinkHandlers565.signalfiremkt == registryEntry,
   "Marketplace click replaced its registry entry")
 check(U.selectedTab == "Browse" and U.selectedListingId == other.id,
   "Marketplace click did not select the exact Browse listing")
+
+local unavailableBefore = #chatMessages
+local selectionBeforeUnavailable = U.selectedListingId
+SetItemRef("signalfiremkt:" .. expired.id, "[Expired Marketplace]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(priorCalls == 2 and #chatMessages == unavailableBefore + 1
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable."
+  and U.selectedListingId == selectionBeforeUnavailable,
+  "handled Marketplace unavailable link delegated or emitted more than once")
+
+local marketplaceCallback = registryEntry.callback
+registryEntry.callback = function() error("Marketplace callback fixture error") end
+unavailableBefore = #chatMessages
+SetItemRef("signalfiremkt:" .. other.id, "[Marketplace Callback Error]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(priorCalls == 2 and #chatMessages == unavailableBefore + 1
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable."
+  and U.selectedListingId == selectionBeforeUnavailable,
+  "callback error delegated or was not safely consumed")
+registryEntry.callback = function()
+  DEFAULT_CHAT_FRAME:AddMessage("SignalFire> Marketplace listing is unavailable.")
+  return false
+end
+unavailableBefore = #chatMessages
+SetItemRef("signalfiremkt:" .. other.id, "[Marketplace Callback False]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(priorCalls == 2 and #chatMessages == unavailableBefore + 1
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable.",
+  "callback false duplicated its unavailable message or delegated")
+registryEntry.callback = marketplaceCallback
 
 check(B:UnregisterLinkHandler("signalfiremkt", {}) == false,
   "wrong owner removed the Marketplace handler")
@@ -209,10 +252,6 @@ check(U.browseSearchQuery == state[1] and U.browseListingType == state[2]
   and U.browsePage == state[7], "exact-link navigation changed Browse state")
 check(U.browseDetail:IsShown() and not U.browseSearchBox:IsShown(),
   "exact-link navigation did not show detail and hide the toolbar")
-
-local chatMessages = {}
-local originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
-DEFAULT_CHAT_FRAME.AddMessage = function(_, message) table.insert(chatMessages, message) end
 
 local selectedBeforeInvalid = U.selectedListingId
 local unavailableBefore = #chatMessages
@@ -359,6 +398,15 @@ check(U:ActiveScriptCount() == 0, "disabled script count is not zero")
 check(B.LinkHandlers565.signalfiremkt == nil, "handler survived Marketplace disable")
 check(M.localLinkRegistered == false and M.localLinkCallback ~= nil,
   "disable retained registered-link state or discarded the retained callback")
+local disabledOpenCount, disabledSelection, disabledPanel = U.openCount, U.selectedListingId, U:GetPanelState()
+unavailableBefore = #chatMessages
+SetItemRef("signalfiremkt:" .. other.id, "[Disabled Marketplace]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(priorCalls == 2 and B.LinkHandlers565.signalfiremkt == nil
+  and #chatMessages == unavailableBefore + 1
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable."
+  and U.openCount == disabledOpenCount and U.selectedListingId == disabledSelection
+  and U:GetPanelState() == disabledPanel,
+  "disabled same-profile Marketplace link delegated or initialized UI")
 for _, control in ipairs(controls) do
   check(control:GetScript("OnClick") == nil, "local-action script survived disable")
 end
@@ -375,6 +423,22 @@ check(U.detailWhisper == controls[1] and U.detailFavorite == controls[2]
 check(B.LinkHandlers565.signalfiremkt
   and B.LinkHandlers565.signalfiremkt.owner == M,
   "Marketplace handler was not restored")
+
+local ascensionLink = "signalfiremkt:" .. other.id
+BronzeLFG_DB.options.serverProfile = "Triumvirate"
+BronzeLFG_DB.options.modulesByProfile.Triumvirate.tradeskillMarketplace = false
+check(B:SFModulesApply(), "Triumvirate profile switch failed")
+check(B.LinkHandlers565.signalfiremkt == nil and M.localLinkRegistered == false
+  and U:ActiveScriptCount() == 0, "profile switch retained Marketplace registration or scripts")
+local switchedOpenCount, switchedSelection, switchedPanel = U.openCount, U.selectedListingId, U:GetPanelState()
+unavailableBefore = #chatMessages
+SetItemRef(ascensionLink, "[Old Ascension Marketplace]", "LeftButton", DEFAULT_CHAT_FRAME)
+check(priorCalls == 2 and B.LinkHandlers565.signalfiremkt == nil
+  and #chatMessages == unavailableBefore + 1
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable."
+  and U.openCount == switchedOpenCount and U.selectedListingId == switchedSelection
+  and U:GetPanelState() == switchedPanel,
+  "disabled-profile Marketplace link delegated, opened UI, or changed selection")
 
 DEFAULT_CHAT_FRAME.AddMessage = originalAddMessage
 BLFG_SetItemRef_Before565 = priorSetItemRef
