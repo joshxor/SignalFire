@@ -123,6 +123,7 @@ do
       self.myListingsGeneration = nil
       self.myListingsProfile = nil
       self.myListingsOwnerKey = nil
+      self.myListingsRuntimeGeneration = nil
       self.myListingsDirty = true
     end
 
@@ -157,7 +158,8 @@ do
       local ownerKey = self:GetCurrentOwnerKey()
       if ownerKey == "" then return nil end
       if self.myListingsView and self.myListingsGeneration == runtime.dataGeneration
-        and self.myListingsProfile == runtime.profile and self.myListingsOwnerKey == ownerKey then return self.myListingsView end
+        and self.myListingsProfile == runtime.profile and self.myListingsOwnerKey == ownerKey
+        and self.myListingsRuntimeGeneration == runtime.generation then return self.myListingsView end
       local bucket, rows, stamp = runtime.byOwner and runtime.byOwner[ownerKey], {}, tonumber(time and time() or 0) or 0
       -- listingOrder is the canonical creation ordering; walk it newest first and
       -- use the owner bucket only for exact membership.
@@ -169,8 +171,8 @@ do
             and tonumber(row.expiresAt or 0) > stamp then table.insert(rows, row) end
         end
       end
-      self.myListingsView = {generation=runtime.dataGeneration, total=#rows, rows=rows, ownerKey=ownerKey}
-      self.myListingsGeneration, self.myListingsProfile, self.myListingsOwnerKey = runtime.dataGeneration, runtime.profile, ownerKey
+      self.myListingsView = {generation=runtime.dataGeneration, runtimeGeneration=runtime.generation, total=#rows, rows=rows, ownerKey=ownerKey}
+      self.myListingsGeneration, self.myListingsProfile, self.myListingsOwnerKey, self.myListingsRuntimeGeneration = runtime.dataGeneration, runtime.profile, ownerKey, runtime.generation
       return self.myListingsView
     end
 

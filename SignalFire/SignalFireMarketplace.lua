@@ -69,6 +69,15 @@ do
       return string.lower(mkt_text(value, 160))
     end
 
+    local function mkt_owner_key(value)
+      local text = tostring(value or "")
+      text = string.gsub(text, "|[cC]%x%x%x%x%x%x%x%x", "")
+      text = string.gsub(text, "|[rR]", "")
+      text = mkt_text(text, 48)
+      text = string.gsub(text, "%-.*$", "")
+      return string.lower(mkt_text(text, 48))
+    end
+
     local function mkt_slug(value)
       local slug = string.lower(mkt_text(value, 48))
       slug = string.gsub(slug, "[^%w]+", "-")
@@ -138,7 +147,7 @@ do
     -- Keep UI ownership checks aligned with listing normalization.  This is
     -- deliberately an exact, normalized key rather than display-name matching.
     function M:GetCurrentOwnerKey()
-      return mkt_key(mkt_player())
+      return mkt_owner_key(mkt_player())
     end
 
     function M:ReadProfileStore(profile)
@@ -211,7 +220,7 @@ do
         id=existing and tostring(existing.id or "") or tostring(input.id or ""),
         profile=profile,
         owner=owner,
-        ownerKey=mkt_key(owner),
+        ownerKey=mkt_owner_key(owner),
         listingType=listingType,
         profession=profession,
         professionKey=mkt_key(profession),
@@ -267,20 +276,28 @@ do
           valid[textId] = row
           local sequence = tonumber(string.match(textId, ":(%d+)$") or 0) or 0
           if sequence > maximumSequence then maximumSequence = sequence end
-          if source.id ~= textId or source.schemaVersion ~= self.schemaVersion then repairs = repairs + 1 end
+          if source.id ~= textId or source.schemaVersion ~= self.schemaVersion or source.ownerKey ~= row.ownerKey then repairs = repairs + 1 end
         else
           repairs = repairs + 1
           if err then self:RecordError("migration rejected " .. textId .. ": " .. err) end
         end
       end
       store.listingsById = valid
-      local ordered = {}
-      for id in pairs(valid) do table.insert(ordered, id) end
-      table.sort(ordered, function(left, right)
+      local ordered, seen = {}, {}
+      for _, id in ipairs(store.listingOrder or {}) do
+        if valid[id] and not seen[id] then
+          seen[id] = true
+          table.insert(ordered, id)
+        end
+      end
+      local appended = {}
+      for id in pairs(valid) do if not seen[id] then table.insert(appended, id) end end
+      table.sort(appended, function(left, right)
         local a, b = valid[left], valid[right]
         if a.createdAt == b.createdAt then return left < right end
         return a.createdAt < b.createdAt
       end)
+      for _, id in ipairs(appended) do table.insert(ordered, id) end
       if #ordered > self.maximumListings then
         for index = 1, #ordered - self.maximumListings do valid[ordered[index]] = nil; repairs = repairs + 1 end
         local kept = {}
