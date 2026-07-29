@@ -432,6 +432,15 @@ do
           table.insert(active, row)
         end
       end
+      for _, id in ipairs(runtime.remoteOrder or {}) do
+        local row = runtime.remoteById and runtime.remoteById[id]
+        if type(row) == "table" and row.id == id and row.profile == runtime.profile
+          and tonumber(row.expiresAt or 0) > stamp then table.insert(active, row) end
+      end
+      table.sort(active, function(a, b)
+        if a.createdAt == b.createdAt then return a.id > b.id end
+        return a.createdAt > b.createdAt
+      end)
       self.browseSnapshot = {generation=runtime.dataGeneration, total=#active, rows=active}
       self.browseSnapshotGeneration, self.browseSnapshotProfile = runtime.dataGeneration, runtime.profile
       return self.browseSnapshot

@@ -109,6 +109,36 @@ do
       return false
     end
 
+    -- Bounded extension registry.  SignalFireNetwork remains the sole owner of
+    -- the BLFG channel and CHAT_MSG_CHANNEL event.
+    BLFG.NetworkPacketHandlers2A = BLFG.NetworkPacketHandlers2A or {}
+    BLFG.KnownNetworkPacketTypes2A = BLFG.KnownNetworkPacketTypes2A or {MKT2=true}
+    function BLFG:RegisterNetworkPacketHandler(typeName, owner, callback)
+      typeName = tostring(typeName or "")
+      if typeName == "" or not self.KnownNetworkPacketTypes2A[typeName]
+        or owner == nil or type(callback) ~= "function" then return false end
+      local entry = self.NetworkPacketHandlers2A[typeName]
+      if entry and entry.owner ~= owner then return false end
+      if entry and entry.callback ~= callback then return false end
+      self.NetworkPacketHandlers2A[typeName] = {owner=owner, callback=callback}
+      return true
+    end
+    function BLFG:UnregisterNetworkPacketHandler(typeName, owner)
+      typeName = tostring(typeName or "")
+      local entry = self.NetworkPacketHandlers2A[typeName]
+      if not entry then return true end
+      if entry.owner ~= owner then return false end
+      self.NetworkPacketHandlers2A[typeName] = nil
+      return true
+    end
+    function BLFG:SFN_SendExtensionPacket(typeName, payload)
+      typeName, payload = tostring(typeName or ""), tostring(payload or "")
+      if not self.KnownNetworkPacketTypes2A[typeName] or payload == "" then return false end
+      local final = SFN_PREFIX .. "~" .. typeName .. "~" .. payload
+      if #final > 255 then return false end
+      return sfn_send(final)
+    end
+
     local function sfn_backdrop(frame, alpha)
       if not frame or not frame.SetBackdrop then return end
       frame:SetBackdrop({
@@ -838,6 +868,12 @@ do
         end
         if BLFG.SF151_RequestPanelRefresh then BLFG:SF151_RequestPanelRefresh("network")
         elseif BLFG.sfnPanel and BLFG.sfnPanel:IsVisible() and BLFG.RefreshSFNetwork then BLFG:RefreshSFNetwork() end
+        return true
+      end
+
+      local entry = BLFG.NetworkPacketHandlers2A and BLFG.NetworkPacketHandlers2A[p[2]]
+      if entry then
+        pcall(entry.callback, entry.owner, p, author or "", msg)
         return true
       end
 

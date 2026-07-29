@@ -149,6 +149,7 @@ do
     function M:GetCurrentOwnerKey()
       return mkt_owner_key(mkt_player())
     end
+    function M:OwnerKey(value) return mkt_owner_key(value) end
 
     function M:ReadProfileStore(profile)
       local root = BronzeLFG_DB and BronzeLFG_DB.marketplace
@@ -242,6 +243,19 @@ do
       if row.location == "" then row.location = "Anywhere" end
       row.locationKey = mkt_key(row.location)
       return row
+    end
+
+    function M:NormalizeNetworkListing(input, profile)
+      local row, err = self:NormalizeListing(input, nil, profile, true)
+      if not row then return nil, err end
+      row.id = tostring(input.id or "")
+      row.updatedAt = math.floor(tonumber(input.updatedAt or 0) or 0)
+      if row.updatedAt < row.createdAt then return nil, "invalid revision" end
+      return row
+    end
+
+    function M:IsStableListingId(id)
+      return type(id) == "string" and #id <= 128 and string.match(id, "^mkt1:[at]:[%w%-]+:%d+:%d+$") ~= nil
     end
 
     function M:PruneStaleFavorites(store, stamp)
@@ -359,6 +373,7 @@ do
         generation=self.runtimeSequence, dataGeneration=1, favoritesGeneration=1, indexCount=0,
         byId={}, byOwner={}, byType={}, byProfession={}, byItem={},
         byLocation={}, byAvailability={}, expiration={},
+        remoteById={}, remoteOrder={}, remoteSourceById={}, remoteCount=0,
         events=0, filters=0, onUpdate=0, queues=0, views=0,
         timerActive=false, expirationRemovals=0, indexRepairs=0, errors=0,
       }
@@ -448,7 +463,17 @@ do
       for id, expiresAt in pairs(runtime.expiration) do
         if tonumber(expiresAt or 0) <= stamp then table.insert(expired, id) end
       end
-      for _, id in ipairs(expired) do self:RemovePersisted(runtime, id) end
+      for _, id in ipairs(expired) do
+        if runtime.store.listingsById[id] then
+          local row = runtime.byId[id]
+          self:RemovePersisted(runtime, id)
+          local network = _G.SignalFireMarketplaceNetwork2A
+          if network and network.QueueRemove and row and self:IsEnabled() then network:QueueRemove(row) end
+        else
+          local network = _G.SignalFireMarketplaceNetwork2A
+          if network and network.RemoveRemote then network:RemoveRemote(id, "expired") end
+        end
+      end
       if #expired > 0 then
         runtime.dataGeneration = runtime.dataGeneration + 1
         runtime.expirationRemovals = runtime.expirationRemovals + #expired
@@ -481,11 +506,15 @@ do
     function M:CreateListing(input)
       local runtime = self.runtime
       if not runtime or not runtime.active then return nil, "Marketplace module is disabled" end
-      if runtime.indexCount >= self.maximumListings then return nil, "Marketplace listing limit reached" end
+      if #(runtime.store.listingOrder or {}) >= self.maximumListings then return nil, "Marketplace listing limit reached" end
       local row, err = self:NormalizeListing(input, nil, runtime.profile, false)
       if not row then return nil, err end
-      local ownerBucket = runtime.byOwner[row.ownerKey]
-      if mkt_count(ownerBucket) >= self.maximumOwnerListings then return nil, "owner listing limit reached" end
+      local ownerCount = 0
+      for _, localId in ipairs(runtime.store.listingOrder or {}) do
+        local localRow = runtime.store.listingsById[localId]
+        if localRow and localRow.ownerKey == row.ownerKey then ownerCount = ownerCount + 1 end
+      end
+      if ownerCount >= self.maximumOwnerListings then return nil, "owner listing limit reached" end
       row.id = self:GenerateId(runtime, row.owner, row.createdAt)
       runtime.store.listingsById[row.id] = row
       table.insert(runtime.store.listingOrder, row.id)
@@ -493,6 +522,8 @@ do
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
       mktui_data_changed()
+      local network = _G.SignalFireMarketplaceNetwork2A
+      if network and network.QueueUpsert then network:QueueUpsert(row) end
       return mkt_copy(row)
     end
 
@@ -572,16 +603,21 @@ do
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
       mktui_data_changed()
+      local network = _G.SignalFireMarketplaceNetwork2A
+      if network and network.QueueUpsert then network:QueueUpsert(row) end
       return mkt_copy(row)
     end
 
     function M:RemoveListing(id)
       local runtime = self.runtime
       id = tostring(id or "")
-      if not runtime or not self:RemovePersisted(runtime, id) then return false, "listing not found" end
+      local row = runtime and runtime.store.listingsById[id]
+      if not runtime or not row or not self:RemovePersisted(runtime, id) then return false, "listing not found" end
       runtime.dataGeneration = runtime.dataGeneration + 1
       self:ScheduleExpiration()
       mktui_data_changed()
+      local network = _G.SignalFireMarketplaceNetwork2A
+      if network and network.QueueRemove then network:QueueRemove(row) end
       return true
     end
 
@@ -636,6 +672,11 @@ do
         self:Disable("link-handler-error")
         return false, "Marketplace hyperlink handler is unavailable"
       end
+      local network = _G.SignalFireMarketplaceNetwork2A
+      if network and network.Enable and not network:Enable(runtime) then
+        self:Disable("network-handler-error")
+        return false, "Marketplace network handler is unavailable"
+      end
       local marketplaceUI = _G.SignalFireMarketplaceUI151
       if marketplaceUI and marketplaceUI.Enable then
         local uiOK, uiResult, uiError = pcall(marketplaceUI.Enable, marketplaceUI, profile)
@@ -650,6 +691,8 @@ do
 
     function M:Disable(reason)
       self:CancelExpiration()
+      local network = _G.SignalFireMarketplaceNetwork2A
+      if network and network.Disable then network:Disable(reason) end
       self:UnregisterLocalLinkHandler()
       local marketplaceUI = _G.SignalFireMarketplaceUI151
       if marketplaceUI and marketplaceUI.Disable then
@@ -662,6 +705,7 @@ do
         runtime.byId, runtime.byOwner, runtime.byType = nil, nil, nil
         runtime.byProfession, runtime.byItem, runtime.byLocation = nil, nil, nil
         runtime.byAvailability, runtime.expiration = nil, nil
+        runtime.remoteById, runtime.remoteOrder, runtime.remoteSourceById = nil, nil, nil
         runtime.store = nil
       end
       self.runtime = nil
@@ -704,6 +748,9 @@ do
         or marketplaceUI:IsDisabledClean()
       local disabledClean = not enabled and not runtime and timers == 0 and indexes == 0
         and not self.localLinkRegistered and uiClean
+      local network = _G.SignalFireMarketplaceNetwork2A
+      local networkStatus = network and network.GetDiagnostics and network:GetDiagnostics()
+        or {network="inactive",remote=0,pending=0,dedup=0,outgoing=0,wake=false,handler=false}
       return {
         owner=self.generation, profile=profile, enabled=enabled,
         schema=type(root) == "table" and tonumber(root.schemaVersion or 0) or 0,
@@ -718,6 +765,7 @@ do
         indexRepairs=tonumber(self.indexRepairs or 0) or 0,
         errors=tonumber(self.errorCount or 0) or 0,
         disabledClean=disabledClean,
+        network=networkStatus,
       }
     end
 
@@ -735,6 +783,15 @@ do
         .. ", queues=" .. tostring(status.queues) .. ", disabledClean=" .. tostring(status.disabledClean))
       mkt_emit("expirationRemovals=" .. tostring(status.expirationRemovals)
         .. ", indexRepairs=" .. tostring(status.indexRepairs) .. ", errors=" .. tostring(status.errors))
+      local n = status.network
+      mkt_emit("network=" .. tostring(n.network) .. ", remote=" .. tostring(n.remote)
+        .. ", sent=" .. tostring(n.sent) .. ", received=" .. tostring(n.received)
+        .. ", accepted=" .. tostring(n.accepted) .. ", rejected=" .. tostring(n.rejected)
+        .. ", stale=" .. tostring(n.stale) .. ", spoofed=" .. tostring(n.spoofed)
+        .. ", duplicate=" .. tostring(n.duplicate) .. ", pending=" .. tostring(n.pending)
+        .. ", dedup=" .. tostring(n.dedup) .. ", outgoing=" .. tostring(n.outgoing)
+        .. ", dropped=" .. tostring(n.dropped) .. ", wake=" .. tostring(n.wake)
+        .. ", handler=" .. tostring(n.handler))
       return status
     end
 
@@ -742,6 +799,14 @@ do
       local cmd = string.lower(mkt_trim(command))
       if cmd == "marketplace status" or cmd == "market status" then
         M:PrintStatus(); return true
+      elseif cmd == "marketplace sync" or cmd == "market sync" then
+        local network = _G.SignalFireMarketplaceNetwork2A
+        if not M:IsEnabled() or not (network and network.ManualSync) or not network:ManualSync() then
+          mkt_emit("Tradeskill Marketplace sync is unavailable.")
+          return true
+        end
+        mkt_emit("Marketplace discovery and replay queued.")
+        return true
       elseif cmd == "marketplace on" or cmd == "market on" then
         self:SFModuleSetEnabled(M.moduleKey, true)
         mkt_emit("Tradeskill Marketplace enabled for " .. mkt_profile() .. ".")
