@@ -266,10 +266,12 @@ check(#chatMessages == unavailableBefore+1
   "wrong-profile link did not emit exactly one unavailable message")
 check(U.selectedListingId == selectedBeforeInvalid, "wrong-profile link changed the selected listing")
 unavailableBefore = #chatMessages
-check(M:HandleLocalLink("mkt1:a:missing:100000:1") == false, "missing local link was handled")
+local missingId = "mkt1:a:missing:100000:1"
+check(M:HandleLocalLink(missingId), "missing local link did not begin lookup")
 check(#chatMessages == unavailableBefore+1
-  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable.",
-  "missing link did not emit exactly one unavailable message")
+  and chatMessages[#chatMessages] == "SignalFire> Looking up Marketplace listing..."
+  and M.runtime.linkLookupsById[missingId] ~= nil,
+  "missing link did not create one bounded lookup")
 check(U.selectedListingId == selectedBeforeInvalid, "missing link changed the selected listing")
 
 local generatedDataGeneration = M.runtime.dataGeneration
