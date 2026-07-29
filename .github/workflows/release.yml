@@ -81,6 +81,10 @@ jobs:
         shell: bash
         run: node tests/verify_marketplace_phase2b_replay_sources.js
 
+      - name: Run Marketplace Phase 2B exact-links source verifier
+        shell: bash
+        run: node tests/verify_marketplace_phase2b_exact_links_sources.js
+
       - name: Prepare Marketplace test loader
         shell: bash
         run: |
@@ -119,6 +123,7 @@ jobs:
           run_harness tests/marketplace_local_actions_harness.lua
           run_harness tests/marketplace_network_sync_harness.lua
           run_harness tests/marketplace_network_replay_harness.lua
+          run_harness tests/marketplace_exact_link_lookup_harness.lua
           exit "$status"
 
       - name: Read version
