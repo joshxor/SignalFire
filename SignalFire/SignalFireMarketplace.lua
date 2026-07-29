@@ -799,6 +799,14 @@ do
       local cmd = string.lower(mkt_trim(command))
       if cmd == "marketplace status" or cmd == "market status" then
         M:PrintStatus(); return true
+      elseif cmd == "marketplace sync" or cmd == "market sync" then
+        local network = _G.SignalFireMarketplaceNetwork2A
+        if not M:IsEnabled() or not (network and network.ManualSync) or not network:ManualSync() then
+          mkt_emit("Tradeskill Marketplace sync is unavailable.")
+          return true
+        end
+        mkt_emit("Marketplace discovery and replay queued.")
+        return true
       elseif cmd == "marketplace on" or cmd == "market on" then
         self:SFModuleSetEnabled(M.moduleKey, true)
         mkt_emit("Tradeskill Marketplace enabled for " .. mkt_profile() .. ".")

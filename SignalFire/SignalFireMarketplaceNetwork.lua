@@ -8,6 +8,8 @@ do
     N.maximumPending, N.pendingTTL, N.maximumDedup, N.dedupTTL = 32, 30, 256, 120
     N.maximumOutgoing, N.maximumRemote, N.sendSpacing = 64, 200, 0.35
     N.wakeKey = "marketplace.network.outgoing"
+    N.discoveryKey, N.replayKey = "marketplace.network.discovery", "marketplace.network.replay"
+    N.requesterCooldown, N.responderCooldown = 10, 10
     local FIELDS = {"schemaVersion","id","profile","owner","ownerKey","listingType","profession","professionKey","itemName","itemKey","recipeName","recipeKey","materialsPolicy","priceMode","priceCopper","priceText","location","locationKey","availability","notes","createdAt","updatedAt","expiresAt"}
     local function now() return math.floor(tonumber(time and time() or 0) or 0) end
     local function count(t) local n=0; for _ in pairs(t or {}) do n=n+1 end; return n end
@@ -95,7 +97,11 @@ do
     function N:QueueUpsert(row)
       if not row or not M:IsEnabled() then return false end
       local packets=self:Chunk(row); if not packets then note("dropped"); return false end
-      for _,packet in ipairs(packets) do if not self:QueuePayload(packet) then return false end end
+      local runtime=M.runtime
+      -- A listing is atomic: never leave only some of its chunks queued.
+      if not runtime or #(runtime.outgoing or {}) + #packets > self.maximumOutgoing then note("dropped"); return false end
+      for _,packet in ipairs(packets) do runtime.outgoing[#runtime.outgoing+1]={profile=runtime.profile,payload=packet} end
+      self:ScheduleWake(runtime)
       return true
     end
     function N:QueueRemove(row)
@@ -111,6 +117,7 @@ do
         if item and M:IsEnabled() and item.profile==current.profile then
           if B:SFN_SendExtensionPacket("MKT2",item.payload) then note("sent") else note("dropped") end
         end
+        if current.replay and current.replay.active then N:PumpReplay(current) end
         if #(current.outgoing or {})>0 then N:ScheduleWake(current) end
       end)
       return true
@@ -153,6 +160,7 @@ do
       local runtime=M.runtime; if not runtime or not runtime.active or not M:IsEnabled() then return false end
       note("received"); runtime.pending,runtime.dedup=runtime.pending or {},runtime.dedup or {}; prune(runtime)
       local op,version=p[3],p[4]; if tonumber(version)~=self.protocolVersion then note("rejected"); return false end
+      if op=="Q" then return self:HandleDiscovery(p,author) end
       if op=="R" then
         local id,revision=tostring(p[5] or ""),tostring(p[6] or "")
         if #p~=6 or not M:IsStableListingId(id) or not string.match(revision,"^%d+$") then note("rejected"); return false end
@@ -175,23 +183,91 @@ do
       local row=self:Deserialize(encoded); if not row then note("rejected"); return false end
       return self:AcceptUpsert(row,author)
     end
+    function N:QueueDiscovery(runtime)
+      runtime=runtime or M.runtime; if not runtime or not runtime.active then return false end
+      local stamp=now(); if stamp-(runtime.lastSync or 0)<self.requesterCooldown then return false end
+      local token="q"..tostring(runtime.generation).."-"..tostring(stamp)
+      if not token_valid(token) then return false end
+      local payload="Q~1~"..runtime.profile.."~"..token.."~"..stamp
+      if not self:QueuePayload(payload) then return false end
+      runtime.lastSync=stamp; note("syncSent"); return true
+    end
+    function N:ReplayIds(runtime)
+      local ids,seen,stamp={},{},now(); local owner=M:GetCurrentOwnerKey()
+      for i=#(runtime.store.listingOrder or {}),1,-1 do
+        local id=runtime.store.listingOrder[i]; local row=runtime.store.listingsById[id]
+        if #ids<20 and not seen[id] and row and row.id==id and row.profile==runtime.profile
+          and M:IsStableListingId(id) and row.ownerKey==owner and tonumber(row.expiresAt or 0)>stamp then
+          seen[id]=true; ids[#ids+1]=id
+        end
+      end
+      return ids
+    end
+    function N:ScheduleReplay(runtime, reason, delay)
+      runtime=runtime or M.runtime; if not runtime or not runtime.active then return false end
+      if runtime.replay and (runtime.replay.pending or runtime.replay.active) then return true end
+      runtime.replay={profile=runtime.profile,generation=runtime.generation,ids=self:ReplayIds(runtime),cursor=1,pending=true,active=false,reason=reason}
+      runtime.replayWake=true
+      if B.SF151_ScheduleDelayed then B:SF151_ScheduleDelayed(self.replayKey,delay or .75,function()
+        local current=M.runtime; local replay=current and current.replay
+        if not current or not replay or replay.generation~=current.generation or replay.profile~=current.profile or not M:IsEnabled() then return end
+        current.replayWake=false; replay.pending=false; replay.active=true; N:PumpReplay(current)
+      end) end
+      return true
+    end
+    function N:PumpReplay(runtime)
+      local replay=runtime and runtime.replay
+      if not replay or not replay.active or replay.generation~=runtime.generation then return false end
+      while replay.cursor<=#replay.ids do
+        local id=replay.ids[replay.cursor]; local row=runtime.store.listingsById[id]; local packets=row and self:Chunk(row) or nil
+        if not row or row.profile~=runtime.profile or row.ownerKey~=M:GetCurrentOwnerKey() or tonumber(row.expiresAt or 0)<=now() or not M:IsStableListingId(id) then replay.cursor=replay.cursor+1
+        elseif #(runtime.outgoing or {}) + #packets > self.maximumOutgoing then return false
+        else
+          for _,packet in ipairs(packets) do runtime.outgoing[#runtime.outgoing+1]={profile=runtime.profile,payload=packet} end
+          self:ScheduleWake(runtime); replay.cursor=replay.cursor+1; note("replayListings")
+        end
+      end
+      runtime.lastReplay=now(); runtime.replay=nil; note("replayRuns"); return true
+    end
+    function N:HandleDiscovery(p,author)
+      local runtime=M.runtime; local profile,token,stamp=tostring(p[5] or ""),tostring(p[6] or ""),tostring(p[7] or "")
+      if #p~=7 or profile~=runtime.profile or (profile~="Ascension" and profile~="Triumvirate") or not token_valid(token) or not string.match(stamp,"^%d+$") or math.abs(now()-tonumber(stamp))>300 then note("rejected"); return false end
+      local key=M:OwnerKey(author); if key=="" or key==M:GetCurrentOwnerKey() then return true end
+      local dedup="Q:"..key..":"..token; if runtime.dedup[dedup] then note("duplicate"); return true end
+      runtime.dedup[dedup]=now(); note("syncReceived"); prune(runtime)
+      if now()-(runtime.lastReplay or 0)<self.responderCooldown then return true end
+      self:ScheduleReplay(runtime,"discovery",.75); return true
+    end
+    function N:ScheduleInitial(runtime)
+      if runtime.initialSync then return end; runtime.initialSync=true; runtime.discoveryWake=true
+      local generation,profile=runtime.generation,runtime.profile
+      if B.SF151_ScheduleDelayed then B:SF151_ScheduleDelayed(self.discoveryKey,.75,function()
+        local current=M.runtime; if current and current.generation==generation and current.profile==profile and M:IsEnabled() then current.discoveryWake=false; N:QueueDiscovery(current) end
+      end) end
+      self:ScheduleReplay(runtime,"initial",1.5)
+    end
+    function N:ManualSync()
+      local runtime=M.runtime; if not runtime or not runtime.active or not M:IsEnabled() then return false end
+      local sent=self:QueueDiscovery(runtime); self:ScheduleReplay(runtime,"manual",.75); return sent
+    end
     function N:Enable(runtime)
       if self.registered then return true end
       self.callback=self.callback or function(owner,p,author) return owner:HandlePacket(owner,p,author) end
       self.registered=B.RegisterNetworkPacketHandler and B:RegisterNetworkPacketHandler("MKT2",self,self.callback) == true or false
-      if self.registered then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false end
+      if self.registered then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; self:ScheduleInitial(runtime) end
       return self.registered
     end
     function N:Disable()
       local runtime=M.runtime
       if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.wakeKey) end
-      if runtime then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false; runtime.remoteById,runtime.remoteOrder,runtime.remoteSourceById={}, {}, {}; runtime.remoteCount=0 end
+      if B.SF151_CancelDelayed then B:SF151_CancelDelayed(self.discoveryKey); B:SF151_CancelDelayed(self.replayKey) end
+      if runtime then runtime.outgoing,runtime.pending,runtime.dedup={}, {}, {}; runtime.wake=false; runtime.discoveryWake=false; runtime.replayWake=false; runtime.replay=nil; runtime.remoteById,runtime.remoteOrder,runtime.remoteSourceById={}, {}, {}; runtime.remoteCount=0 end
       if B.UnregisterNetworkPacketHandler then B:UnregisterNetworkPacketHandler("MKT2",self) end
       self.registered=false; return true
     end
     function N:GetDiagnostics()
       local r=M.runtime; local d=self.diagnostics or {}
-      return {network=(r and r.active and self.registered) and "active" or "inactive",remote=r and r.remoteCount or 0,sent=d.sent or 0,received=d.received or 0,accepted=d.accepted or 0,rejected=d.rejected or 0,stale=d.stale or 0,spoofed=d.spoofed or 0,duplicate=d.duplicate or 0,pending=r and count(r.pending) or 0,dedup=r and count(r.dedup) or 0,outgoing=r and #(r.outgoing or {}) or 0,dropped=d.dropped or 0,wake=r and r.wake or false,handler=self.registered==true}
+      return {network=(r and r.active and self.registered) and "active" or "inactive",remote=r and r.remoteCount or 0,sent=d.sent or 0,received=d.received or 0,accepted=d.accepted or 0,rejected=d.rejected or 0,stale=d.stale or 0,spoofed=d.spoofed or 0,duplicate=d.duplicate or 0,pending=r and count(r.pending) or 0,dedup=r and count(r.dedup) or 0,outgoing=r and #(r.outgoing or {}) or 0,dropped=d.dropped or 0,wake=r and r.wake or false,handler=self.registered==true,syncSent=d.syncSent or 0,syncReceived=d.syncReceived or 0,replayRuns=d.replayRuns or 0,replayListings=d.replayListings or 0,replayPending=r and r.replay and #r.replay.ids-r.replay.cursor+1 or 0,discoveryWake=r and r.discoveryWake or false,replayWake=r and r.replayWake or false,lastSync=r and r.lastSync or 0}
     end
     if M.runtime and M.runtime.active and M:IsEnabled() then N:Enable(M.runtime) end
   end
