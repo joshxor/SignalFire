@@ -256,10 +256,8 @@ check(U.browseDetail:IsShown() and not U.browseSearchBox:IsShown(),
 
 local selectedBeforeInvalid = U.selectedListingId
 local unavailableBefore = #chatMessages
-check(M:HandleLocalLink(expired.id) == false, "expired local link was handled")
-check(#chatMessages == unavailableBefore+1
-  and chatMessages[#chatMessages] == "SignalFire> Marketplace listing is unavailable.",
-  "expired local link did not emit exactly one unavailable message")
+check(M:HandleLocalLink(expired.id), "expired local link did not coalesce the existing lookup")
+check(#chatMessages == unavailableBefore, "duplicate expired link lookup emitted another message")
 check(U.selectedListingId == selectedBeforeInvalid, "expired link changed the selected listing")
 unavailableBefore = #chatMessages
 check(M:HandleLocalLink(wrongProfile.id) == false, "wrong-profile local link was handled")
