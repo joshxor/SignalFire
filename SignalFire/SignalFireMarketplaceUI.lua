@@ -779,6 +779,8 @@ do
       self:SetBrowseToolbarVisible(true)
       return self:RenderBrowse()
     end
+    -- Retained for direct compact-link coverage; visible actions use the composer.
+    function U:GenerateLocalLink(id) return M:BuildLocalLink(id) end
     function U:OpenShareComposer(id) return M:OpenShareComposer(id) end
     function U:WhisperListing(id)
       return M:OpenWhisper(id)
