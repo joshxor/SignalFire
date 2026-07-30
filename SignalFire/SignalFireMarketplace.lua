@@ -558,7 +558,12 @@ do
       if not link then mkt_emit(err or "Marketplace listing is unavailable."); return false end
       local editBox = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() or nil
       if not editBox then
-        if ChatFrame_OpenChat then ChatFrame_OpenChat() end
+        if ChatFrame_OpenChat then
+          local called, opened = pcall(ChatFrame_OpenChat, link, SELECTED_CHAT_FRAME or DEFAULT_CHAT_FRAME)
+          if called and opened ~= false then
+            mkt_emit("Marketplace link added to chat. Press Enter to send."); return true
+          end
+        end
         editBox = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() or ChatFrameEditBox
         if editBox and ChatEdit_ActivateChat then ChatEdit_ActivateChat(editBox) end
       end

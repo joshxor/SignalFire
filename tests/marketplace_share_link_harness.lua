@@ -3,19 +3,22 @@ local B=assert(BronzeLFG); local M=assert(_G.SignalFireMarketplace151); local U=
 local function ok(v,s) if not v then error(s,2) end end
 BronzeLFG_DB.options.serverProfile="Ascension"; BronzeLFG_DB.options.modulesByProfile.Ascension.tradeskillMarketplace=true; ok(B:SFModulesApply(),"enable")
 ok(B:ShowMarketplace(),"open"); local r=assert(M.runtime)
-local messages, opens, sends, editSends, tells, packets={},0,0,0,0,0
-local box={text="",cursor=0,destination="GUILD"}; function box:GetText()return self.text end; function box:SetText(v)self.text=v end; function box:GetCursorPosition()return self.cursor end; function box:SetCursorPosition(v)self.cursor=v end
+local messages, opens, sends, editSends, tells={},0,0,0,0
+local box={text="",cursor=0,destination="GUILD",setText=nil}; function box:GetText()return self.text end; function box:SetText(v)assert(type(v)=="string","SetText requires string"); self.text=v end; function box:GetCursorPosition()return self.cursor end; function box:SetCursorPosition(v)self.cursor=v end
 local active=nil
 ChatEdit_GetActiveWindow=function()return active end
-ChatFrame_OpenChat=function()opens=opens+1; active=box end
+ChatFrame_OpenChat=function(text,frame) opens=opens+1; assert(type(text)=="string","ChatFrame_OpenChat text must be a string"); assert(frame==SELECTED_CHAT_FRAME or frame==DEFAULT_CHAT_FRAME,"composer frame changed"); box.setText=text; active=box end
 ChatEdit_ActivateChat=function(b)active=b end
 ChatEdit_InsertLink=function(link)local t=box.text; box.text=string.sub(t,1,box.cursor)..link..string.sub(t,box.cursor+1); box.cursor=box.cursor+#link; return true end
 SendChatMessage=function()sends=sends+1 end; ChatEdit_SendText=function()editSends=editSends+1 end; ChatFrame_SendTell=function()tells=tells+1 end
 DEFAULT_CHAT_FRAME.AddMessage=function(_,v)messages[#messages+1]=v end
+local function deferred_update(editBox) assert(type(editBox.setText)=="string","deferred setText must be a string"); editBox:SetText(editBox.setText); editBox.setText=nil end
+local badDeferred={setText=1,SetText=function()error("numeric deferred setText reached SetText")end}; local accepted=pcall(deferred_update,badDeferred); ok(not accepted,"harness accepted a numeric deferred setText sentinel")
 local row=assert(B:SFMarketplaceCreateListing({owner="Harness",listingType="Crafting Offer",profession="Alchemy",itemName="Flask",materialsPolicy="Discuss",priceMode="Tip",location="Dalaran",availability="Today",expiresAt=time()+3600}))
 local link=assert(M:BuildLocalLink(row.id)); r.outgoing={}; ok(M:OpenShareComposer(row.id),"inactive composer opens")
-ok(opens==1 and box.text==link and messages[#messages]=="SignalFire> Marketplace link added to chat. Press Enter to send.","inactive insertion")
-box.text="beforeafter"; box.cursor=6; active=box; local destination=box.destination; ok(M:OpenShareComposer(row.id),"active draft")
+ok(opens==1 and box.setText==link and messages[#messages]=="SignalFire> Marketplace link added to chat. Press Enter to send.","inactive native insertion")
+deferred_update(box); ok(box.text==link and string.find(box.text,link,1,true)==1 and string.find(box.text,link,#link+1,true)==nil,"deferred update duplicated link")
+box.text="beforeafter"; box.cursor=6; box.setText=nil; active=box; local destination=box.destination; ok(M:OpenShareComposer(row.id),"active draft")
 ok(box.text=="before"..link.."after" and box.destination==destination,"cursor insertion or destination")
 local once=box.text; ok(M:OpenShareComposer(row.id) and box.text==once,"unchanged draft duplicate")
 local remote=assert(B:SFMarketplaceCreateListing({owner="Remote",listingType="Crafting Offer",profession="Tailoring",itemName="Bag",materialsPolicy="Discuss",priceMode="Tip",location="Dalaran",availability="Today",expiresAt=time()+3600}))
