@@ -1,0 +1,14 @@
+const fs=require("fs"),p=require("path"),r=p.resolve(__dirname,"..");
+const read=f=>fs.readFileSync(p.join(r,f),"utf8"),m=read("SignalFire/SignalFireMarketplace.lua"),u=read("SignalFire/SignalFireMarketplaceUI.lua"),n=read("SignalFire/SignalFireMarketplaceNetwork.lua"),b=read("SignalFire/BronzeLFG.lua"),h=read("tests/marketplace_share_link_harness.lua");
+const need=(s,x)=>{if(!s.includes(x))throw Error("Marketplace 2B share verification failed: "+x)};
+const body=(s,a,z)=>{const i=s.indexOf(a),j=s.indexOf(z,i);if(i<0||j<0)throw Error("Marketplace 2B share verification failed: helper boundary");return s.slice(i,j)};
+const share=body(m,"function M:OpenShareComposer(id)","function M:OpenWhisper(id)");
+for(const x of ["function M:BuildLocalLink(id)","|Hsignalfiremkt:","function M:OpenShareComposer(id)","ChatEdit_GetActiveWindow","ChatEdit_InsertLink","ChatFrame_OpenChat, link, SELECTED_CHAT_FRAME or DEFAULT_CHAT_FRAME","ChatEdit_ActivateChat","GetCursorPosition","SetCursorPosition","Marketplace link added to chat. Press Enter to send."])need(m,x);
+for(const x of ["function U:OpenShareComposer(id)","Share Link","mktui_detail_link","mktui_my_detail_link","mktui_favorite_link_click","ActiveScriptCount"])need(u,x);
+if((u.match(/Share Link/g)||[]).length!==3||u.includes("Generate Link"))throw Error("Marketplace 2B share verification failed: retained action label");
+for(const x of ["SendChatMessage","ChatEdit_SendText","ChatFrame_SendTell","RegisterEvent","SetScript(\"OnUpdate\"","NewTicker","ChatFrame_AddMessageEventFilter","SetItemRef","RequestExactLink","QueuePayload","QueueUpsert"])if(share.includes(x))throw Error("Marketplace 2B share forbidden: "+x);
+if(/ChatFrame_OpenChat\s*\(\s*\)/.test(share)||share.includes("setText="))throw Error("Marketplace 2B share verification failed: unsafe deferred composer path");
+if((b.match(/function SetItemRef\(/g)||[]).length!==3)throw Error("Marketplace 2B share verification failed: SetItemRef wrapper count");
+if((n.match(/RegisterNetworkPacketHandler\(\"MKT2\"/g)||[]).length!==1)throw Error("Marketplace 2B share verification failed: network handler count");
+for(const x of ["ActiveScriptCount() == 72","ActiveScriptCount() == 0","zero packets","SendChatMessage","ChatEdit_SendText","ChatFrame_SendTell","missing APIs fail safely","deferred_update","numeric deferred setText sentinel","ChatFrame_OpenChat text must be a string"])need(h,x);
+console.log("marketplace phase2b share source verification: PASS");
