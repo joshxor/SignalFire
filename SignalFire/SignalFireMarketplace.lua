@@ -553,6 +553,33 @@ do
       if #link > self.maximumLocalLinkLength then return nil, "Marketplace listing is unavailable." end
       return link
     end
+    function M:OpenShareComposer(id)
+      local link, err = self:BuildLocalLink(id)
+      if not link then mkt_emit(err or "Marketplace listing is unavailable."); return false end
+      local editBox = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() or nil
+      if not editBox then
+        if ChatFrame_OpenChat then ChatFrame_OpenChat() end
+        editBox = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() or ChatFrameEditBox
+        if editBox and ChatEdit_ActivateChat then ChatEdit_ActivateChat(editBox) end
+      end
+      if not editBox or not editBox.GetText or not editBox.SetText then
+        mkt_emit("Marketplace listing is unavailable."); return false
+      end
+      local draft = tostring(editBox:GetText() or "")
+      if string.find(draft, link, 1, true) then return true end
+      local cursor = editBox.GetCursorPosition and tonumber(editBox:GetCursorPosition() or 0) or #draft
+      cursor = math.max(0, math.min(#draft, cursor))
+      if ChatEdit_InsertLink and (ChatEdit_GetActiveWindow == nil or ChatEdit_GetActiveWindow() == editBox) then
+        pcall(ChatEdit_InsertLink, link)
+      end
+      if string.find(tostring(editBox:GetText() or ""), link, 1, true) then
+        mkt_emit("Marketplace link added to chat. Press Enter to send."); return true
+      end
+      editBox:SetText(string.sub(draft, 1, cursor) .. link .. string.sub(draft, cursor + 1))
+      if editBox.SetCursorPosition then editBox:SetCursorPosition(cursor + #link) end
+      mkt_emit("Marketplace link added to chat. Press Enter to send.")
+      return true
+    end
     function M:OpenWhisper(id)
       local row = self:ResolveLocalLink(id)
       if not row or mkt_text(row.owner, 48) == "" or row.ownerKey == self:GetCurrentOwnerKey() then return false end
