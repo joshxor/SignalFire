@@ -66,7 +66,22 @@ local sentMessages, tells, openedChats = 0, {}, {}
 local originalSendChatMessage = SendChatMessage
 SendChatMessage = function() sentMessages = sentMessages + 1 end
 ChatFrame_SendTell = function(owner) table.insert(tells, owner) end
-ChatFrame_OpenChat = function(text) table.insert(openedChats, text) end
+local activeComposer = nil
+local composer = {text="", cursor=0, destination="GUILD"}
+function composer:GetText() return self.text end
+function composer:SetText(value) self.text=value end
+function composer:GetCursorPosition() return self.cursor end
+function composer:SetCursorPosition(value) self.cursor=value end
+ChatFrameEditBox = composer
+ChatEdit_GetActiveWindow = function() return activeComposer end
+ChatFrame_OpenChat = function(text) table.insert(openedChats, text); if text == nil then activeComposer = composer end end
+ChatEdit_ActivateChat = function(box) activeComposer = box end
+ChatEdit_InsertLink = function(link)
+  local draft = composer.text
+  composer.text = string.sub(draft, 1, composer.cursor) .. link .. string.sub(draft, composer.cursor+1)
+  composer.cursor = composer.cursor + #link
+  return true
+end
 local chatMessages = {}
 local originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
 DEFAULT_CHAT_FRAME.AddMessage = function(_, message) table.insert(chatMessages, message) end
@@ -285,21 +300,23 @@ U.selectedListingId = other.id
 check(U:RenderDetail(), "Browse detail did not render")
 check(U.detailWhisper:IsShown() and U.detailFavorite:IsShown() and U.detailLink:IsShown(),
   "Browse actions are not visible for an available remote listing")
+check(U.detailLink.label:GetText() == "Share Link", "Browse link label is not Share Link")
 local browseTellCount = #tells
 U.detailWhisper:GetScript("OnClick")(U.detailWhisper)
 check(#tells == browseTellCount+1 and tells[#tells] == "Other Crafter",
   "Browse Whisper did not target the exact listing owner")
 U.detailLink:GetScript("OnClick")(U.detailLink)
-check(string.find(chatMessages[#chatMessages-1], "signalfiremkt:" .. other.id, 1, true),
-  "Browse link button did not print the selected link")
+check(string.find(composer.text, "signalfiremkt:" .. other.id, 1, true)
+  and chatMessages[#chatMessages] == "SignalFire> Marketplace link added to chat. Press Enter to send.",
+  "Browse Share Link did not insert the selected link")
 
 check(U:SetTab("My Listings"), "My Listings did not open")
 U.mySelectedListingId = own.id
 check(U:RenderMyListingsDetail(), "owned detail did not render")
 check(U.myDetailLink:IsShown(), "owned link action is hidden")
 U.myDetailLink:GetScript("OnClick")(U.myDetailLink)
-check(string.find(chatMessages[#chatMessages-1], "signalfiremkt:" .. own.id, 1, true),
-  "owned link button did not print the selected link")
+check(U.myDetailLink.label:GetText() == "Share Link" and string.find(composer.text, "signalfiremkt:" .. own.id, 1, true),
+  "owned Share Link did not insert the selected link")
 
 check(U:SetTab("Favorites"), "Favorites did not open")
 U.favoriteSelectedId = other.id
@@ -313,22 +330,22 @@ U.favoriteWhisper:GetScript("OnClick")(U.favoriteWhisper)
 check(#tells == favoriteTellCount+1 and tells[#tells] == "Other Crafter",
   "Favorite Whisper did not target the exact listing owner")
 U.favoriteLink:GetScript("OnClick")(U.favoriteLink)
-check(string.find(chatMessages[#chatMessages-1], "signalfiremkt:" .. other.id, 1, true),
-  "favorite link button did not print the selected link")
+check(U.favoriteLink.label:GetText() == "Share Link" and string.find(composer.text, "signalfiremkt:" .. other.id, 1, true),
+  "favorite Share Link did not retain the selected link")
 check(M.runtime.dataGeneration == generatedDataGeneration
   and M.runtime.favoritesGeneration == generatedFavoritesGeneration
   and M.runtime.indexCount == generatedIndexCount
   and M.runtime.byId == generatedById and M.runtime.byOwner == generatedByOwner,
-  "Generate Link mutated runtime generations or indexes")
+  "Share Link mutated runtime generations or indexes")
 check(listing_signature(M.runtime.byId[other.id]) == generatedOtherSignature
   and listing_signature(M.runtime.byId[own.id]) == generatedOwnSignature,
-  "Generate Link mutated listing data")
+  "Share Link mutated listing data")
 check(M.runtime.byId[other.id].generatedLink == nil
   and M.runtime.byId[other.id].localLink == nil
   and M.runtime.byId[own.id].generatedLink == nil
   and M.runtime.byId[own.id].localLink == nil,
-  "Generate Link persisted generated-link state")
-check(sentMessages == 0, "Generate Link selected an outgoing chat path")
+  "Share Link persisted generated-link state")
+check(sentMessages == 0, "Share Link selected an outgoing chat path")
 
 check(U:SetTab("Browse"), "Browse did not reopen")
 M:SetFavorite(other.id, false)
@@ -370,7 +387,7 @@ check(U:SetTab("Favorites"), "Favorites did not open for own favorite")
 U.favoriteSelectedId = own.id
 check(U:RenderFavoriteDetail(), "own active favorite detail did not render")
 check(not U.favoriteWhisper:IsShown() and U.favoriteLink:IsShown(),
-  "own active favorite has incorrect Whisper/Generate Link visibility")
+  "own active favorite has incorrect Whisper/Share Link visibility")
 check(U.favoriteAction.label:GetText() == "Unfavorite",
   "own active favorite did not retain its Unfavorite action")
 
@@ -382,7 +399,7 @@ check(U:SetTab("Favorites"), "Favorites did not reopen")
 U.favoriteSelectedId = expired.id
 check(U:RenderFavoriteDetail(), "unavailable favorite detail did not render")
 check(not U.favoriteWhisper:IsShown(), "unavailable favorite exposed Whisper")
-check(not U.favoriteLink:IsShown(), "unavailable favorite exposed Generate Link")
+check(not U.favoriteLink:IsShown(), "unavailable favorite exposed Share Link")
 check(U.favoriteAction:GetScript("OnClick")
   and U.favoriteAction.label:GetText() == "Remove Favorite",
   "unavailable favorite did not retain its Remove Favorite action")
