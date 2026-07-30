@@ -74,7 +74,13 @@ function composer:GetCursorPosition() return self.cursor end
 function composer:SetCursorPosition(value) self.cursor=value end
 ChatFrameEditBox = composer
 ChatEdit_GetActiveWindow = function() return activeComposer end
-ChatFrame_OpenChat = function(text) table.insert(openedChats, text); if text == nil then activeComposer = composer end end
+ChatFrame_OpenChat = function(text, frame)
+  check(type(text) == "string", "ChatFrame_OpenChat received non-string text")
+  check(frame == SELECTED_CHAT_FRAME or frame == DEFAULT_CHAT_FRAME,
+    "ChatFrame_OpenChat received an unexpected frame")
+  table.insert(openedChats, text)
+  activeComposer, composer.text, composer.cursor = composer, text, #text
+end
 ChatEdit_ActivateChat = function(box) activeComposer = box end
 ChatEdit_InsertLink = function(link)
   local draft = composer.text
