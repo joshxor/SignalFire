@@ -1010,6 +1010,7 @@ do
       local function sfalp1430j_open(dropdown, selector)
         if not dropdown or not selector then return end
         if CloseDropDownMenus then CloseDropDownMenus() end
+        if BLFG.publicBroadcastPopup then BLFG.publicBroadcastPopup:Hide() end
 
         local popup = sfalp1430j_make_popup()
         if popup:IsShown() and popup.dropdown == dropdown then
@@ -1180,6 +1181,36 @@ do
       end
       return out
     end
+    local function joinedChannels()
+      local out, seen = {}, {}
+      if type(GetChannelList) ~= "function" then return out end
+      local raw = { GetChannelList() }
+      for i = 1, #raw do
+        if type(raw[i]) == "number" and raw[i] > 0 then
+          local name = nil
+          for offset = 1, 2 do
+            if type(raw[i + offset]) == "string" and trim(raw[i + offset]) ~= "" then
+              name = trim(raw[i + offset])
+              break
+            end
+          end
+          local normalized = key(name)
+          if name and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then
+            seen[normalized] = true
+            table.insert(out, name)
+          end
+        end
+      end
+      return out
+    end
+    local function pruneChannels(channels, available)
+      local joined, out = {}, {}
+      for _, name in ipairs(available or {}) do joined[key(name)] = true end
+      for _, name in ipairs(sanitizeChannels(channels)) do
+        if joined[key(name)] then table.insert(out, name) end
+      end
+      return out
+    end
     local function state()
       BronzeLFG_DB = BronzeLFG_DB or {}
       BronzeLFG_DB.listingBroadcastByProfile = BronzeLFG_DB.listingBroadcastByProfile or {}
@@ -1190,7 +1221,14 @@ do
       BronzeLFG_DB.listingBroadcastMigration = BronzeLFG_DB.listingBroadcastMigration or {}
       if not BronzeLFG_DB.listingBroadcastMigration.legacyChannelProfile then
         local old = BronzeLFG_DB.recruitmentCreator and trim(BronzeLFG_DB.recruitmentCreator.broadcastChannel) or ""
-        if old ~= "" and type(s.channels) ~= "table" then s.channels = {old} end
+        local oldKey, eligible = key(old), old ~= ""
+        if oldKey == "global-guild-recruitment" then eligible = id == "Triumvirate"
+        elseif oldKey == "ascension" then eligible = id == "Ascension" end
+        if eligible and type(s.channels) ~= "table" then
+          for _, joined in ipairs(joinedChannels()) do
+            if key(joined) == oldKey then s.channels = {joined}; break end
+          end
+        end
         BronzeLFG_DB.listingBroadcastMigration.legacyChannelProfile = id
       end
       s.channels = sanitizeChannels(s.channels)
@@ -1214,36 +1252,22 @@ do
     end
     function B:SFListingBroadcastState() return state() end
     function B:SFDiscoverPublicChannels()
-      local out, seen = {}, {}
-      if type(GetChannelList) ~= "function" then self.publicBroadcastAvailableChannels = out; return out end
-      local raw = { GetChannelList() }
-      for i = 1, #raw do
-        if type(raw[i]) == "number" and raw[i] > 0 then
-          local name = nil
-          for offset = 1, 2 do
-            if type(raw[i + offset]) == "string" and trim(raw[i + offset]) ~= "" then
-              name = trim(raw[i + offset])
-              break
-            end
-          end
-          local normalized = key(name)
-          if name and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then
-            seen[normalized] = true
-            table.insert(out, name)
-          end
-        end
-      end
+      local out = joinedChannels()
       self.publicBroadcastAvailableChannels = out; return out
     end
     function B:SFSetPublicBroadcastChannels(channels)
       local s = state()
-      s.channels = sanitizeChannels(channels)
+      s.channels = pruneChannels(channels, self:SFDiscoverPublicChannels())
       return s.channels
     end
-    function B:SFGetPublicBroadcastChannels() return state().channels end
+    function B:SFGetPublicBroadcastChannels()
+      local s = state()
+      s.channels = pruneChannels(s.channels, self:SFDiscoverPublicChannels())
+      return s.channels
+    end
     function B:SFResolvePublicBroadcastDestinations()
       local valid, missing, seenNames, seenIds = {}, {}, {}, {}
-      for _, name in ipairs(state().channels) do
+      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do
         local normalized = key(name)
         local id = GetChannelName and GetChannelName(name) or 0
         if normalized ~= "" and normalized ~= "blfg" and not seenNames[normalized] then
@@ -1364,10 +1388,14 @@ do
     end
     function B:SFOpenPublicBroadcastSelector()
       if not self.create then return end
+      if CloseDropDownMenus then CloseDropDownMenus() end
+      local dungeonPopup = SFALP and SFALP.dungeonSelectorPopup1430j
+      if dungeonPopup then dungeonPopup:Hide() end
       if not self.publicBroadcastPopup then
-        local popup = CreateFrame("Frame", nil, self.create)
+        local popup = CreateFrame("Frame", nil, UIParent)
         popup:SetWidth(270); popup:SetHeight(330); popup:SetPoint("TOPRIGHT", self.create, "TOPRIGHT", -20, -50)
-        popup:SetFrameLevel((self.create:GetFrameLevel() or 1) + 40)
+        popup:SetFrameStrata("DIALOG")
+        popup:SetFrameLevel(math.max(100, (self.create:GetFrameLevel() or 1) + 100))
         popup:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=12, insets={left=3,right=3,top=3,bottom=3}})
         popup:SetBackdropColor(0, 0, 0, .96)
         popup.rows = {}
@@ -1384,19 +1412,13 @@ do
       end
 
       local popup = self.publicBroadcastPopup
-      local selected, candidates, seen = {}, {}, {}
-      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do
-        selected[key(name)] = true
-        seen[key(name)] = true
-        table.insert(candidates, name)
-      end
-      for _, name in ipairs(self:SFDiscoverPublicChannels()) do
-        if not seen[key(name)] and #candidates < MAX_CHANNELS * 2 then
-          seen[key(name)] = true
-          table.insert(candidates, name)
-        end
-      end
-      for i = 1, MAX_CHANNELS * 2 do
+      local candidates = self:SFDiscoverPublicChannels()
+      local s = state()
+      s.channels = pruneChannels(s.channels, candidates)
+      local selected = {}
+      for _, name in ipairs(s.channels) do selected[key(name)] = true end
+      self:SFRefreshPublicBroadcastSummary()
+      for i = 1, MAX_CHANNELS do
         local row = popup.rows[i]
         if not row then
           row = CreateFrame("CheckButton", nil, popup, "UICheckButtonTemplate")
@@ -1417,9 +1439,7 @@ do
         local channelName = candidates[i]
         row.channelName = channelName
         if channelName then
-          local joined = false
-          for _, available in ipairs(self.publicBroadcastAvailableChannels or {}) do if key(available) == key(channelName) then joined = true; break end end
-          row.text:SetText(channelName .. (joined and "" or " |cff888888(unavailable)|r"))
+          row.text:SetText(channelName)
           row:SetChecked(selected[key(channelName)] == true)
           row:Show()
         else
@@ -1427,6 +1447,7 @@ do
         end
       end
       popup:Show()
+      if popup.Raise then popup:Raise() end
     end
     function B:SFEnsureListingBroadcastControls()
       if not self.create or self.listingBroadcastControlsBuilt or not self.needTank then return end
@@ -1470,6 +1491,21 @@ do
       clear:SetWidth(92); clear:SetHeight(24); clear:SetPoint("LEFT", choose, "RIGHT", 8, 0); clear:SetText("Clear Channels")
       clear:SetScript("OnClick", function() B:SFSetPublicBroadcastChannels({}); B:SFRefreshPublicBroadcastSummary() end)
       self.publicBroadcastChoose, self.publicBroadcastClear = choose, clear
+      local function hidePublicPopup()
+        if B.publicBroadcastPopup then B.publicBroadcastPopup:Hide() end
+      end
+      for _, dropdown in ipairs({self.typeDrop, self.activityDrop, self.specificDungeonDrop, self.diffDrop, self.voiceDrop, self.lootDrop}) do
+        if dropdown and dropdown.HookScript and not dropdown.SFListingBroadcastPopupCloseHook then
+          dropdown.SFListingBroadcastPopupCloseHook = true
+          dropdown:HookScript("OnMouseDown", hidePublicPopup)
+        end
+        local name = dropdown and dropdown.GetName and dropdown:GetName()
+        local button = name and _G[name .. "Button"]
+        if button and button.HookScript and not button.SFListingBroadcastPopupCloseHook then
+          button.SFListingBroadcastPopupCloseHook = true
+          button:HookScript("OnMouseDown", hidePublicPopup)
+        end
+      end
       loadControls(self)
     end
     function B:SFListingDraft()

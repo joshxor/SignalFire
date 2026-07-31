@@ -4,16 +4,19 @@ dofile(addonLoader)
 
 local B = assert(BronzeLFG, "SignalFire did not load")
 local sent, notices = {}, {}
-local channelIds = {Global=3, Ascension=4, Newcomers=7, LookingForGroup=8, BLFG=9}
+local channelIds = {Global=3, Ascension=4, Newcomers=7, LookingForGroup=8, BLFG=9, Zone=10, Trade=11, ["Global-Guild-Recruitment"]=12}
 local channelShape = "pair"
+local joinedChannels = {"Global", "Ascension", "Newcomers", "BLFG", "ascension"}
 
 function GetChannelName(name) return channelIds[tostring(name or "")] or 0 end
 function GetChannelList()
-  if channelShape == "triplet" then
-    return 3, false, "Global", 4, false, "Ascension", 7, false, "Newcomers",
-      9, false, "BLFG", 10, false, "ascension"
+  local raw = {}
+  for _, name in ipairs(joinedChannels) do
+    table.insert(raw, channelIds[name] or 0)
+    if channelShape == "triplet" then table.insert(raw, false) end
+    table.insert(raw, name)
   end
-  return 3, "Global", 4, "Ascension", 7, "Newcomers", 9, "BLFG", 10, "ascension"
+  return unpack(raw)
 end
 function SendChatMessage(text, chatType, language, channelId)
   table.insert(sent, {text=tostring(text or ""), chatType=chatType, language=language, channelId=channelId})
@@ -64,30 +67,32 @@ assert(#sent == 0, "triplet discovery sent chat")
 BronzeLFG_DB.options.serverProfile = "Ascension"
 B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers", "ascension", "BLFG", "", "Unavailable"})
 local selected = B:SFGetPublicBroadcastChannels()
-assert(#selected == 3 and selected[1] == "Ascension" and selected[2] == "Newcomers" and selected[3] == "Unavailable")
+assert(#selected == 2 and selected[1] == "Ascension" and selected[2] == "Newcomers")
 for _, value in ipairs(selected) do assert(type(value) == "string", "numeric channel ID persisted") end
 B:SFSetPublicBroadcastChannels({})
 assert(#B:SFGetPublicBroadcastChannels() == 0, "clear selection failed")
 local tooMany = {}
-for i = 1, 20 do tooMany[i] = "Channel" .. tostring(i) end
+joinedChannels = {}
+for i = 1, 20 do local name = "Channel" .. tostring(i); channelIds[name] = i + 20; joinedChannels[i] = name; tooMany[i] = name end
 assert(#B:SFSetPublicBroadcastChannels(tooMany) == 8, "selection bound failed")
+joinedChannels = {"Global", "Ascension", "Newcomers", "BLFG", "ascension"}
 B:SFSetPublicBroadcastChannels({"Unavailable"})
 B:SFSetPublicBroadcastChannels({})
-assert(#B:SFGetPublicBroadcastChannels() == 0, "unavailable saved channel could not be removed")
+assert(#B:SFGetPublicBroadcastChannels() == 0, "unavailable selection was retained")
 
 -- C/D. Idempotent legacy channel/role migration and explicit new-value precedence.
 BronzeLFG_DB.listingBroadcastByProfile = nil
 BronzeLFG_DB.listingBroadcastMigration = nil
-BronzeLFG_DB.recruitmentCreator = {broadcastChannel="LegacyRecruitment"}
+BronzeLFG_DB.recruitmentCreator = {broadcastChannel="Ascension"}
 BronzeLFG_DB.createByProfile = {
   Ascension={needTank=true, needHealer="1", needDPS=1, minLevel="", maxLevel=""},
   Triumvirate={needTank=false, needHealer="0", needDPS=false},
 }
 local legacy = B:SFListingBroadcastState()
-assert(legacy.channels[1] == "LegacyRecruitment", "legacy channel did not migrate")
+assert(legacy.channels[1] == "Ascension", "joined legacy channel did not migrate")
 assert(legacy.tankCount == 1 and legacy.healerCount == 1 and legacy.dpsCount == 1 and legacy.supportCount == 0,
   "legacy role flags did not migrate")
-assert(BronzeLFG_DB.recruitmentCreator.broadcastChannel == "LegacyRecruitment", "legacy channel field was erased")
+assert(BronzeLFG_DB.recruitmentCreator.broadcastChannel == "Ascension", "legacy channel field was erased")
 assert(BronzeLFG_DB.createByProfile.Ascension.needTank == true, "legacy role field was erased")
 local again = B:SFListingBroadcastState()
 assert(again == legacy and #again.channels == 1, "legacy migration was not idempotent")
@@ -104,7 +109,7 @@ assert(B:SFRolePhrase({tankCount=1,healerCount=1,supportCount=1,dpsCount=2})
 assert(B:SFRolePhrase({supportCount=2}) == "Need 2 Support")
 assert(B:SFRolePhrase({}) == "Need flexible roles")
 
--- E/G. Multi-channel sending and unavailable/empty outcomes.
+-- E/G. Multi-channel sending and current-channel pruning/empty outcomes.
 B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers", "ascension", "BLFG"})
 resetSends()
 local message = B:ListingRecruitmentText({activity="Molten Core",tankCount=1,dpsCount=2,minLevel=30,maxLevel=40})
@@ -113,10 +118,10 @@ local public = publicSends()
 assert(#public == 2 and public[1].text == public[2].text, "multi-channel text was not identical")
 assert(public[1].channelId == 4 and public[2].channelId == 7, "send-time channel IDs were wrong")
 for _, item in ipairs(public) do assert(item.channelId ~= 3 and item.channelId ~= 9, "Global or BLFG received public text") end
-B:SFSetPublicBroadcastChannels({"Ascension", "Unavailable"}); resetSends()
-assert(B:SFSendPublicBroadcast(message) == true and #publicSends() == 1 and sawNotice("Unavailable"))
-B:SFSetPublicBroadcastChannels({"Unavailable"}); resetSends()
-assert(B:SFSendPublicBroadcast(message) == false and #publicSends() == 0 and sawNotice("Unavailable"))
+B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers"}); joinedChannels = {"Global", "Ascension", "BLFG"}; resetSends()
+assert(#B:SFGetPublicBroadcastChannels() == 1 and B:SFSendPublicBroadcast(message) == true and #publicSends() == 1,
+  "left channel was not pruned before sending")
+joinedChannels = {"Global", "Ascension", "Newcomers", "BLFG", "ascension"}
 B:SFSetPublicBroadcastChannels({}); resetSends()
 assert(B:SFSendPublicBroadcast(message) == false and #publicSends() == 0 and sawNotice("Select at least one"))
 
@@ -124,6 +129,52 @@ assert(B:SFSendPublicBroadcast(message) == false and #publicSends() == 0 and saw
 B:ShowCreate()
 assert(B.listingBroadcastControlsBuilt and B.tankCountBox and B.supportCountBox and B.minLevelBox)
 local originalTankBox, originalChannelButton = B.tankCountBox, B.publicBroadcastChoose
+
+-- Live correction: stale server-specific legacy values never become unavailable rows.
+BronzeLFG_DB.options.serverProfile = "Ascension"
+BronzeLFG_DB.listingBroadcastByProfile = nil
+BronzeLFG_DB.listingBroadcastMigration = nil
+BronzeLFG_DB.recruitmentCreator = {broadcastChannel="Global-Guild-Recruitment"}
+joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
+B:SFOpenPublicBroadcastSelector()
+local popup = assert(B.publicBroadcastPopup, "public broadcast popup was not created")
+local visible = {}
+for _, row in ipairs(popup.rows) do if row:IsShown() then table.insert(visible, row.channelName) end end
+assert(#visible == 4 and contains(visible, "Ascension") and contains(visible, "Newcomers") and contains(visible, "Zone") and contains(visible, "Trade"),
+  "selector did not use only current joined public channels")
+assert(not contains(visible, "BLFG") and not contains(visible, "Global-Guild-Recruitment"), "stale or BLFG channel leaked into Ascension")
+assert(#B:SFGetPublicBroadcastChannels() == 0, "unavailable legacy selection was retained")
+assert(popup:GetFrameStrata() == "DIALOG" and popup:GetFrameLevel() > B.create:GetFrameLevel(), "public popup did not use elevated dialog layering")
+
+-- The historical Triumvirate channel remains selectable only when currently joined.
+B:SF143_SetServerProfile("Triumvirate", true)
+joinedChannels = {"Global-Guild-Recruitment", "BLFG"}
+local triumvirate = B:SFDiscoverPublicChannels()
+assert(#triumvirate == 1 and triumvirate[1] == "Global-Guild-Recruitment", "legitimate Triumvirate channel was excluded")
+
+-- Dungeon and public-channel popups are mutually exclusive and reuse existing controls.
+B:SF143_SetServerProfile("Ascension", true)
+joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
+local dungeonSelector = assert(B.specificDungeonDrop._sf1430jSelector, "custom dungeon selector missing")
+local dungeonClick = assert(dungeonSelector:GetScript("OnClick"), "custom dungeon selector script missing")
+dungeonClick(dungeonSelector)
+local dungeonPopup = assert(SFALP.dungeonSelectorPopup1430j, "custom dungeon popup missing")
+assert(dungeonPopup:IsShown(), "custom dungeon popup did not open")
+B:SFOpenPublicBroadcastSelector()
+assert(not dungeonPopup:IsShown() and popup:IsShown(), "public popup did not close dungeon popup")
+dungeonClick(dungeonSelector)
+assert(dungeonPopup:IsShown() and not popup:IsShown(), "dungeon popup did not close public popup")
+assert(dungeonSelector:GetScript("OnClick") == dungeonClick, "dungeon selector script was duplicated")
+assert(#sent == 0, "popup lifecycle sent chat")
+
+B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers"})
+joinedChannels = {"Ascension", "Zone", "Trade", "BLFG"}
+B:SFOpenPublicBroadcastSelector()
+assert(#B:SFGetPublicBroadcastChannels() == 1 and B:SFGetPublicBroadcastChannels()[1] == "Ascension", "refresh did not prune left channel")
+assert(not string.find(B.publicBroadcastSummary:GetText(), "Newcomers", 1, true), "refresh summary retained left channel")
+assert(#sent == 0, "refresh pruning sent chat")
+joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
+
 B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers"})
 B.tankCountBox:SetText("2"); B.healerCountBox:SetText("1"); B.supportCountBox:SetText("3"); B.dpsCountBox:SetText("4")
 B.minLevelBox:SetText("30"); B.maxLevelBox:SetText("40")

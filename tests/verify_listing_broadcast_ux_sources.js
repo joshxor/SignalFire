@@ -48,7 +48,14 @@ requireText(feature, 'normalized ~= "blfg"', "BLFG exclusion");
 requireText(feature, "sanitizeChannels", "bounded name deduplication");
 requireText(feature, "#out < MAX_CHANNELS", "bounded selected destinations");
 requireText(feature, "GetChannelName(name)", "send-time numeric channel resolution");
-requireText(feature, 'clear:SetText("Clear")', "unavailable selections cannot be cleared");
+requireText(feature, "local candidates = self:SFDiscoverPublicChannels()", "selector does not use current joined-channel discovery");
+requireText(feature, "s.channels = pruneChannels(s.channels, candidates)", "selector does not prune unavailable selections");
+requireText(feature, "s.channels = pruneChannels(channels, self:SFDiscoverPublicChannels())", "saved selection is not constrained to joined channels");
+requireText(feature, 'oldKey == "global-guild-recruitment"', "profile-safe Global-Guild-Recruitment migration missing");
+requireText(feature, 'eligible = id == "Triumvirate"', "Global-Guild-Recruitment migration is not Triumvirate-only");
+requireText(feature, 'oldKey == "ascension"', "profile-safe Ascension migration missing");
+requireText(feature, "for _, joined in ipairs(joinedChannels())", "legacy migration does not verify currently joined channels");
+if (feature.includes("(unavailable)")) fail("unavailable selector rows remain");
 if (feature.includes("JoinChannelByName")) fail("public selector joins channels");
 
 const creator = slice(bronze, "local function blfgCreatorPostToChat", "\nfunction BLFG:PublishRecruitmentListing");
@@ -118,6 +125,17 @@ for (const text of [
 requireText(ui, 'p8_role_letter("Support")', "compact Support display");
 requireText(ui, "B:SFRolePhrase(listing)", "full count display");
 requireText(ui, '"\\n|cffffcc00Level Req:|r " .. record.levelRange', "listing detail level range");
+
+const dungeonOpen = slice(listing, "local function sfalp1430j_open", "\n      local function sfalp1430j_create_selector");
+requireText(dungeonOpen, "BLFG.publicBroadcastPopup", "dungeon popup does not close public selector");
+const selectorOpen = slice(feature, "function B:SFOpenPublicBroadcastSelector()", "\n    function B:SFEnsureListingBroadcastControls");
+requireText(selectorOpen, "CloseDropDownMenus", "public selector does not close native Create Listing menus");
+requireText(selectorOpen, "SFALP.dungeonSelectorPopup1430j", "public selector does not close custom dungeon popup");
+requireText(selectorOpen, 'popup:SetFrameStrata("DIALOG")', "public selector lacks dialog strata");
+requireText(selectorOpen, "popup:SetFrameLevel(math.max(100", "public selector lacks elevated frame level");
+const controls = slice(feature, "function B:SFEnsureListingBroadcastControls()", "\n    function B:SFListingDraft");
+requireText(controls, "SFListingBroadcastPopupCloseHook", "Create Listing dropdown popup-close hook missing");
+requireText(controls, 'dropdown:HookScript("OnMouseDown", hidePublicPopup)', "Create Listing dropdown does not close public selector");
 
 if (/NewTicker|C_Timer\.NewTicker/.test(feature)) fail("repeating timer added");
 if (/SetScript\(\s*["']OnUpdate["']/.test(feature)) fail("permanent OnUpdate added");
