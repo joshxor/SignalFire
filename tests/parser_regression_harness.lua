@@ -26,7 +26,8 @@ local objectMeta = {
 
 local function newObject(name)
   return setmetatable({name=name, shown=false, scripts={}, events={}, width=1024, height=768,
-    sf135jClickCatcher=false, sf135jArrow=false, _sf1430jSelector=false}, objectMeta)
+    sf135jClickCatcher=false, sf135jArrow=false, _sf1430jSelector=false,
+    SFListingBroadcastPopupHideHook=false, SFListingBroadcastPopupCloseHook=false}, objectMeta)
 end
 
 function objectMethods:GetName() return self.name end
