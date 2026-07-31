@@ -512,7 +512,11 @@ local function serializeListing(l)
     clean(l.type), clean(l.activity), clean(l.difficulty), clean(l.key),
     clean(l.minItemLevel), clean(l.members), clean(l.maxMembers),
     clean(l.needTank), clean(l.needHealer), clean(l.needDPS),
-    clean(l.voice), clean(l.loot), clean(l.note), clean(l.created)
+    clean(l.voice), clean(l.loot), clean(l.note), clean(l.created),
+    clean(l.tankCount or ((l.needTank == "1" or l.needTank == 1) and 1 or 0)),
+    clean(l.healerCount or ((l.needHealer == "1" or l.needHealer == 1) and 1 or 0)),
+    clean(l.dpsCount or ((l.needDPS == "1" or l.needDPS == 1) and 1 or 0)),
+    clean(l.supportCount or 0), clean(l.minLevel or ""), clean(l.maxLevel or "")
   }, "~")
 end
 
@@ -525,6 +529,10 @@ local function parseListing(p)
     needTank=p[14], needHealer=p[15], needDPS=p[16],
     voice=p[17], loot=p[18], note=p[19],
     created=tonumber(p[20]) or now(),
+    tankCount=tonumber(p[21]) or ((p[14] == "1" or p[14] == 1) and 1 or 0),
+    healerCount=tonumber(p[22]) or ((p[15] == "1" or p[15] == 1) and 1 or 0),
+    dpsCount=tonumber(p[23]) or ((p[16] == "1" or p[16] == 1) and 1 or 0),
+    supportCount=tonumber(p[24]) or 0, minLevel=tonumber(p[25]) or nil, maxLevel=tonumber(p[26]) or nil,
     seen=now()
   }
 end
@@ -5007,7 +5015,7 @@ function BLFG:ValidateCreateListing()
     return false
   end
 
-  if not self.needTank:GetChecked() and not self.needHealer:GetChecked() and not self.needDPS:GetChecked() then
+  if not self.needTank:GetChecked() and not self.needHealer:GetChecked() and not self.needDPS:GetChecked() and not (self.supportCountBox and tonumber(self.supportCountBox:GetText() or "0") and tonumber(self.supportCountBox:GetText() or "0") > 0) then
     msg("Select at least one role needed.", 1, .35, .35)
     return false
   end
@@ -5040,6 +5048,12 @@ function BLFG:CreateListing()
     needTank = self.needTank:GetChecked() and "1" or "0",
     needHealer = self.needHealer:GetChecked() and "1" or "0",
     needDPS = self.needDPS:GetChecked() and "1" or "0",
+    tankCount = tonumber(self.tankCountBox and self.tankCountBox:GetText() or "") or (self.needTank:GetChecked() and 1 or 0),
+    healerCount = tonumber(self.healerCountBox and self.healerCountBox:GetText() or "") or (self.needHealer:GetChecked() and 1 or 0),
+    dpsCount = tonumber(self.dpsCountBox and self.dpsCountBox:GetText() or "") or (self.needDPS:GetChecked() and 1 or 0),
+    supportCount = tonumber(self.supportCountBox and self.supportCountBox:GetText() or "") or 0,
+    minLevel = tonumber(self.minLevelBox and self.minLevelBox:GetText() or "") or nil,
+    maxLevel = tonumber(self.maxLevelBox and self.maxLevelBox:GetText() or "") or nil,
     voice = dd(self.voiceDrop),
     loot = dd(self.lootDrop),
     note = self.noteBox:GetText() or "",
@@ -5695,6 +5709,7 @@ local function blfgCreatorPostToChat(msg)
     clipped = true
   end
 
+  if BLFG.SFSendPublicBroadcast then return BLFG:SFSendPublicBroadcast(msg) end
   local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
   local id = GetChannelName and GetChannelName(channelName) or nil
   if (not id or id == 0) and channelName ~= "global" then
@@ -15928,6 +15943,7 @@ function BLFG:PostInvasionToChat()
   local row = self:UpsertInvasionPublicListing(entry, playerName())
   if self.RefreshPublicGroups then self:RefreshPublicGroups() end
   local text = self:InvasionRecruitmentText(entry)
+  if self.SFSendPublicBroadcast then return self:SFSendPublicBroadcast(text) end
   local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
   local channelId = GetChannelName and GetChannelName(channelName) or nil
   if (not channelId or channelId == 0) and channelName ~= "global" then
