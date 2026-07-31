@@ -97,6 +97,10 @@ jobs:
         shell: bash
         run: node tests/verify_listing_broadcast_ux_sources.js
 
+      - name: Run activity discovery Pass A source verifier
+        shell: bash
+        run: node tests/verify_activity_discovery_pass_a_sources.js
+
       - name: Prepare Marketplace test loader
         shell: bash
         run: |
@@ -139,6 +143,7 @@ jobs:
           run_harness tests/marketplace_share_link_harness.lua
           run_harness tests/runtime_fps_cleanup_harness.lua
           run_harness tests/listing_broadcast_ux_harness.lua
+          run_harness tests/activity_discovery_pass_a_harness.lua
           exit "$status"
 
       - name: Read version
