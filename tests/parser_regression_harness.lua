@@ -26,10 +26,12 @@ local objectMeta = {
 
 local function newObject(name)
   return setmetatable({name=name, shown=false, scripts={}, events={}, width=1024, height=768,
-    sf135jClickCatcher=false, sf135jArrow=false, _sf1430jSelector=false}, objectMeta)
+    sf135jClickCatcher=false, sf135jArrow=false, _sf1430jSelector=false,
+    SFListingBroadcastPopupHideHook=false, SFListingBroadcastPopupCloseHook=false}, objectMeta)
 end
 
 function objectMethods:GetName() return self.name end
+function objectMethods:GetParent() return self.parent end
 function objectMethods:SetScript(kind, fn) self.scripts[kind] = fn end
 function objectMethods:GetScript(kind) return self.scripts[kind] end
 function objectMethods:HookScript(kind, fn) self.scripts["hook:" .. kind] = fn end
@@ -53,8 +55,8 @@ function objectMethods:SetScale(value) self.scale = value end
 function objectMethods:GetScale() return rawget(self, "scale") or 1 end
 function objectMethods:GetChildren() return nil end
 function objectMethods:GetRegions() return nil end
-function objectMethods:CreateFontString() return newObject("font") end
-function objectMethods:CreateTexture() return newObject("texture") end
+function objectMethods:CreateFontString() local child = newObject("font"); child.parent = self; return child end
+function objectMethods:CreateTexture() local child = newObject("texture"); child.parent = self; return child end
 function objectMethods:SetText(value) self.text = value end
 function objectMethods:GetText() return self.text or "" end
 function objectMethods:SetChecked(value) self.checked = value end
@@ -72,8 +74,9 @@ DEFAULT_CHAT_FRAME = newObject("ChatFrame1")
 NUM_CHAT_WINDOWS = 10
 for i = 1, NUM_CHAT_WINDOWS do _G["ChatFrame" .. i] = i == 1 and DEFAULT_CHAT_FRAME or newObject("ChatFrame" .. i) end
 
-function CreateFrame(_, name)
+function CreateFrame(_, name, parent)
   local frame = newObject(name or "anonymous")
+  frame.parent = parent
   if name then
     _G[name] = frame
     _G[name .. "Text"] = _G[name .. "Text"] or newObject(name .. "Text")

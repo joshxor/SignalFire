@@ -4762,6 +4762,9 @@ do
         .. "|dd=" .. tostring(self.diffDrop) .. ":" .. p2_dropdown_text(self.diffDrop)
         .. "|kd=" .. p2_text(self.keyBox)
         .. "|roles=" .. p2_checked(self.needTank) .. p2_checked(self.needHealer) .. p2_checked(self.needDPS)
+        .. ":" .. p2_text(self.tankCountBox) .. ":" .. p2_text(self.healerCountBox)
+        .. ":" .. p2_text(self.supportCountBox) .. ":" .. p2_text(self.dpsCountBox)
+        .. "|levels=" .. p2_text(self.minLevelBox) .. ":" .. p2_text(self.maxLevelBox)
         .. "|voice=" .. p2_dropdown_text(self.voiceDrop) .. "|loot=" .. p2_dropdown_text(self.lootDrop)
         .. "|min=" .. p2_text(self.minIlvlBox) .. "|max=" .. p2_text(self.maxBox)
         .. "|note=" .. p2_text(self.noteBox)
@@ -6967,6 +6970,7 @@ do
     local function p8_role_letter(role)
       if role == "Tank" then return "|cff4aa3ffT|r" end
       if role == "Healer" then return "|cff44ff66H|r" end
+      if role == "Support" then return "|cffffb84dS|r" end
       if role == "DPS" then return "|cffff5555D|r" end
       return "|cffffff66F|r"
     end
@@ -6974,20 +6978,29 @@ do
     local function p8_role_text(role)
       if role == "Tank" then return "|TInterface\\Icons\\Ability_Defend:14:14:0:0|t |cff4aa3ffTank|r" end
       if role == "Healer" then return "|TInterface\\Icons\\Spell_Holy_FlashHeal:14:14:0:0|t |cff44ff66Healer|r" end
+      if role == "Support" then return "|TInterface\\Icons\\Spell_Holy_PowerWordShield:14:14:0:0|t |cffffb84dSupport|r" end
       if role == "DPS" then return "|TInterface\\Icons\\Ability_DualWield:14:14:0:0|t |cffff5555DPS|r" end
       return "|TInterface\\Icons\\INV_Misc_GroupNeedMore:14:14:0:0|t |cffffff66Flexible|r"
     end
 
+    local function p8_role_count(listing, field, legacy)
+      local value = tonumber(listing[field])
+      if value then return math.max(0, math.min(40, math.floor(value))) end
+      return (listing[legacy] == "1" or listing[legacy] == 1) and 1 or 0
+    end
+
     local function p8_roles_short(listing)
       local out = {}
-      if listing.needTank == "1" or listing.needTank == 1 then table.insert(out, p8_role_letter("Tank")) end
-      if listing.needHealer == "1" or listing.needHealer == 1 then table.insert(out, p8_role_letter("Healer")) end
-      if listing.needDPS == "1" or listing.needDPS == 1 then table.insert(out, p8_role_letter("DPS")) end
+      if p8_role_count(listing, "tankCount", "needTank") > 0 then table.insert(out, p8_role_letter("Tank")) end
+      if p8_role_count(listing, "healerCount", "needHealer") > 0 then table.insert(out, p8_role_letter("Healer")) end
+      if p8_role_count(listing, "supportCount", "") > 0 then table.insert(out, p8_role_letter("Support")) end
+      if p8_role_count(listing, "dpsCount", "needDPS") > 0 then table.insert(out, p8_role_letter("DPS")) end
       if #out == 0 then return p8_role_letter("Flexible") end
       return table.concat(out, "/")
     end
 
     local function p8_roles_long(listing)
+      if B.SFRolePhrase then return string.gsub(B:SFRolePhrase(listing), "^Need%s+", "") end
       local out = {}
       if listing.needTank == "1" or listing.needTank == 1 then table.insert(out, p8_role_text("Tank")) end
       if listing.needHealer == "1" or listing.needHealer == 1 then table.insert(out, p8_role_text("Healer")) end
@@ -7013,7 +7026,9 @@ do
         tostring(listing.members or ""), tostring(listing.maxMembers or ""), tostring(listing.needTank or ""),
         tostring(listing.needHealer or ""), tostring(listing.needDPS or ""), tostring(listing.voice or ""),
         tostring(listing.loot or ""), tostring(listing.note or ""), tostring(listing.created or ""),
-        tostring(listing.seen or ""),
+        tostring(listing.seen or ""), tostring(listing.tankCount or ""), tostring(listing.healerCount or ""),
+        tostring(listing.dpsCount or ""), tostring(listing.supportCount or ""), tostring(listing.minLevel or ""),
+        tostring(listing.maxLevel or ""),
       }, "\31")
     end
 
@@ -7125,6 +7140,7 @@ do
             rowNote=p8_short(meta, 34), rolesShort=p8_roles_short(listing), rolesLong=p8_roles_long(listing),
             itemLevel=(tostring(listing.minItemLevel or "") ~= "") and (tostring(listing.minItemLevel) .. "+") or "--",
             detailItemLevel=(tostring(listing.minItemLevel or "") ~= "") and (tostring(listing.minItemLevel) .. "+") or "Not provided",
+            levelRange=(B.SFLevelRange and B:SFLevelRange(listing) ~= "") and B:SFLevelRange(listing) or "60",
             members=tostring(listing.members or 1) .. " / " .. tostring(listing.maxMembers or 5),
             applicantCount=applicantCounts[tostring(listing.id or id)] or 0,
           }
@@ -7334,7 +7350,7 @@ do
         local sub = record.difficulty .. " " .. record.kind
         local body = "|cffffcc00Leader:|r " .. record.leader
           .. "\n|cffffcc00Created:|r " .. age
-          .. "\n|cffffcc00Level Req:|r 60"
+          .. "\n|cffffcc00Level Req:|r " .. record.levelRange
           .. "\n|cffffcc00Item Level:|r " .. record.detailItemLevel
           .. "\n|cffffcc00SignalFire Network:|r " .. record.members
           .. "\n|cffffcc00Applicants:|r " .. tostring(record.applicantCount)

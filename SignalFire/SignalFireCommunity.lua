@@ -8,9 +8,6 @@ do
     if not BLFG then break end
 
     local SF139_VERSION = _G.SignalFire_VERSION or "1.5.3"
-    local SF139_DEFAULT_CHANNEL = "Global-Guild-Recruitment"
-    local SF139_FALLBACK_CHANNEL = "Global-Guild-Recruitment"
-
     BLFG.SignalFireRecruitmentVersion = SF139_VERSION
     BLFG.version = SF139_VERSION
 
@@ -49,10 +46,9 @@ do
       BronzeLFG_DB.recruitmentCreator = BronzeLFG_DB.recruitmentCreator or {}
       local db = BronzeLFG_DB.recruitmentCreator
       db.templates = db.templates or {}
-      -- Triumvirate uses a single guild recruitment channel. Keep this locked so the
-      -- creator does not expose redundant Guild/Global/BLFG choices or fall back to
-      -- the wrong channel.
-      db.broadcastChannel = SF139_DEFAULT_CHANNEL
+      -- Keep the legacy field for idempotent migration. Public destinations now
+      -- live in listingBroadcastByProfile and are never forced here.
+      if db.broadcastChannel == nil then db.broadcastChannel = "" end
       return db
     end
 
@@ -109,24 +105,6 @@ do
       table.insert(t, value)
     end
 
-    local function sf139_channel_candidates(preferred)
-      local out = {}
-      -- Do not rotate through Guild/Global/BLFG anymore. The Triumvirate recruitment
-      -- channel is Global-Guild-Recruitment. If it is missing, join it and ask the
-      -- user to retry instead of broadcasting to the wrong place.
-      sf139_unique_insert(out, SF139_DEFAULT_CHANNEL)
-      return out
-    end
-
-    local function sf139_find_channel(preferred)
-      if not GetChannelName then return nil, nil end
-      for _, name in ipairs(sf139_channel_candidates(preferred)) do
-        local id = GetChannelName(name)
-        if id and id ~= 0 then return id, name end
-      end
-      return nil, nil
-    end
-
     function BLFG:SF139_BuildRecruitmentBroadcast()
       local rc = sf139_rc()
       local guild = sf139_clean((rc.guildEdit and rc.guildEdit:GetText()) or (GetGuildInfo and GetGuildInfo("player")) or "", 42)
@@ -169,6 +147,10 @@ do
         end
       end
 
+      if self.SFExpandRecruitmentTemplate then
+        local listing = self.myListing or (self.SFListingDraft and self:SFListingDraft()) or {}
+        msg = self:SFExpandRecruitmentTemplate(msg, listing)
+      end
       msg = sf139_clean(msg, 0)
       if string.len(msg) > 255 then
         msg = string.sub(msg, 1, 252) .. "..."
@@ -179,46 +161,31 @@ do
 
     function BLFG:SF139_GetRecruitmentChannel()
       local db = sf139_ensure_db()
-      db.broadcastChannel = SF139_DEFAULT_CHANNEL
-      return SF139_DEFAULT_CHANNEL
+      return tostring(db.broadcastChannel or "")
     end
 
     function BLFG:SF139_SetRecruitmentChannel(channelName)
       local db = sf139_ensure_db()
       local rc = sf139_rc()
-      db.broadcastChannel = SF139_DEFAULT_CHANNEL
-      if rc.channelEdit and rc.channelEdit.SetText then rc.channelEdit:SetText(SF139_DEFAULT_CHANNEL) end
+      channelName = sf139_clean(channelName, 40)
+      db.broadcastChannel = channelName
+      if self.SFSetPublicBroadcastChannels then self:SFSetPublicBroadcastChannels(channelName ~= "" and {channelName} or {}) end
+      if rc.channelEdit and rc.channelEdit.SetText then rc.channelEdit:SetText(channelName) end
       if self.SF139_UpdateRecruitmentUI then self:SF139_UpdateRecruitmentUI() end
-      sf139_msg("Recruitment broadcast channel locked to: " .. SF139_DEFAULT_CHANNEL, .4, 1, .4)
+      sf139_msg(channelName ~= "" and ("Recruitment broadcast channel selected: " .. channelName) or "Recruitment broadcast channels cleared.", .4, 1, .4)
     end
 
     function BLFG:SF139_SendRecruitmentBroadcast()
-      local db = sf139_ensure_db()
-      local preferred = self:SF139_GetRecruitmentChannel()
       local payload, clipped, omittedDiscord = self:SF139_BuildRecruitmentBroadcast()
       if payload == "" then
         sf139_msg("Nothing to broadcast yet. Add a guild name or recruitment pitch first.", 1, .35, .35)
         return false
       end
 
-      local id, channelName = sf139_find_channel(preferred)
-      if id and id ~= 0 and SendChatMessage then
-        SendChatMessage(payload, "CHANNEL", nil, id)
-        db.broadcastChannel = preferred
-        sf139_msg("Broadcast sent to /" .. tostring(channelName) .. " (" .. tostring(string.len(payload)) .. "/255).", .4, 1, .4)
-        if channelName ~= preferred then
-          sf139_msg("Preferred channel /" .. tostring(preferred) .. " was not found; used /" .. tostring(channelName) .. " fallback.", 1, .82, .35)
-        end
-        if clipped then sf139_msg("Broadcast was shortened to fit the WoW chat limit.", 1, .82, .35) end
-        if omittedDiscord then sf139_msg("Discord/link stayed in the full Guild Browser listing but did not fit in chat.", 1, .82, .35) end
-        return true
-      end
-
-      if JoinChannelByName then
-        JoinChannelByName(SF139_DEFAULT_CHANNEL)
-      end
-      sf139_msg("Could not find /" .. tostring(SF139_DEFAULT_CHANNEL) .. ". I tried joining it; try Broadcast again in a moment.", 1, .35, .35)
-      return false
+      if not self.SFSendPublicBroadcast then return false end
+      local sent = self:SFSendPublicBroadcast(payload)
+      if sent and omittedDiscord then sf139_msg("Discord/link stayed in the full Guild Browser listing but did not fit in chat.", 1, .82, .35) end
+      return sent
     end
 
     function BLFG:SF139_SaveRecruitmentTemplate()
@@ -233,7 +200,7 @@ do
         notes = (rc.notesEdit and rc.notesEdit:GetText()) or "",
         activities = sf139_copy_map(rc.activities),
         roles = sf139_copy_map(rc.roles),
-        channel = SF139_DEFAULT_CHANNEL,
+        channel = tostring(db.broadcastChannel or ""),
         saved = (time and time()) or 0,
       }
       db.lastTemplate = name
@@ -261,7 +228,6 @@ do
       if rc.activityChecks then for k, cb in pairs(rc.activityChecks) do cb:SetChecked(rc.activities[k] and true or false) end end
       if rc.roleChecks then for k, cb in pairs(rc.roleChecks) do cb:SetChecked(rc.roles[k] and true or false) end end
       if rc.templateName then rc.templateName:SetText(name) end
-      self:SF139_SetRecruitmentChannel(SF139_DEFAULT_CHANNEL)
       db.lastTemplate = name
       if self.RefreshRecruitmentPreview then self:RefreshRecruitmentPreview() end
       if self.SF139_UpdateRecruitmentUI then self:SF139_UpdateRecruitmentUI() end
@@ -290,9 +256,9 @@ do
     function BLFG:SF139_UpdateRecruitmentUI()
       local rc = sf139_rc()
       local db = sf139_ensure_db()
-      db.broadcastChannel = SF139_DEFAULT_CHANNEL
       if rc.channelEdit and rc.channelEdit.SetText then
-        if rc.channelEdit:GetText() ~= SF139_DEFAULT_CHANNEL then rc.channelEdit:SetText(SF139_DEFAULT_CHANNEL) end
+        local selected = self.SFGetPublicBroadcastChannels and table.concat(self:SFGetPublicBroadcastChannels(), ", ") or ""
+        if rc.channelEdit:GetText() ~= selected then rc.channelEdit:SetText(selected) end
       end
       -- 1.4.0d: the separate Broadcast Preview stays removed because it duplicated the
       -- normal Preview and consumed the exact space needed by templates/channel/buttons.
@@ -377,7 +343,8 @@ do
       if rc.sf139BLFGBtn then rc.sf139BLFGBtn:Hide() end
 
       if rc.channelEdit and rc.channelEdit.SetText then
-        rc.channelEdit:SetText(SF139_DEFAULT_CHANNEL)
+        local selected = self.SFGetPublicBroadcastChannels and table.concat(self:SFGetPublicBroadcastChannels(), ", ") or ""
+        rc.channelEdit:SetText(selected)
         rc.channelEdit:SetWidth(230)
         rc.channelEdit:SetAutoFocus(false)
         if rc.channelEdit.EnableMouse then rc.channelEdit:EnableMouse(false) end
@@ -456,7 +423,8 @@ do
       local cmd = sf139_low(sf139_trim(raw))
       if cmd == "channel" or cmd == "recruit channel" then
         sf139_ensure_db()
-        sf139_msg("Recruitment broadcast channel: " .. tostring(BronzeLFG_DB.recruitmentCreator.broadcastChannel or SF139_DEFAULT_CHANNEL))
+        local selected = BLFG.SFGetPublicBroadcastChannels and table.concat(BLFG:SFGetPublicBroadcastChannels(), ", ") or ""
+        sf139_msg(selected ~= "" and ("Recruitment broadcast channels: " .. selected) or "No recruitment broadcast channels selected.")
         return true
       end
       if string.sub(cmd, 1, 8) == "channel " then
