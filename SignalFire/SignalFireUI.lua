@@ -4121,6 +4121,7 @@ do
             id=tostring(row.id or id), row=row, player=tostring(row.player or ""),
             message=tostring(row.message or ""), activity=tostring(row.activity or ""),
             kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
+            difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or row.key or ""),
             needsTank=tank, needsHealer=healer, needsDPS=dps,
             intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
             tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),
@@ -4140,7 +4141,7 @@ do
           record.activityText = p6_shorten(record.activity, 26)
           record.messageText = p6_shorten(record.message, 70)
           record.searchText = p6_lower(table.concat({record.player, kind, record.activity,
-            record.message, record.intent, record.roles, record.tags, record.channel}, " "))
+            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty, record.keyLevel}, " "))
           p6_note("normalizedStringsGenerated")
           table.insert(rows, record)
           byId[record.id] = record
@@ -4200,6 +4201,12 @@ do
       return true
     end
 
+    local function p6_difficulty_matches(record, filter)
+      if filter == "" or filter == "All Difficulties" then return true end
+      if filter == "Mythic+" then return record.difficulty == "Mythic+" and record.kind == "Key" end
+      return record.difficulty == filter
+    end
+
     local function p6_view_inputs()
       local filter = tostring(B.publicFilter or "All")
       if filter == "Ascended" then filter = "Raid" end
@@ -4214,10 +4221,11 @@ do
       local hidden = p6_hidden_signature()
       local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
       local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
-      return filter, query, role, mode, hidden, profile, invasion
+      local difficulty = tostring(B.publicDifficultyFilter or "All Difficulties")
+      return filter, query, role, mode, hidden, profile, invasion, difficulty
     end
 
-    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature)
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty)
       if PG.testErrorStage == "view" then error("injected Public Groups view error") end
       p6_note("viewsBuilt")
       local hidden = {}
@@ -4225,7 +4233,7 @@ do
       local rows = {}
       for _, record in ipairs(snapshot.rows) do
         p6_note("filterScans")
-        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
+        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role) and p6_difficulty_matches(record, difficulty)
         if keep and query ~= "" then
           p6_note("searchScans")
           keep = string.find(record.searchText, query, 1, true) ~= nil
@@ -4252,12 +4260,12 @@ do
     local function p6_view()
       p6_note("viewRequests")
       local snapshot = p6_snapshot()
-      local filter, query, role, mode, hidden, profile, invasion = p6_view_inputs()
-      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion}, "\31")
+      local filter, query, role, mode, hidden, profile, invasion, difficulty = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty}, "\31")
       local cached = PG.viewCache[signature]
       if cached then p6_note("viewCacheHits"); return cached, snapshot end
       local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
-        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden)
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty)
       end)
       return view, snapshot
     end
@@ -4443,6 +4451,11 @@ do
       B.publicPage = page
       local start = ((page - 1) * per) + 1
       local selected = tostring(B.selectedPublic or "")
+      if selected ~= "" then
+        local selectedVisible = false
+        for _, record in ipairs(view.rows) do if record.id == selected then selectedVisible = true; break end end
+        if not selectedVisible then B.selectedPublic = nil; selected = "" end
+      end
       if PG.lastRenderedViewSignature == view.signature and PG.lastRenderedSelection ~= nil
         and PG.lastRenderedSelection ~= selected then p6_note("selectionOnlyUpdates") end
       p6_render_controls(snapshot, view, page, pages)
@@ -4481,6 +4494,29 @@ do
     local function p6_attach_panel(panel)
       if not panel or panel._sfP6ViewHooks then return end
       panel._sfP6ViewHooks = true
+      if not B.publicDifficultyDrop and panel.CreateFontString and CreateFrame and UIDropDownMenu_Initialize then
+        local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 200, -92)
+        label:SetText("Difficulty")
+        local drop = CreateFrame("Frame", "SignalFirePublicDifficultyDrop", panel, "UIDropDownMenuTemplate")
+        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 258, -86)
+        UIDropDownMenu_SetWidth(drop, 122)
+        B.publicDifficultyDrop, B.publicDifficultyLabel = drop, label
+        B.publicDifficultyFilter = B.publicDifficultyFilter or "All Difficulties"
+        UIDropDownMenu_Initialize(drop, function()
+          for _, value in ipairs({"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text, info.notCheckable = value, true
+            info.func = function()
+              B.publicDifficultyFilter, B.publicPage = value, 1
+              UIDropDownMenu_SetText(drop, value)
+              if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+            end
+            UIDropDownMenu_AddButton(info)
+          end
+        end)
+        UIDropDownMenu_SetText(drop, B.publicDifficultyFilter)
+      end
       if panel.HookScript then
         panel:HookScript("OnShow", function()
           PG.dirty = true
