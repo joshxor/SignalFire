@@ -89,6 +89,10 @@ jobs:
         shell: bash
         run: node tests/verify_marketplace_phase2b_share_sources.js
 
+      - name: Run runtime FPS cleanup source verifier
+        shell: bash
+        run: node tests/verify_runtime_fps_cleanup_sources.js
+
       - name: Prepare Marketplace test loader
         shell: bash
         run: |
@@ -129,6 +133,7 @@ jobs:
           run_harness tests/marketplace_network_replay_harness.lua
           run_harness tests/marketplace_exact_link_lookup_harness.lua
           run_harness tests/marketplace_share_link_harness.lua
+          run_harness tests/runtime_fps_cleanup_harness.lua
           exit "$status"
 
       - name: Read version

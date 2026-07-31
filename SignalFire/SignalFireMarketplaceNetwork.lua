@@ -122,15 +122,23 @@ do
     function N:ScheduleWake(runtime)
       if runtime.wake or not B.SF151_ScheduleDelayed then return false end
       runtime.wake=true
-      B:SF151_ScheduleDelayed(self.wakeKey,self.sendSpacing,function()
-        local current=M.runtime; if not current then return end; current.wake=false
+      -- The delayed-task registry is keyed, but a callback that was already
+      -- handed to the client must never operate on a later profile/runtime.
+      -- Keep this owner generation-bound just like replay and discovery wakes.
+      local generation,profile=runtime.generation,runtime.profile
+      local scheduled=B:SF151_ScheduleDelayed(self.wakeKey,self.sendSpacing,function()
+        local current=M.runtime
+        if not current or current.generation~=generation or current.profile~=profile
+            or not current.active or not M:IsEnabled() then return end
+        current.wake=false
         local item=table.remove(current.outgoing or {},1)
-        if item and M:IsEnabled() and item.profile==current.profile then
+        if item and item.profile==current.profile then
           if B:SFN_SendExtensionPacket("MKT2",item.payload) then note("sent") else note("dropped") end
         end
         if current.replay and current.replay.active then N:PumpReplay(current) end
         if #(current.outgoing or {})>0 then N:ScheduleWake(current) end
       end)
+      if not scheduled then runtime.wake=false; return false end
       return true
     end
     function N:RemoveRemote(id, reason)

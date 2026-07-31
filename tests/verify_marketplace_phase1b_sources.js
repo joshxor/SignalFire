@@ -15,9 +15,11 @@ function requireText(source, text, message) {
 
 const files = toc.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("##"));
 const marketplace = files.indexOf("SignalFireMarketplace.lua");
+const marketplaceNetwork = files.indexOf("SignalFireMarketplaceNetwork.lua");
 const marketplaceUI = files.indexOf("SignalFireMarketplaceUI.lua");
 const diagnostics = files.indexOf("SignalFireDiagnostics.lua");
-if (!(marketplace >= 0 && marketplaceUI === marketplace + 1 && diagnostics === marketplaceUI + 1)) {
+if (!(marketplace >= 0 && marketplaceNetwork === marketplace + 1
+  && marketplaceUI === marketplaceNetwork + 1 && diagnostics === marketplaceUI + 1)) {
   throw new Error("Marketplace UI TOC placement is incorrect");
 }
 
