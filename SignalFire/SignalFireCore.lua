@@ -531,8 +531,10 @@ do
         },
         activityTypes = {"Dungeon", "Mythic+", "Raid", "World Boss", "Custom Event"},
         difficulties = {"Normal", "Heroic", "Mythic", "Mythic+", "Ascended", "Custom"},
-        basicDungeonDifficulties = {"Normal", "Heroic", "Mythic", "Mythic+"},
-        dungeonDifficulties = {"Normal", "Heroic", "Mythic", "Mythic+"},
+        -- Mythic+ is owned by the dedicated Ascension pseudo-type in the final
+        -- creation UI; ordinary Dungeon owns only its non-keyed difficulties.
+        basicDungeonDifficulties = {"Normal", "Heroic", "Mythic"},
+        dungeonDifficulties = {"Normal", "Heroic", "Mythic"},
         raidDifficulties = {"Normal", "Heroic", "Ascended"},
         dungeons = ASCENSION_DUNGEONS_143,
         dungeonActivityModes = ASCENSION_DUNGEON_MODES_143,

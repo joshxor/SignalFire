@@ -1711,6 +1711,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
+      row.key = parsed.key or row.key
       row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
@@ -2149,6 +2150,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
+      row.key = parsed.key or row.key
       row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
@@ -4203,7 +4205,7 @@ do
 
     local function p6_difficulty_matches(record, filter)
       if filter == "" or filter == "All Difficulties" then return true end
-      if filter == "Mythic+" then return record.difficulty == "Mythic+" and record.kind == "Key" end
+      if filter == "Mythic+" then return record.difficulty == "Mythic+" end
       return record.difficulty == filter
     end
 
@@ -4496,10 +4498,10 @@ do
       panel._sfP6ViewHooks = true
       if not B.publicDifficultyDrop and panel.CreateFontString and CreateFrame and UIDropDownMenu_Initialize then
         local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 200, -92)
+        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
         label:SetText("Difficulty")
         local drop = CreateFrame("Frame", "SignalFirePublicDifficultyDrop", panel, "UIDropDownMenuTemplate")
-        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 258, -86)
+        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
         UIDropDownMenu_SetWidth(drop, 122)
         B.publicDifficultyDrop, B.publicDifficultyLabel = drop, label
         B.publicDifficultyFilter = B.publicDifficultyFilter or "All Difficulties"
@@ -4591,6 +4593,10 @@ do
         local before = countBefore(self, ...)
         local results = {pcall(old, self, ...)}
         if not results[1] then error(results[2], 0) end
+        if methodName == "ClearPublicGroups" then
+          self.publicDifficultyFilter = "All Difficulties"
+          if self.publicDifficultyDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicDifficultyDrop, self.publicDifficultyFilter) end
+        end
         if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
         return unpack(results, 2)
       end

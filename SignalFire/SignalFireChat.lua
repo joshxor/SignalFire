@@ -172,6 +172,9 @@ local function SFActivityDiscoveryPassAInstall()
     local function canonicalActivity(text, active)
       local input, candidates = words(text), {}
       for _, name in ipairs((active and active.dungeons) or {}) do table.insert(candidates, {name=name, alias=name}) end
+      for _, list in pairs((active and active.dungeonModeLists) or {}) do
+        for _, name in ipairs(list or {}) do table.insert(candidates, {name=name, alias=name}) end
+      end
       for _, pair in ipairs((active and active.activityAliases) or {}) do
         if active and active.dungeonActivities and active.dungeonActivities[pair[1]] then
           for _, alias in ipairs(pair[2] or {}) do table.insert(candidates, {name=pair[1], alias=alias}) end
@@ -193,7 +196,7 @@ local function SFActivityDiscoveryPassAInstall()
       local level = key and (string.match(string.lower(raw), "m%+%s*(%d+)")
         or string.match(string.lower(raw), "mythic%s*%+%s*(%d+)") or string.match(string.lower(raw), "keystone[^%d]*(%d+)")
         or string.match(string.lower(raw), "%+(%d+)")) or nil
-      return {activity=canonicalActivity(raw, profile()), difficulty=difficulty, keyLevel=level,
+      return {activity=canonicalActivity(raw, profile()), difficulty=difficulty, keyLevel=level, key=level,
         classification=key and "Key" or (difficulty and "Dungeon" or nil)}
     end
     function SignalFireFastChatLinks.TestParse(text)
@@ -3117,7 +3120,7 @@ do
 
     local function sf151_merge_row(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "difficulty", "keyLevel", "key", "ilevel", "score"}
       for _, field in ipairs(fields) do
         if (dst[field] == nil or dst[field] == "") and src[field] ~= nil and src[field] ~= "" then dst[field] = src[field] end
       end
@@ -3263,6 +3266,9 @@ do
         result.kind = fast.kind
         result.type = fast.type
         result.activity = fast.activity
+        result.difficulty = fast.difficulty
+        result.keyLevel = fast.keyLevel
+        result.key = fast.key
         result.roles = fast.roles
         result.intent = fast.intent or result.intent
         result.activities = fast.activities or result.activities
