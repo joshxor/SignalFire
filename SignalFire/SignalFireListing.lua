@@ -1414,12 +1414,13 @@ do
           end)
           popup.rows[i] = row
         end
-        row.channelName = candidates[i]
-        if row.channelName then
+        local channelName = candidates[i]
+        row.channelName = channelName
+        if channelName then
           local joined = false
-          for _, available in ipairs(self.publicBroadcastAvailableChannels or {}) do if key(available) == key(row.channelName) then joined = true; break end end
-          row.text:SetText(row.channelName .. (joined and "" or " |cff888888(unavailable)|r"))
-          row:SetChecked(selected[key(row.channelName)] == true)
+          for _, available in ipairs(self.publicBroadcastAvailableChannels or {}) do if key(available) == key(channelName) then joined = true; break end end
+          row.text:SetText(channelName .. (joined and "" or " |cff888888(unavailable)|r"))
+          row:SetChecked(selected[key(channelName)] == true)
           row:Show()
         else
           row:Hide()
