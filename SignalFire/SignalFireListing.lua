@@ -1181,7 +1181,7 @@ do
       end
       return out
     end
-    local function joinedChannels()
+    local function joinedChannelEntries()
       local out, seen = {}, {}
       if type(GetChannelList) ~= "function" then return out end
       local raw = { GetChannelList() }
@@ -1197,10 +1197,15 @@ do
           local normalized = key(name)
           if name and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then
             seen[normalized] = true
-            table.insert(out, name)
+            table.insert(out, {id=raw[i], name=name, key=normalized})
           end
         end
       end
+      return out
+    end
+    local function joinedChannels()
+      local out = {}
+      for _, entry in ipairs(joinedChannelEntries()) do table.insert(out, entry.name) end
       return out
     end
     local function pruneChannels(channels, available)
@@ -1225,8 +1230,8 @@ do
         if oldKey == "global-guild-recruitment" then eligible = id == "Triumvirate"
         elseif oldKey == "ascension" then eligible = id == "Ascension" end
         if eligible and type(s.channels) ~= "table" then
-          for _, joined in ipairs(joinedChannels()) do
-            if key(joined) == oldKey then s.channels = {joined}; break end
+          for _, joined in ipairs(joinedChannelEntries()) do
+            if joined.key == oldKey then s.channels = {joined.name}; break end
           end
         end
         BronzeLFG_DB.listingBroadcastMigration.legacyChannelProfile = id
@@ -1267,15 +1272,30 @@ do
     end
     function B:SFResolvePublicBroadcastDestinations()
       local valid, missing, seenNames, seenIds = {}, {}, {}, {}
-      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do
+      local entries, byKey = joinedChannelEntries(), {}
+      for _, entry in ipairs(entries) do byKey[entry.key] = entry end
+      self.publicBroadcastAvailableEntries = entries
+      self.publicBroadcastAvailableChannels = {}
+      for _, entry in ipairs(entries) do table.insert(self.publicBroadcastAvailableChannels, entry.name) end
+      local s = state()
+      local selected, kept = sanitizeChannels(s.channels), {}
+      for _, name in ipairs(selected) do
         local normalized = key(name)
-        local id = GetChannelName and GetChannelName(name) or 0
+        local entry = byKey[normalized]
         if normalized ~= "" and normalized ~= "blfg" and not seenNames[normalized] then
           seenNames[normalized] = true
-          if id and id ~= 0 and not seenIds[id] then seenIds[id] = true; table.insert(valid, {name=name, id=id}) else table.insert(missing, name) end
+          if entry and entry.id and entry.id ~= 0 and not seenIds[entry.id] then
+            seenIds[entry.id] = true
+            table.insert(valid, {name=entry.name, id=entry.id})
+            table.insert(kept, entry.name)
+          else
+            table.insert(missing, name)
+          end
         end
       end
-      return valid, missing
+      s.channels = kept
+      if self.publicBroadcastSummary then self:SFRefreshPublicBroadcastSummary() end
+      return valid, missing, #selected
     end
     function B:SFRoleCounts(listing)
       listing = listing or {}; return count(listing.tankCount ~= nil and listing.tankCount or ((listing.needTank == true or listing.needTank == "1" or listing.needTank == 1) and 1 or 0)), count(listing.healerCount ~= nil and listing.healerCount or ((listing.needHealer == true or listing.needHealer == "1" or listing.needHealer == 1) and 1 or 0)), count(listing.supportCount), count(listing.dpsCount ~= nil and listing.dpsCount or ((listing.needDPS == true or listing.needDPS == "1" or listing.needDPS == 1) and 1 or 0))
@@ -1312,8 +1332,8 @@ do
     function B:SFSendPublicBroadcast(text)
       text = trim(text); if text == "" then return false end
       local clipped = #text > 255; if clipped then text = string.sub(text, 1, 252) .. "..." end
-      local valid, missing = self:SFResolvePublicBroadcastDestinations()
-      if #state().channels == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Select at least one joined broadcast channel.") end; return false end
+      local valid, missing, selectedCount = self:SFResolvePublicBroadcastDestinations()
+      if selectedCount == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Select at least one joined broadcast channel.") end; return false end
       if #valid == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Selected broadcast channels are unavailable: " .. table.concat(missing, ", ") .. ".") end; return false end
       for _, destination in ipairs(valid) do if SendChatMessage then SendChatMessage(text, "CHANNEL", nil, destination.id) end end
       if DEFAULT_CHAT_FRAME then
@@ -1386,6 +1406,10 @@ do
       local channels = self:SFGetPublicBroadcastChannels()
       self.publicBroadcastSummary:SetText(#channels > 0 and ("Broadcast to: " .. table.concat(channels, ", ")) or "Broadcast to: no channels selected")
     end
+    function B:SFHidePublicBroadcastSelector()
+      if self.publicBroadcastPopup then self.publicBroadcastPopup:Hide() end
+      return true
+    end
     function B:SFOpenPublicBroadcastSelector()
       if not self.create then return end
       if CloseDropDownMenus then CloseDropDownMenus() end
@@ -1393,22 +1417,35 @@ do
       local dungeonPopup = dungeonOwner and dungeonOwner.dungeonSelectorPopup1430j
       if dungeonPopup then dungeonPopup:Hide() end
       if not self.publicBroadcastPopup then
-        local popup = CreateFrame("Frame", nil, UIParent)
+        local popup = CreateFrame("Frame", "SignalFirePublicBroadcastPopup", UIParent)
         popup:SetWidth(270); popup:SetHeight(330); popup:SetPoint("TOPRIGHT", self.create, "TOPRIGHT", -20, -50)
         popup:SetFrameStrata("DIALOG")
         popup:SetFrameLevel(math.max(100, (self.create:GetFrameLevel() or 1) + 100))
+        popup:EnableKeyboard(true)
+        popup:SetScript("OnKeyDown", function(_, pressed) if pressed == "ESCAPE" then B:SFHidePublicBroadcastSelector() end end)
         popup:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=12, insets={left=3,right=3,top=3,bottom=3}})
         popup:SetBackdropColor(0, 0, 0, .96)
         popup.rows = {}
         popup.title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         popup.title:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -10)
         popup.title:SetText("Public broadcast channels")
+        local closeX = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+        closeX:SetPoint("TOPRIGHT", popup, "TOPRIGHT", 2, 2)
+        closeX:SetScript("OnClick", function() B:SFHidePublicBroadcastSelector() end)
+        popup.closeX = closeX
         local clear = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-        clear:SetWidth(84); clear:SetHeight(22); clear:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 10, 10); clear:SetText("Clear")
+        clear:SetWidth(58); clear:SetHeight(22); clear:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 10, 10); clear:SetText("Clear")
         clear:SetScript("OnClick", function() B:SFSetPublicBroadcastChannels({}); B:SFRefreshPublicBroadcastSummary(); B:SFOpenPublicBroadcastSelector() end)
         local refresh = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-        refresh:SetWidth(116); refresh:SetHeight(22); refresh:SetPoint("LEFT", clear, "RIGHT", 8, 0); refresh:SetText("Refresh Channels")
+        refresh:SetWidth(112); refresh:SetHeight(22); refresh:SetPoint("LEFT", clear, "RIGHT", 8, 0); refresh:SetText("Refresh Channels")
         refresh:SetScript("OnClick", function() B:SFOpenPublicBroadcastSelector() end)
+        local close = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+        close:SetWidth(60); close:SetHeight(22); close:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -10, 10); close:SetText("Close")
+        close:SetScript("OnClick", function() B:SFHidePublicBroadcastSelector() end)
+        popup.clear, popup.refresh, popup.close = clear, refresh, close
+        local found = false
+        for _, name in ipairs(UISpecialFrames or {}) do if name == "SignalFirePublicBroadcastPopup" then found = true; break end end
+        if not found and UISpecialFrames then table.insert(UISpecialFrames, "SignalFirePublicBroadcastPopup") end
         self.publicBroadcastPopup = popup
       end
 
@@ -1492,6 +1529,14 @@ do
       clear:SetWidth(92); clear:SetHeight(24); clear:SetPoint("LEFT", choose, "RIGHT", 8, 0); clear:SetText("Clear Channels")
       clear:SetScript("OnClick", function() B:SFSetPublicBroadcastChannels({}); B:SFRefreshPublicBroadcastSummary() end)
       self.publicBroadcastChoose, self.publicBroadcastClear = choose, clear
+      if self.create.HookScript and not self.create.SFListingBroadcastPopupHideHook then
+        self.create.SFListingBroadcastPopupHideHook = true
+        self.create:HookScript("OnHide", function() B:SFHidePublicBroadcastSelector() end)
+      end
+      if self.frame and self.frame.HookScript and not self.frame.SFListingBroadcastPopupHideHook then
+        self.frame.SFListingBroadcastPopupHideHook = true
+        self.frame:HookScript("OnHide", function() B:SFHidePublicBroadcastSelector() end)
+      end
       local function hidePublicPopup()
         if B.publicBroadcastPopup then B.publicBroadcastPopup:Hide() end
       end
@@ -1560,6 +1605,7 @@ do
 
     local oldSetServerProfile = B.SF143_SetServerProfile
     function B:SF143_SetServerProfile(id, manual)
+      self:SFHidePublicBroadcastSelector()
       if self.listingBroadcastControlsBuilt then saveControls(self) end
       local result = oldSetServerProfile and oldSetServerProfile(self, id, manual)
       if self.listingBroadcastControlsBuilt then loadControls(self) end

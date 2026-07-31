@@ -7,8 +7,12 @@ local sent, notices = {}, {}
 local channelIds = {Global=3, Ascension=4, Newcomers=7, LookingForGroup=8, BLFG=9, Zone=10, Trade=11, ["Global-Guild-Recruitment"]=12}
 local channelShape = "pair"
 local joinedChannels = {"Global", "Ascension", "Newcomers", "BLFG", "ascension"}
+local nameLookupDisabled = false
 
-function GetChannelName(name) return channelIds[tostring(name or "")] or 0 end
+function GetChannelName(name)
+  if nameLookupDisabled and tostring(name or "") == "Zone" then return 0 end
+  return channelIds[tostring(name or "")] or 0
+end
 function GetChannelList()
   local raw = {}
   for _, name in ipairs(joinedChannels) do
@@ -145,6 +149,38 @@ assert(#visible == 4 and contains(visible, "Ascension") and contains(visible, "N
 assert(not contains(visible, "BLFG") and not contains(visible, "Global-Guild-Recruitment"), "stale or BLFG channel leaked into Ascension")
 assert(#B:SFGetPublicBroadcastChannels() == 0, "unavailable legacy selection was retained")
 assert(popup:GetFrameStrata() == "DIALOG" and popup:GetFrameLevel() > B.create:GetFrameLevel(), "public popup did not use elevated dialog layering")
+assert(popup.closeX and popup.close and popup.clear and popup.refresh, "popup close/clear/refresh controls are missing")
+
+-- Live correction: close controls preserve state, reuse the popup, and never send chat.
+B:SFSetPublicBroadcastChannels({"Ascension", "Zone"})
+local popupClose = assert(popup.close:GetScript("OnClick"), "Close button script missing")
+popupClose(popup.close)
+assert(not popup:IsShown() and #B:SFGetPublicBroadcastChannels() == 2 and #sent == 0, "Close did not hide while preserving selection")
+B:SFOpenPublicBroadcastSelector()
+assert(B.publicBroadcastPopup == popup and popup.close == popup.close and popup.clear == popup.clear, "popup controls were recreated")
+local popupX = assert(popup.closeX:GetScript("OnClick"), "close X script missing")
+popupX(popup.closeX)
+assert(not popup:IsShown() and #B:SFGetPublicBroadcastChannels() == 2 and #sent == 0, "close X lost selection or sent chat")
+B:SFOpenPublicBroadcastSelector()
+local escape = assert(popup:GetScript("OnKeyDown"), "Escape handler missing")
+escape(popup, "ESCAPE")
+assert(not popup:IsShown() and #B:SFGetPublicBroadcastChannels() == 2 and #sent == 0, "Escape did not close popup cleanly")
+
+-- Current GetChannelList IDs are authoritative even if GetChannelName cannot resolve the display name.
+channelIds.Zone, channelIds.Trade, nameLookupDisabled, channelShape = 3, 4, true, "pair"
+joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
+B:SFSetPublicBroadcastChannels({"Zone"}); resetSends()
+assert(B:SFSendPublicBroadcast(message) == true and #publicSends() == 1 and publicSends()[1].channelId == 3, "Zone did not use live pair-layout channel ID")
+channelShape, channelIds.Zone = "triplet", 6; resetSends()
+assert(B:SFSendPublicBroadcast(message) == true and #publicSends() == 1 and publicSends()[1].channelId == 6, "changed Zone ID was not rescanned")
+assert(B:SFGetPublicBroadcastChannels()[1] == "Zone", "numeric channel ID was persisted")
+channelShape, channelIds.Zone = "pair", 3
+B:SFSetPublicBroadcastChannels({"Zone", "Trade"}); joinedChannels = {"Ascension", "Newcomers", "Trade", "BLFG"}; resetSends()
+assert(B:SFSendPublicBroadcast(message) == true and #publicSends() == 1 and publicSends()[1].channelId == 4, "missing Zone did not prune while Trade remained live")
+assert(#B:SFGetPublicBroadcastChannels() == 1 and B:SFGetPublicBroadcastChannels()[1] == "Trade", "missing Zone was not pruned")
+assert(not string.find(B.publicBroadcastSummary:GetText(), "Zone", 1, true), "summary retained pruned Zone")
+nameLookupDisabled = false
+joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
 
 -- The historical Triumvirate channel remains selectable only when currently joined.
 B:SF143_SetServerProfile("Triumvirate", true)
@@ -166,6 +202,23 @@ dungeonClick(dungeonSelector)
 assert(dungeonPopup:IsShown() and not popup:IsShown(), "dungeon popup did not close public popup")
 assert(dungeonSelector:GetScript("OnClick") == dungeonClick, "dungeon selector script was duplicated")
 assert(#sent == 0, "popup lifecycle sent chat")
+
+-- Create-panel and main-window lifecycle close the UIParent dialog on every major page switch.
+local createHide = assert(B.create:GetScript("hook:OnHide"), "Create Listing hide lifecycle hook missing")
+local frameHide = assert(B.frame:GetScript("hook:OnHide"), "main window hide lifecycle hook missing")
+for _, method in ipairs({"ShowBrowse", "ShowMyListing", "ShowPublicGroups", "ShowMarketplace", "ShowOptions", "ShowSFNetwork"}) do
+  B:ShowCreate(); B:SFOpenPublicBroadcastSelector()
+  assert(popup:IsShown(), "popup did not open before " .. method)
+  assert(type(B[method]) == "function", "missing navigation owner " .. method)
+  B[method](B)
+  createHide(B.create)
+  assert(not popup:IsShown(), "popup remained visible after " .. method)
+end
+B:ShowCreate(); B:SFOpenPublicBroadcastSelector(); B.frame:Hide(); frameHide(B.frame)
+assert(not popup:IsShown(), "popup remained visible after main window close")
+B.frame:Show(); B:ShowCreate(); B:SFOpenPublicBroadcastSelector()
+assert(popup:IsShown() and B.create:GetScript("hook:OnHide") == createHide and B.frame:GetScript("hook:OnHide") == frameHide,
+  "popup lifecycle hooks were duplicated or popup could not reopen")
 
 B:SFSetPublicBroadcastChannels({"Ascension", "Newcomers"})
 joinedChannels = {"Ascension", "Zone", "Trade", "BLFG"}

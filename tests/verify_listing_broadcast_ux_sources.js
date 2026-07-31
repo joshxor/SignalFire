@@ -47,14 +47,18 @@ requireText(feature, "for offset = 1, 2 do", "pair/triplet-safe channel discover
 requireText(feature, 'normalized ~= "blfg"', "BLFG exclusion");
 requireText(feature, "sanitizeChannels", "bounded name deduplication");
 requireText(feature, "#out < MAX_CHANNELS", "bounded selected destinations");
-requireText(feature, "GetChannelName(name)", "send-time numeric channel resolution");
+if (count(feature, /local function joinedChannelEntries\(\)/g) !== 1) fail("joined-channel entry owner count");
+requireText(feature, "{id=raw[i], name=name, key=normalized}", "discovery does not retain live ID/name/key entries");
+requireText(feature, "local entries, byKey = joinedChannelEntries(), {}", "send does not rescan current joined entries");
+requireText(feature, "SendChatMessage(text, \"CHANNEL\", nil, destination.id)", "public send does not use discovered live numeric ID");
+if (/GetChannelName\s*\(/.test(feature)) fail("GetChannelName remains an authoritative public send resolver");
 requireText(feature, "local candidates = self:SFDiscoverPublicChannels()", "selector does not use current joined-channel discovery");
 requireText(feature, "s.channels = pruneChannels(s.channels, candidates)", "selector does not prune unavailable selections");
 requireText(feature, "s.channels = pruneChannels(channels, self:SFDiscoverPublicChannels())", "saved selection is not constrained to joined channels");
 requireText(feature, 'oldKey == "global-guild-recruitment"', "profile-safe Global-Guild-Recruitment migration missing");
 requireText(feature, 'eligible = id == "Triumvirate"', "Global-Guild-Recruitment migration is not Triumvirate-only");
 requireText(feature, 'oldKey == "ascension"', "profile-safe Ascension migration missing");
-requireText(feature, "for _, joined in ipairs(joinedChannels())", "legacy migration does not verify currently joined channels");
+requireText(feature, "for _, joined in ipairs(joinedChannelEntries())", "legacy migration does not verify currently joined channels");
 if (feature.includes("(unavailable)")) fail("unavailable selector rows remain");
 if (feature.includes("JoinChannelByName")) fail("public selector joins channels");
 
@@ -133,9 +137,16 @@ requireText(selectorOpen, "CloseDropDownMenus", "public selector does not close 
 requireText(selectorOpen, "SignalFireAscensionListingPolish", "public selector does not close custom dungeon popup");
 requireText(selectorOpen, 'popup:SetFrameStrata("DIALOG")', "public selector lacks dialog strata");
 requireText(selectorOpen, "popup:SetFrameLevel(math.max(100", "public selector lacks elevated frame level");
+requireText(selectorOpen, '"UIPanelCloseButton"', "public selector close X missing");
+requireText(selectorOpen, 'close:SetText("Close")', "public selector Close button missing");
+requireText(selectorOpen, 'popup:SetScript("OnKeyDown"', "public selector Escape behavior missing");
+requireText(selectorOpen, '"SignalFirePublicBroadcastPopup"', "public selector is not an Escape-closeable named frame");
 const controls = slice(feature, "function B:SFEnsureListingBroadcastControls()", "\n    function B:SFListingDraft");
 requireText(controls, "SFListingBroadcastPopupCloseHook", "Create Listing dropdown popup-close hook missing");
 requireText(controls, 'dropdown:HookScript("OnMouseDown", hidePublicPopup)', "Create Listing dropdown does not close public selector");
+requireText(controls, 'self.create:HookScript("OnHide", function() B:SFHidePublicBroadcastSelector() end)', "Create Listing lifecycle does not close public selector");
+requireText(controls, 'self.frame:HookScript("OnHide", function() B:SFHidePublicBroadcastSelector() end)', "main-window lifecycle does not close public selector");
+requireText(feature, "self:SFHidePublicBroadcastSelector()", "profile navigation does not close public selector");
 
 if (/NewTicker|C_Timer\.NewTicker/.test(feature)) fail("repeating timer added");
 if (/SetScript\(\s*["']OnUpdate["']/.test(feature)) fail("permanent OnUpdate added");
