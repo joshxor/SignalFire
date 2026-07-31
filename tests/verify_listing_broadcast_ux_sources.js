@@ -1,0 +1,12 @@
+const fs = require("fs");
+const listing = fs.readFileSync("SignalFire/SignalFireListing.lua", "utf8");
+const bronze = fs.readFileSync("SignalFire/BronzeLFG.lua", "utf8");
+const toc = fs.readFileSync("SignalFire/SignalFire.toc", "utf8");
+const fail = (text) => { throw new Error(`listing broadcast UX source verification failed: ${text}`); };
+for (const text of ["local CHANNEL = \"BLFG\"", "function B:SFDiscoverPublicChannels()", "key(name) ~= \"blfg\"", "function B:SFSetPublicBroadcastChannels(channels)", "function B:SFResolvePublicBroadcastDestinations()", "GetChannelName(name)", "function B:SFSendPublicBroadcast(text)", "Select at least one joined broadcast channel", "function B:SFRolePhrase(listing)", "Support", "function B:SFLevelRange(listing)", "function B:SFExpandRecruitmentTemplate(text, listing)"]) if (!(listing + bronze).includes(text)) fail(text);
+if (/JoinChannelByName\([^)]*(?:SFSendPublicBroadcast|publicBroadcast)/.test(listing)) fail("public broadcast joins channels");
+if (!listing.includes("return self:SFSendPublicBroadcast(self:ListingRecruitmentText(self.myListing))")) fail("selected-channel post owner missing");
+for (const text of ["clean(l.tankCount", "clean(l.healerCount", "clean(l.dpsCount", "clean(l.supportCount", "clean(l.minLevel", "clean(l.maxLevel", "tankCount=tonumber(p[21])", "healerCount=tonumber(p[22])", "dpsCount=tonumber(p[23])", "supportCount=tonumber(p[24])", "minLevel=tonumber(p[25])", "maxLevel=tonumber(p[26])", "needTank=p[14], needHealer=p[15], needDPS=p[16]"]) if (!bronze.includes(text)) fail(text);
+if (!toc.includes("## Version: 1.5.3")) fail("version changed");
+if (/NewTicker|SetScript\(\s*["']OnUpdate["']/.test(listing)) fail("periodic work added");
+console.log("listing broadcast UX source verification: PASS");
