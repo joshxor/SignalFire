@@ -506,6 +506,7 @@ function BLFG_DefaultMaxMembersFor(typeName, activity, difficulty)
 end
 
 local function serializeListing(l)
+  if BLFG.SFNormalizeListingRoles then BLFG:SFNormalizeListingRoles(l) end
   return table.concat({
     PREFIX, "LIST",
     clean(l.id), clean(l.leader), clean(l.class), clean(l.classFile),
@@ -521,7 +522,7 @@ local function serializeListing(l)
 end
 
 local function parseListing(p)
-  return {
+  local listing = {
     id=p[3], leader=p[4], class=p[5], classFile=p[6],
     type=p[7], activity=p[8], difficulty=p[9], key=p[10],
     minItemLevel=p[11], members=tonumber(p[12]) or 1,
@@ -535,6 +536,8 @@ local function parseListing(p)
     supportCount=tonumber(p[24]) or 0, minLevel=tonumber(p[25]) or nil, maxLevel=tonumber(p[26]) or nil,
     seen=now()
   }
+  if BLFG.SFNormalizeListingRoles then BLFG:SFNormalizeListingRoles(listing) end
+  return listing
 end
 
 local function serializeApplicant(listingId, a)
@@ -5582,6 +5585,10 @@ function BLFG:BuildRecruitmentAd()
     msg = msg .. " Discord: " .. discord
   end
 
+  if self.SFExpandRecruitmentTemplate then
+    local listing = self.myListing or (self.SFListingDraft and self:SFListingDraft()) or {}
+    msg = self:SFExpandRecruitmentTemplate(msg, listing)
+  end
   return msg
 end
 
@@ -5709,26 +5716,12 @@ local function blfgCreatorPostToChat(msg)
     clipped = true
   end
 
-  if BLFG.SFSendPublicBroadcast then return BLFG:SFSendPublicBroadcast(msg) end
-  local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
-  local id = GetChannelName and GetChannelName(channelName) or nil
-  if (not id or id == 0) and channelName ~= "global" then
-    id = GetChannelName and GetChannelName("global") or nil
-    channelName = "global"
+  if not BLFG.SFSendPublicBroadcast then return false end
+  local sent = BLFG:SFSendPublicBroadcast(msg)
+  if sent and omittedDiscord and DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00SignalFire:|r Discord/link was kept in the Guild Browser listing but not added to chat because of the 255 character limit.")
   end
-  if id and id ~= 0 and SendChatMessage then
-    SendChatMessage(msg, "CHANNEL", nil, id)
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00SignalFire:|r Broadcast sent to /" .. tostring(channelName) .. " (" .. tostring(string.len(msg)) .. "/255).")
-    if clipped then
-      DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00SignalFire:|r Broadcast was shortened to fit the WoW chat limit.")
-    end
-    if omittedDiscord then
-      DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00SignalFire:|r Discord/link was kept in the Guild Browser listing but not added to chat because of the 255 character limit.")
-    end
-    return true
-  end
-  DEFAULT_CHAT_FRAME:AddMessage("|cFFFF5555SignalFire:|r Could not find the public/global recruitment channel. Join /global and try Broadcast again.")
-  return false
+  return sent
 end
 
 
@@ -15943,21 +15936,8 @@ function BLFG:PostInvasionToChat()
   local row = self:UpsertInvasionPublicListing(entry, playerName())
   if self.RefreshPublicGroups then self:RefreshPublicGroups() end
   local text = self:InvasionRecruitmentText(entry)
-  if self.SFSendPublicBroadcast then return self:SFSendPublicBroadcast(text) end
-  local channelName = (BronzeLFG_DB and BronzeLFG_DB.recruitmentCreator and BronzeLFG_DB.recruitmentCreator.broadcastChannel) or BLFG_RecruitmentPostChannel or "global"
-  local channelId = GetChannelName and GetChannelName(channelName) or nil
-  if (not channelId or channelId == 0) and channelName ~= "global" then
-    channelId = GetChannelName and GetChannelName("global") or nil
-  end
-  if channelId and channelId ~= 0 and SendChatMessage then
-    SendChatMessage(text, "CHANNEL", nil, channelId)
-    flash("Posted invasion to global chat.")
-  elseif DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00SignalFire invasion:|r " .. text .. " " .. ((row and self.PublicChatLink and self:PublicChatLink(row)) or ""))
-    flash("Global channel not found; posted the invasion locally.")
-  else
-    msg("Global channel not found for invasion post.")
-  end
+  if not self.SFSendPublicBroadcast then return false end
+  return self:SFSendPublicBroadcast(text)
 end
 
 function BLFG:ClearInvasionData()

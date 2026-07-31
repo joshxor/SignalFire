@@ -1138,114 +1138,107 @@ do
   until true
 end
 
--- Final public listing-post owner.  Keep this after legacy compatibility
--- wrappers so none can restore a profile default or a Global fallback.
-do
-  local B = _G.BronzeLFG
-  if B and B.SFSendPublicBroadcast then
-    function B:PostMyListingToChat()
-      if not self.myListing then
-        if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: No active listing to post.") end
-        return false
-      end
-      if self.MirrorListingToPublic then self:MirrorListingToPublic(self.myListing) end
-      return self:SFSendPublicBroadcast(self:ListingRecruitmentText(self.myListing))
-    end
-
-    function B:SFRefreshPublicBroadcastSummary()
-      if self.publicBroadcastSummary then
-        local names = self:SFGetPublicBroadcastChannels()
-        self.publicBroadcastSummary:SetText(#names > 0 and ("Broadcast to: " .. table.concat(names, ", ")) or "Broadcast to: no channels selected")
-      end
-    end
-    function B:SFOpenPublicBroadcastSelector()
-      local parent = self.create or self.frame; if not parent then return end
-      if not self.publicBroadcastPopup then
-        local popup = CreateFrame("Frame", nil, parent); popup:SetWidth(260); popup:SetHeight(210); popup:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -18, -55)
-        popup:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=12, insets={left=3,right=3,top=3,bottom=3}}); popup:SetBackdropColor(0,0,0,.95)
-        popup.rows = {}; self.publicBroadcastPopup = popup
-      end
-      local popup, available = self.publicBroadcastPopup, self:SFDiscoverPublicChannels(); local selected = {}
-      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do selected[key(name)] = true end
-      for i = 1, MAX_CHANNELS do
-        local row = popup.rows[i]
-        if not row then
-          row = CreateFrame("CheckButton", nil, popup, "UICheckButtonTemplate"); row:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -12 - (i - 1) * 22); row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); row.text:SetPoint("LEFT", row, "RIGHT", 2, 0)
-          row:SetScript("OnClick", function(button)
-            local names = B:SFGetPublicBroadcastChannels(); local out = {}; local wanted = button:GetChecked()
-            for _, old in ipairs(names) do if key(old) ~= key(button.channelName) then table.insert(out, old) end end
-            if wanted then table.insert(out, button.channelName) end; B:SFSetPublicBroadcastChannels(out); B:SFRefreshPublicBroadcastSummary()
-          end); popup.rows[i] = row
-        end
-        local name = available[i]; row.channelName = name
-        if name then row.text:SetText(name); row:SetChecked(selected[key(name)] == true); row:Show() else row:Hide() end
-      end
-      popup:Show()
-    end
-    function B:SFEnsureListingBroadcastControls()
-      if not self.create or self.publicBroadcastSummary then return end
-      local parent = self.create
-      local summary = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); summary:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 20, 10); self.publicBroadcastSummary = summary
-      local choose = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate"); choose:SetWidth(118); choose:SetHeight(22); choose:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 8); choose:SetText("Broadcast Channels"); choose:SetScript("OnClick", function() B:SFOpenPublicBroadcastSelector() end)
-      self.publicBroadcastChoose = choose; self:SFRefreshPublicBroadcastSummary()
-    end
-    local oldShowCreate = B.ShowCreate
-    function B:ShowCreate(...)
-      local result = oldShowCreate and oldShowCreate(self, ...); self:SFEnsureListingBroadcastControls(); self:SFRefreshPublicBroadcastSummary(); return result
-    end
-  end
-end
-
--- Listing and public-broadcast UX.  This is deliberately separate from the
--- internal BLFG listing transport: only explicit user actions call this code.
+-- Listing and public-broadcast UX. This is the sole owner of selected public
+-- destinations, count/level controls, readable preview text, and explicit
+-- human-readable broadcasts. Internal LIST synchronization still uses BLFG.
 do
   local B = _G.BronzeLFG
   if B then
-    local MAX_CHANNELS, MAX_ROLE = 8, 40
+    local MAX_CHANNELS, MAX_ROLE, MAX_LEVEL = 8, 40, 255
+    local ROLE_FIELDS = {"tankCount", "healerCount", "supportCount", "dpsCount"}
     local function trim(v) return (tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
     local function key(v) return string.lower(trim(v)) end
     local function profileId()
       if B.SF143_GetProfileId then local ok, id = pcall(function() return B:SF143_GetProfileId() end); if ok and id and id ~= "" then return tostring(id) end end
       return tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "Triumvirate")
     end
-    local function state()
-      BronzeLFG_DB = BronzeLFG_DB or {}; BronzeLFG_DB.listingBroadcastByProfile = BronzeLFG_DB.listingBroadcastByProfile or {}
-      local id = profileId(); local s = BronzeLFG_DB.listingBroadcastByProfile[id]
-      if type(s) ~= "table" then s = {}; BronzeLFG_DB.listingBroadcastByProfile[id] = s end
-      if not s.legacyMigrated then
-        local old = BronzeLFG_DB.recruitmentCreator and trim(BronzeLFG_DB.recruitmentCreator.broadcastChannel) or ""
-        if old ~= "" then s.channels = s.channels or {old} end
-        s.legacyMigrated = true
-      end
-      s.channels = s.channels or {}; return s
-    end
     local function count(v)
       v = tonumber(v); if not v or v ~= math.floor(v) or v < 0 then return 0 end
       if v > MAX_ROLE then return MAX_ROLE end; return v
     end
+    local function legacyCount(value)
+      return (value == true or value == 1 or value == "1") and 1 or 0
+    end
+    local function level(v)
+      v = trim(v)
+      if v == "" then return nil end
+      v = tonumber(v)
+      if not v or v ~= math.floor(v) or v < 1 or v > MAX_LEVEL then return nil end
+      return v
+    end
     local function levels(minimum, maximum)
-      minimum, maximum = tonumber(minimum), tonumber(maximum)
-      if minimum and (minimum ~= math.floor(minimum) or minimum < 1 or minimum > 255) then minimum = nil end
-      if maximum and (maximum ~= math.floor(maximum) or maximum < 1 or maximum > 255) then maximum = nil end
-      if minimum and maximum and minimum > maximum then return nil, nil end
-      return minimum, maximum
+      return level(minimum), level(maximum)
+    end
+    local function sanitizeChannels(channels)
+      local out, seen = {}, {}
+      for _, value in ipairs(channels or {}) do
+        local name, normalized = trim(value), key(value)
+        if name ~= "" and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then
+          seen[normalized] = true
+          table.insert(out, name)
+        end
+      end
+      return out
+    end
+    local function state()
+      BronzeLFG_DB = BronzeLFG_DB or {}
+      BronzeLFG_DB.listingBroadcastByProfile = BronzeLFG_DB.listingBroadcastByProfile or {}
+      local id = profileId()
+      local s = BronzeLFG_DB.listingBroadcastByProfile[id]
+      if type(s) ~= "table" then s = {}; BronzeLFG_DB.listingBroadcastByProfile[id] = s end
+
+      BronzeLFG_DB.listingBroadcastMigration = BronzeLFG_DB.listingBroadcastMigration or {}
+      if not BronzeLFG_DB.listingBroadcastMigration.legacyChannelProfile then
+        local old = BronzeLFG_DB.recruitmentCreator and trim(BronzeLFG_DB.recruitmentCreator.broadcastChannel) or ""
+        if old ~= "" and type(s.channels) ~= "table" then s.channels = {old} end
+        BronzeLFG_DB.listingBroadcastMigration.legacyChannelProfile = id
+      end
+      s.channels = sanitizeChannels(s.channels)
+
+      if not s.rolesMigrated then
+        local createByProfile = BronzeLFG_DB.createByProfile
+        local legacy = type(createByProfile) == "table" and createByProfile[id] or nil
+        if type(legacy) ~= "table" then legacy = BronzeLFG_DB.create or {} end
+        if s.tankCount == nil then s.tankCount = legacyCount(legacy.needTank) end
+        if s.healerCount == nil then s.healerCount = legacyCount(legacy.needHealer) end
+        if s.dpsCount == nil then s.dpsCount = legacyCount(legacy.needDPS) end
+        if s.supportCount == nil then s.supportCount = 0 end
+        if s.minLevel == nil then s.minLevel = level(legacy.minLevel) end
+        if s.maxLevel == nil then s.maxLevel = level(legacy.maxLevel) end
+        s.rolesMigrated = true
+      end
+      for _, field in ipairs(ROLE_FIELDS) do s[field] = count(s[field]) end
+      s.minLevel, s.maxLevel = levels(s.minLevel, s.maxLevel)
+      if s.minLevel and s.maxLevel and s.minLevel > s.maxLevel then s.minLevel, s.maxLevel = nil, nil end
+      return s
     end
     function B:SFListingBroadcastState() return state() end
     function B:SFDiscoverPublicChannels()
-      local raw, out, seen = {GetChannelList and GetChannelList() or nil}, {}, {}
-      for i = 1, #raw, 2 do
-        local name = trim(raw[i + 1])
-        if name ~= "" and key(name) ~= "blfg" and not seen[key(name)] then seen[key(name)] = true; table.insert(out, name) end
+      local out, seen = {}, {}
+      if type(GetChannelList) ~= "function" then self.publicBroadcastAvailableChannels = out; return out end
+      local raw = { GetChannelList() }
+      for i = 1, #raw do
+        if type(raw[i]) == "number" and raw[i] > 0 then
+          local name = nil
+          for offset = 1, 2 do
+            if type(raw[i + offset]) == "string" and trim(raw[i + offset]) ~= "" then
+              name = trim(raw[i + offset])
+              break
+            end
+          end
+          local normalized = key(name)
+          if name and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then
+            seen[normalized] = true
+            table.insert(out, name)
+          end
+        end
       end
       self.publicBroadcastAvailableChannels = out; return out
     end
     function B:SFSetPublicBroadcastChannels(channels)
-      local s, out, seen = state(), {}, {}
-      for _, value in ipairs(channels or {}) do
-        local name, normalized = trim(value), key(value)
-        if name ~= "" and normalized ~= "blfg" and not seen[normalized] and #out < MAX_CHANNELS then seen[normalized] = true; table.insert(out, name) end
-      end
-      s.channels = out; return out
+      local s = state()
+      s.channels = sanitizeChannels(channels)
+      return s.channels
     end
     function B:SFGetPublicBroadcastChannels() return state().channels end
     function B:SFResolvePublicBroadcastDestinations()
@@ -1265,7 +1258,11 @@ do
     end
     function B:SFNormalizeListingRoles(listing)
       local t, h, s, d = self:SFRoleCounts(listing); listing.tankCount, listing.healerCount, listing.supportCount, listing.dpsCount = t, h, s, d
-      listing.needTank, listing.needHealer, listing.needDPS = t > 0 and "1" or "0", h > 0 and "1" or "0", d > 0 and "1" or "0"; return listing
+      listing.needTank, listing.needHealer, listing.needDPS = t > 0 and "1" or "0", h > 0 and "1" or "0", d > 0 and "1" or "0"
+      local minimum, maximum = levels(listing.minLevel, listing.maxLevel)
+      if minimum and maximum and minimum > maximum then minimum, maximum = nil, nil end
+      listing.minLevel, listing.maxLevel = minimum, maximum
+      return listing
     end
     function B:SFRolePhrase(listing)
       local t, h, s, d = self:SFRoleCounts(listing); local parts = {}
@@ -1277,6 +1274,7 @@ do
     end
     function B:SFLevelRange(listing)
       local minimum, maximum = levels(listing and listing.minLevel, listing and listing.maxLevel)
+      if minimum and maximum and minimum > maximum then return "" end
       if minimum and maximum then return minimum == maximum and ("Level " .. minimum) or ("Levels " .. minimum .. "-" .. maximum) end
       if minimum then return "Minimum Level " .. minimum .. "+" end
       if maximum then return "Maximum Level " .. maximum end
@@ -1292,7 +1290,7 @@ do
       local clipped = #text > 255; if clipped then text = string.sub(text, 1, 252) .. "..." end
       local valid, missing = self:SFResolvePublicBroadcastDestinations()
       if #state().channels == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Select at least one joined broadcast channel.") end; return false end
-      if #valid == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Selected broadcast channels are unavailable.") end; return false end
+      if #valid == 0 then if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: Selected broadcast channels are unavailable: " .. table.concat(missing, ", ") .. ".") end; return false end
       for _, destination in ipairs(valid) do if SendChatMessage then SendChatMessage(text, "CHANNEL", nil, destination.id) end end
       if DEFAULT_CHAT_FRAME then
         local names = {}; for _, destination in ipairs(valid) do table.insert(names, "/" .. destination.name) end
@@ -1312,140 +1310,246 @@ do
       if self.MirrorListingToPublic then self:MirrorListingToPublic(self.myListing) end
       return self:SFSendPublicBroadcast(self:ListingRecruitmentText(self.myListing))
     end
-    local oldCreate = B.CreateListing
-    function B:CreateListing(...)
-      local s = state(); local values = {self.tankCountBox, self.healerCountBox, self.supportCountBox, self.dpsCountBox}
-      for i, box in ipairs(values) do if box and box.GetText then s[{"tankCount","healerCount","supportCount","dpsCount"}[i]] = count(box:GetText()) end end
-      if self.needTank then self.needTank:SetChecked((s.tankCount or 0) > 0); self.needHealer:SetChecked((s.healerCount or 0) > 0); self.needDPS:SetChecked((s.dpsCount or 0) > 0) end
-      local min, max = levels(self.minLevelBox and self.minLevelBox:GetText(), self.maxLevelBox and self.maxLevelBox:GetText()); s.minLevel, s.maxLevel = min, max
-      local result = oldCreate and oldCreate(self, ...)
-      if self.myListing then self.myListing.tankCount, self.myListing.healerCount, self.myListing.supportCount, self.myListing.dpsCount = s.tankCount or 0, s.healerCount or 0, s.supportCount or 0, s.dpsCount or 0; self.myListing.minLevel, self.myListing.maxLevel = min, max; self:SFNormalizeListingRoles(self.myListing) end
-      return result
+    local function notice(text)
+      if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffd8a600SignalFire>|r " .. tostring(text or "")) end
     end
-  end
-end
-
--- Regular My Listing chat destination ownership.
-do
-  local BLFG = _G.BronzeLFG
-  if BLFG then
-    local function sflpc_notice(text, success)
-      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffd8a600SignalFire>|r " .. tostring(text or ""),
-          success and .4 or 1, success and 1 or .82, success and .4 or 0)
-      end
-      if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage("SignalFire: " .. tostring(text or ""), 1, .82, 0, 1, UIERRORS_HOLD_TIME)
-      end
+    local function boxText(box) return box and box.GetText and tostring(box:GetText() or "") or "" end
+    local function setBoxText(box, value) if box and box.SetText then box:SetText(value == nil and "" or tostring(value)) end end
+    local function dropdownText(dropdown)
+      if BLFG_DropdownText then return tostring(BLFG_DropdownText(dropdown) or "") end
+      if UIDropDownMenu_GetText then return tostring(UIDropDownMenu_GetText(dropdown) or "") end
+      return ""
     end
-
-    function BLFG:SFResolveListingPostDestination(listing)
-      local profile = SignalFireProfiles and SignalFireProfiles.GetActiveProfile
-        and SignalFireProfiles.GetActiveProfile() or nil
-      local profileId = tostring(profile and profile.id or "Triumvirate")
-      local destination = tostring(listing and listing.postChannel or "")
-      destination = string.gsub(string.gsub(destination, "^%s+", ""), "%s+$", "")
-      local lower = string.lower(destination)
-
-      if destination == "" or (profileId == "Ascension" and lower == "global") then
-        destination = profileId == "Ascension" and "Ascension" or "Global"
-        lower = string.lower(destination)
-      elseif lower == "ascension" then
-        destination = "Ascension"
-      elseif lower == "newcomers" then
-        destination = "Newcomers"
-      elseif lower == "global" then
-        destination = "Global"
+    local function saveControls(self)
+      local s = state()
+      for _, field in ipairs(ROLE_FIELDS) do
+        local value = count(boxText(self[field .. "Box"]))
+        s[field] = value
+        setBoxText(self[field .. "Box"], value)
       end
-
-      local chatType = string.upper(destination)
-      if chatType == "SAY" or chatType == "YELL" or chatType == "PARTY"
-        or chatType == "RAID" or chatType == "GUILD" or chatType == "OFFICER"
-        or chatType == "BATTLEGROUND" then
-        return chatType, destination, nil
-      end
-
-      local channelId = GetChannelName and GetChannelName(destination) or nil
-      return "CHANNEL", destination, channelId
+      local minimum, maximum = levels(boxText(self.minLevelBox), boxText(self.maxLevelBox))
+      if minimum and maximum and minimum > maximum then return s, false end
+      s.minLevel, s.maxLevel = minimum, maximum
+      setBoxText(self.minLevelBox, minimum)
+      setBoxText(self.maxLevelBox, maximum)
+      return s, true
     end
-
-    function BLFG:PostMyListingToChat()
-      local listing = self.myListing
-      if not listing then sflpc_notice("No active listing to post.", false); return end
-      local row = self:MirrorListingToPublic(listing)
-      local text = self:ListingRecruitmentText(listing)
-      local chatType, destination, channelId = self:SFResolveListingPostDestination(listing)
-
-      if chatType ~= "CHANNEL" and SendChatMessage then
-        SendChatMessage(text, chatType)
-        sflpc_notice("Posted listing to " .. tostring(destination) .. " chat.", true)
-      elseif channelId and channelId ~= 0 and SendChatMessage then
-        SendChatMessage(text, "CHANNEL", nil, channelId)
-        sflpc_notice("Posted listing to " .. tostring(destination) .. " chat.", true)
-      else
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-          DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00SignalFire listing:|r " .. text .. " "
-            .. (row and self:PublicChatLink(row) or ""))
-        end
-        sflpc_notice("Unable to find " .. tostring(destination) .. "; posted locally.", false)
-      end
+    local function loadControls(self)
+      if not self.listingBroadcastControlsBuilt then return end
+      local s = state()
+      self.publicBroadcastLoading = true
+      for _, field in ipairs(ROLE_FIELDS) do setBoxText(self[field .. "Box"], s[field] or 0) end
+      setBoxText(self.minLevelBox, s.minLevel)
+      setBoxText(self.maxLevelBox, s.maxLevel)
+      self.publicBroadcastLoading = nil
+      self:SFRefreshPublicBroadcastSummary()
+      if self.SFAM_UpdateCreatePreview then self:SFAM_UpdateCreatePreview() end
     end
-  end
-end
-
--- The preceding legacy owner intentionally remains for older external callers,
--- but user-facing listing posts always use the selected joined destinations.
-do
-  local B = _G.BronzeLFG
-  if B and B.SFSendPublicBroadcast then
-    function B:PostMyListingToChat()
-      if not self.myListing then
-        if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("SignalFire: No active listing to post.") end
-        return false
+    local function styleInput(edit)
+      edit:SetAutoFocus(false)
+      if edit.SetFontObject then edit:SetFontObject(GameFontHighlightSmall) end
+      if edit.SetTextInsets then edit:SetTextInsets(6, 6, 2, 2) end
+      if edit.SetBackdrop then
+        edit:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=10, insets={left=2,right=2,top=2,bottom=2}})
+        edit:SetBackdropColor(0, 0, 0, .75)
+        edit:SetBackdropBorderColor(.75, .55, .15, .9)
       end
-      if self.MirrorListingToPublic then self:MirrorListingToPublic(self.myListing) end
-      return self:SFSendPublicBroadcast(self:ListingRecruitmentText(self.myListing))
+      edit:SetScript("OnEscapePressed", function(control) control:ClearFocus() end)
+      edit:SetScript("OnEnterPressed", function(control) control:ClearFocus() end)
     end
-  end
-end
-
-do
-  local B = _G.BronzeLFG
-  if B and B.SFSendPublicBroadcast then
     function B:SFRefreshPublicBroadcastSummary()
-      if self.publicBroadcastSummary then local names = self:SFGetPublicBroadcastChannels(); self.publicBroadcastSummary:SetText(#names > 0 and ("Broadcast to: " .. table.concat(names, ", ")) or "Broadcast to: no channels selected") end
-    end
-    function B:SFEnsureListingBroadcastControls()
-      if not self.create or self.publicBroadcastSummary then return end
-      local listingState = self:SFListingBroadcastState()
-      if self.needTank then
-        local box = self.needTank:GetParent(); self.needTank:Hide(); self.needHealer:Hide(); self.needDPS:Hide()
-        local function roleBox(field, label, x)
-          local caption = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); caption:SetPoint("TOPLEFT", box, "TOPLEFT", x, -212); caption:SetText(label)
-          local edit = CreateFrame("EditBox", nil, box); edit:SetWidth(32); edit:SetHeight(20); edit:SetPoint("TOPLEFT", box, "TOPLEFT", x, -230); edit:SetAutoFocus(false); edit:SetText(tostring(listingState[field] or 0)); edit:SetMaxLetters(2); edit:SetScript("OnEscapePressed", function(e) e:ClearFocus() end); return edit
-        end
-        self.tankCountBox=roleBox("tankCount", "Tank", 150); self.healerCountBox=roleBox("healerCount", "Healer", 205); self.supportCountBox=roleBox("supportCount", "Support", 270); self.dpsCountBox=roleBox("dpsCount", "DPS", 340)
-        local function levelBox(field, label, x)
-          local caption=box:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); caption:SetPoint("TOPLEFT",box,"TOPLEFT",x,-164); caption:SetText(label); local edit=CreateFrame("EditBox",nil,box); edit:SetWidth(38); edit:SetHeight(20); edit:SetPoint("TOPLEFT",box,"TOPLEFT",x+68,-160); edit:SetAutoFocus(false); edit:SetText(listingState[field] and tostring(listingState[field]) or ""); return edit
-        end
-        self.minLevelBox=levelBox("minLevel","Min Level",500); self.maxLevelBox=levelBox("maxLevel","Max Level",625)
-        local mine=CreateFrame("Button",nil,box,"UIPanelButtonTemplate"); mine:SetWidth(88); mine:SetHeight(20); mine:SetPoint("TOPLEFT",box,"TOPLEFT",500,-186); mine:SetText("Use My Level"); mine:SetScript("OnClick",function() local value=tostring(UnitLevel and UnitLevel("player") or ""); self.minLevelBox:SetText(value); self.maxLevelBox:SetText(value) end)
-      end
-      local summary = self.create:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); summary:SetPoint("BOTTOMLEFT", self.create, "BOTTOMLEFT", 20, 10); self.publicBroadcastSummary = summary
-      local refresh = CreateFrame("Button", nil, self.create, "UIPanelButtonTemplate"); refresh:SetWidth(118); refresh:SetHeight(22); refresh:SetPoint("BOTTOMRIGHT", self.create, "BOTTOMRIGHT", -20, 8); refresh:SetText("Refresh Channels")
-      refresh:SetScript("OnClick", function() B:SFOpenPublicBroadcastSelector() end); self.publicBroadcastRefresh = refresh; self:SFDiscoverPublicChannels(); self:SFRefreshPublicBroadcastSummary()
+      if not self.publicBroadcastSummary then return end
+      local channels = self:SFGetPublicBroadcastChannels()
+      self.publicBroadcastSummary:SetText(#channels > 0 and ("Broadcast to: " .. table.concat(channels, ", ")) or "Broadcast to: no channels selected")
     end
     function B:SFOpenPublicBroadcastSelector()
-      local parent = self.create or self.frame; if not parent then return end
-      if not self.publicBroadcastPopup then local p = CreateFrame("Frame", nil, parent); p:SetWidth(250); p:SetHeight(205); p:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -18, -52); p:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=12,insets={left=3,right=3,top=3,bottom=3}}); p:SetBackdropColor(0,0,0,.95); p.rows={}; self.publicBroadcastPopup=p end
-      local popup, available, selected = self.publicBroadcastPopup, self:SFDiscoverPublicChannels(), {}
-      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do selected[string.lower(name)] = true end
-      for i = 1, 8 do local row=popup.rows[i]; if not row then row=CreateFrame("CheckButton",nil,popup,"UICheckButtonTemplate"); row:SetPoint("TOPLEFT",popup,"TOPLEFT",12,-12-(i-1)*22); row.text=row:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); row.text:SetPoint("LEFT",row,"RIGHT",2,0); row:SetScript("OnClick",function(btn) local out={}; for _,old in ipairs(B:SFGetPublicBroadcastChannels()) do if string.lower(old) ~= string.lower(btn.channelName) then table.insert(out,old) end end; if btn:GetChecked() then table.insert(out,btn.channelName) end; B:SFSetPublicBroadcastChannels(out); B:SFRefreshPublicBroadcastSummary() end); popup.rows[i]=row end; row.channelName=available[i]; if row.channelName then row.text:SetText(row.channelName); row:SetChecked(selected[string.lower(row.channelName)]==true); row:Show() else row:Hide() end end
+      if not self.create then return end
+      if not self.publicBroadcastPopup then
+        local popup = CreateFrame("Frame", nil, self.create)
+        popup:SetWidth(270); popup:SetHeight(330); popup:SetPoint("TOPRIGHT", self.create, "TOPRIGHT", -20, -50)
+        popup:SetFrameLevel((self.create:GetFrameLevel() or 1) + 40)
+        popup:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=12, insets={left=3,right=3,top=3,bottom=3}})
+        popup:SetBackdropColor(0, 0, 0, .96)
+        popup.rows = {}
+        popup.title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        popup.title:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -10)
+        popup.title:SetText("Public broadcast channels")
+        local clear = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+        clear:SetWidth(84); clear:SetHeight(22); clear:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 10, 10); clear:SetText("Clear")
+        clear:SetScript("OnClick", function() B:SFSetPublicBroadcastChannels({}); B:SFRefreshPublicBroadcastSummary(); B:SFOpenPublicBroadcastSelector() end)
+        local refresh = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+        refresh:SetWidth(116); refresh:SetHeight(22); refresh:SetPoint("LEFT", clear, "RIGHT", 8, 0); refresh:SetText("Refresh Channels")
+        refresh:SetScript("OnClick", function() B:SFOpenPublicBroadcastSelector() end)
+        self.publicBroadcastPopup = popup
+      end
+
+      local popup = self.publicBroadcastPopup
+      local selected, candidates, seen = {}, {}, {}
+      for _, name in ipairs(self:SFGetPublicBroadcastChannels()) do
+        selected[key(name)] = true
+        seen[key(name)] = true
+        table.insert(candidates, name)
+      end
+      for _, name in ipairs(self:SFDiscoverPublicChannels()) do
+        if not seen[key(name)] and #candidates < MAX_CHANNELS * 2 then
+          seen[key(name)] = true
+          table.insert(candidates, name)
+        end
+      end
+      for i = 1, MAX_CHANNELS * 2 do
+        local row = popup.rows[i]
+        if not row then
+          row = CreateFrame("CheckButton", nil, popup, "UICheckButtonTemplate")
+          row:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -30 - ((i - 1) * 17))
+          row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          row.text:SetPoint("LEFT", row, "RIGHT", 2, 0)
+          row:SetScript("OnClick", function(control)
+            local nextSelection = {}
+            for _, old in ipairs(B:SFGetPublicBroadcastChannels()) do
+              if key(old) ~= key(control.channelName) then table.insert(nextSelection, old) end
+            end
+            if control:GetChecked() then table.insert(nextSelection, control.channelName) end
+            B:SFSetPublicBroadcastChannels(nextSelection)
+            B:SFRefreshPublicBroadcastSummary()
+          end)
+          popup.rows[i] = row
+        end
+        row.channelName = candidates[i]
+        if row.channelName then
+          local joined = false
+          for _, available in ipairs(self.publicBroadcastAvailableChannels or {}) do if key(available) == key(row.channelName) then joined = true; break end end
+          row.text:SetText(row.channelName .. (joined and "" or " |cff888888(unavailable)|r"))
+          row:SetChecked(selected[key(row.channelName)] == true)
+          row:Show()
+        else
+          row:Hide()
+        end
+      end
       popup:Show()
     end
+    function B:SFEnsureListingBroadcastControls()
+      if not self.create or self.listingBroadcastControlsBuilt or not self.needTank then return end
+      self.listingBroadcastControlsBuilt = true
+      local parent = self.needTank:GetParent()
+      for _, legacy in ipairs({self.needTank, self.needHealer, self.needDPS}) do
+        legacy:SetChecked(false); legacy:EnableMouse(false); legacy:Hide()
+      end
+      local function makeInput(field, label, x, y, width)
+        local caption = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        caption:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+        caption:SetText(label)
+        local edit = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+        edit:SetWidth(width); edit:SetHeight(22); edit:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 16)
+        edit:SetMaxLetters(3); styleInput(edit)
+        edit:SetScript("OnTextChanged", function()
+          if not B.publicBroadcastLoading and B.SFAM_UpdateCreatePreview then B:SFAM_UpdateCreatePreview() end
+        end)
+        self[field .. "Box"] = edit
+      end
+      makeInput("tankCount", "Tank", 150, -208, 42)
+      makeInput("healerCount", "Healer", 215, -208, 42)
+      makeInput("supportCount", "Support", 285, -208, 42)
+      makeInput("dpsCount", "DPS", 360, -208, 42)
+      makeInput("minLevel", "Min Level", 510, -158, 58)
+      makeInput("maxLevel", "Max Level", 590, -158, 58)
+      local mine = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+      mine:SetWidth(92); mine:SetHeight(22); mine:SetPoint("TOPLEFT", parent, "TOPLEFT", 665, -174); mine:SetText("Use My Level")
+      mine:SetScript("OnClick", function()
+        local current = UnitLevel and UnitLevel("player") or ""
+        setBoxText(B.minLevelBox, current); setBoxText(B.maxLevelBox, current)
+      end)
+      self.publicBroadcastUseMyLevel = mine
+
+      self.publicBroadcastSummary = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      self.publicBroadcastSummary:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 18, 52)
+      local choose = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+      choose:SetWidth(126); choose:SetHeight(24); choose:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 340, 18); choose:SetText("Channels...")
+      choose:SetScript("OnClick", function() B:SFOpenPublicBroadcastSelector() end)
+      local clear = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+      clear:SetWidth(92); clear:SetHeight(24); clear:SetPoint("LEFT", choose, "RIGHT", 8, 0); clear:SetText("Clear Channels")
+      clear:SetScript("OnClick", function() B:SFSetPublicBroadcastChannels({}); B:SFRefreshPublicBroadcastSummary() end)
+      self.publicBroadcastChoose, self.publicBroadcastClear = choose, clear
+      loadControls(self)
+    end
+    function B:SFListingDraft()
+      local activity = dropdownText(self.activityDrop)
+      if BLFG_DungeonListForMode and BLFG_DungeonListForMode(activity) then
+        local specific = dropdownText(self.specificDungeonDrop)
+        if specific ~= "" and specific ~= "Select Dungeon" then activity = specific end
+      end
+      return self:SFNormalizeListingRoles({
+        activity=activity ~= "" and activity or "Group",
+        tankCount=count(boxText(self.tankCountBox)), healerCount=count(boxText(self.healerCountBox)),
+        supportCount=count(boxText(self.supportCountBox)), dpsCount=count(boxText(self.dpsCountBox)),
+        minLevel=level(boxText(self.minLevelBox)), maxLevel=level(boxText(self.maxLevelBox)),
+      })
+    end
+
+    local oldPreview = B.SFAM_UpdateCreatePreview
+    function B:SFAM_UpdateCreatePreview(...)
+      local result = oldPreview and oldPreview(self, ...)
+      if self.sfamCreatePreview and self.sfamCreatePreview.text and self.listingBroadcastControlsBuilt then
+        self.sfamCreatePreview.text:SetText(self:ListingRecruitmentText(self:SFListingDraft()))
+      end
+      return result
+    end
+
+    local oldMirror = B.MirrorListingToPublic
+    function B:MirrorListingToPublic(listing, ...)
+      if listing then self:SFNormalizeListingRoles(listing) end
+      local row = oldMirror and oldMirror(self, listing, ...)
+      if row and listing then
+        row.tankCount, row.healerCount = listing.tankCount, listing.healerCount
+        row.supportCount, row.dpsCount = listing.supportCount, listing.dpsCount
+        row.minLevel, row.maxLevel = listing.minLevel, listing.maxLevel
+        row.levelRange = self:SFLevelRange(listing)
+        row.roles = string.gsub(self:SFRolePhrase(listing), "^Need%s+", "")
+        row.message = self:ListingRecruitmentText(listing)
+      end
+      return row
+    end
+
     local oldShowCreate = B.ShowCreate
     function B:ShowCreate(...)
-      local result = oldShowCreate and oldShowCreate(self, ...); self:SFEnsureListingBroadcastControls(); self:SFRefreshPublicBroadcastSummary(); return result
+      if self.listingBroadcastControlsBuilt then saveControls(self) end
+      local result = oldShowCreate and oldShowCreate(self, ...)
+      self:SFEnsureListingBroadcastControls()
+      loadControls(self)
+      self:SFDiscoverPublicChannels()
+      self:SFRefreshPublicBroadcastSummary()
+      return result
+    end
+
+    local oldSetServerProfile = B.SF143_SetServerProfile
+    function B:SF143_SetServerProfile(id, manual)
+      if self.listingBroadcastControlsBuilt then saveControls(self) end
+      local result = oldSetServerProfile and oldSetServerProfile(self, id, manual)
+      if self.listingBroadcastControlsBuilt then loadControls(self) end
+      return result
+    end
+
+    local oldCreate = B.CreateListing
+    function B:CreateListing(...)
+      self:SFEnsureListingBroadcastControls()
+      local rawMinimum, rawMaximum = boxText(self.minLevelBox), boxText(self.maxLevelBox)
+      local minimum, maximum = levels(rawMinimum, rawMaximum)
+      if minimum and maximum and minimum > maximum then
+        notice("Minimum level cannot be higher than maximum level.")
+        return false
+      end
+      local s = saveControls(self)
+      if self.needTank then
+        self.needTank:SetChecked(s.tankCount > 0)
+        self.needHealer:SetChecked(s.healerCount > 0)
+        self.needDPS:SetChecked(s.dpsCount > 0)
+      end
+      local before = self.myListing and self.myListing.id
+      local result = oldCreate and oldCreate(self, ...)
+      if self.myListing and self.myListing.id ~= before then
+        self:SFNormalizeListingRoles(self.myListing)
+        self:SFSendPublicBroadcast(self:ListingRecruitmentText(self.myListing))
+      end
+      return result
     end
   end
 end
