@@ -191,6 +191,7 @@ assert(#triumvirate == 1 and triumvirate[1] == "Global-Guild-Recruitment", "legi
 -- Dungeon and public-channel popups are mutually exclusive and reuse existing controls.
 B:SF143_SetServerProfile("Ascension", true)
 joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
+resetSends()
 local dungeonSelector = assert(B.specificDungeonDrop._sf1430jSelector, "custom dungeon selector missing")
 local dungeonClick = assert(dungeonSelector:GetScript("OnClick"), "custom dungeon selector script missing")
 dungeonClick(dungeonSelector)
