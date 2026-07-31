@@ -130,7 +130,7 @@ const dungeonOpen = slice(listing, "local function sfalp1430j_open", "\n      lo
 requireText(dungeonOpen, "BLFG.publicBroadcastPopup", "dungeon popup does not close public selector");
 const selectorOpen = slice(feature, "function B:SFOpenPublicBroadcastSelector()", "\n    function B:SFEnsureListingBroadcastControls");
 requireText(selectorOpen, "CloseDropDownMenus", "public selector does not close native Create Listing menus");
-requireText(selectorOpen, "SFALP.dungeonSelectorPopup1430j", "public selector does not close custom dungeon popup");
+requireText(selectorOpen, "SignalFireAscensionListingPolish", "public selector does not close custom dungeon popup");
 requireText(selectorOpen, 'popup:SetFrameStrata("DIALOG")', "public selector lacks dialog strata");
 requireText(selectorOpen, "popup:SetFrameLevel(math.max(100", "public selector lacks elevated frame level");
 const controls = slice(feature, "function B:SFEnsureListingBroadcastControls()", "\n    function B:SFListingDraft");

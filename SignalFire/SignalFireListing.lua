@@ -1389,7 +1389,8 @@ do
     function B:SFOpenPublicBroadcastSelector()
       if not self.create then return end
       if CloseDropDownMenus then CloseDropDownMenus() end
-      local dungeonPopup = SFALP and SFALP.dungeonSelectorPopup1430j
+      local dungeonOwner = SignalFireAscensionListingPolish
+      local dungeonPopup = dungeonOwner and dungeonOwner.dungeonSelectorPopup1430j
       if dungeonPopup then dungeonPopup:Hide() end
       if not self.publicBroadcastPopup then
         local popup = CreateFrame("Frame", nil, UIParent)

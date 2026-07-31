@@ -158,7 +158,7 @@ joinedChannels = {"Ascension", "Newcomers", "Zone", "Trade", "BLFG"}
 local dungeonSelector = assert(B.specificDungeonDrop._sf1430jSelector, "custom dungeon selector missing")
 local dungeonClick = assert(dungeonSelector:GetScript("OnClick"), "custom dungeon selector script missing")
 dungeonClick(dungeonSelector)
-local dungeonPopup = assert(SFALP.dungeonSelectorPopup1430j, "custom dungeon popup missing")
+local dungeonPopup = assert(SignalFireAscensionListingPolish.dungeonSelectorPopup1430j, "custom dungeon popup missing")
 assert(dungeonPopup:IsShown(), "custom dungeon popup did not open")
 B:SFOpenPublicBroadcastSelector()
 assert(not dungeonPopup:IsShown() and popup:IsShown(), "public popup did not close dungeon popup")
