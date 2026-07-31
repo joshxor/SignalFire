@@ -5,6 +5,38 @@ dofile(loader)
 local B = assert(BronzeLFG, "SignalFire did not load")
 BronzeLFG_DB.options.serverProfile = "Ascension"
 
+-- Simulate the normal already-joined internal transport.  CreateListing must
+-- send its LIST packet to BLFG and never exercise the unrelated join fallback.
+local sentChat, joinedChannels = {}, {}
+local previousGetChannelName = GetChannelName
+local previousSendChatMessage = SendChatMessage
+local previousJoinChannelByName = JoinChannelByName
+function GetChannelName(name)
+  if tostring(name or "") == "BLFG" then return 9 end
+  return previousGetChannelName and previousGetChannelName(name) or 0
+end
+function SendChatMessage(payload, chatType, language, destination)
+  table.insert(sentChat, {payload=tostring(payload or ""), chatType=chatType, language=language, destination=destination})
+end
+function JoinChannelByName(name) table.insert(joinedChannels, tostring(name or "")) end
+
+local function split(payload)
+  local out, start = {}, 1
+  while true do
+    local at = string.find(payload, "~", start, true)
+    if not at then table.insert(out, string.sub(payload, start)); return out end
+    table.insert(out, string.sub(payload, start, at - 1)); start = at + 1
+  end
+end
+local function onlyListPacket(label)
+  assert(#joinedChannels == 0, label .. " used JoinChannelByName")
+  assert(#sentChat == 1, label .. " did not produce exactly one internal LIST packet")
+  local packet = sentChat[1]
+  assert(packet.chatType == "CHANNEL" and packet.destination == 9, label .. " did not use joined BLFG channel")
+  assert(string.sub(packet.payload, 1, 13) == "BLFG312~LIST~", label .. " was not a LIST packet")
+  return split(packet.payload)
+end
+
 local function contains(list, expected)
   for _, value in ipairs(list or {}) do if value == expected then return true end end
   return false
@@ -44,7 +76,11 @@ polish.LoadState(B, "Ascension")
 assert(BLFG_DropdownText(B.specificDungeonDrop) == "Blackfathom Deeps" and BLFG_DropdownText(B.diffDrop) == "Mythic", "plain Mythic state did not survive reopening")
 B:CreateListing()
 assert(B.myListing and B.myListing.type == "Dungeon" and B.myListing.activity == "Blackfathom Deeps" and B.myListing.difficulty == "Mythic" and tostring(B.myListing.key or "") == "", "plain Mythic listing serialization")
+local plainPacket = onlyListPacket("plain Mythic")
+assert(#plainPacket == 26 and plainPacket[7] == "Dungeon" and plainPacket[8] == "Blackfathom Deeps" and plainPacket[9] == "Mythic" and plainPacket[10] == "", "plain Mythic LIST positions")
+assert(plainPacket[21] ~= nil and plainPacket[22] ~= nil and plainPacket[23] ~= nil and plainPacket[24] ~= nil and plainPacket[25] ~= nil and plainPacket[26] ~= nil and plainPacket[27] == nil, "LIST packet expanded past p[26]")
 
+sentChat = {}
 BronzeLFG_DB.createByProfile.Ascension = {
   type="Mythic+", activity=polish.ASC_MYTHIC, specificDungeon="Blackfathom Deeps", difficulty="Mythic+", key="",
   minItemLevel="", maxMembers="5", voice="None", loot="Group Loot", note="", needTank=true, needHealer=true, needDPS=true,
@@ -56,6 +92,8 @@ B.keyBox:SetText("5")
 polish.SaveCurrent(B, "Ascension")
 B:CreateListing()
 assert(B.myListing and B.myListing.activity == "Blackfathom Deeps" and B.myListing.difficulty == "Mythic+" and tostring(B.myListing.key) == "5", "Mythic+ listing lifecycle")
+local keyPacket = onlyListPacket("Mythic+")
+assert(#keyPacket == 26 and keyPacket[8] == "Blackfathom Deeps" and keyPacket[9] == "Mythic+" and keyPacket[10] == "5", "Mythic+ LIST positions")
 
 -- D/E/F: all cases use the live TestParse production API.
 for _, fixture in ipairs({
@@ -126,5 +164,52 @@ assert(#rows == 1 and rows[1].id == key.id, "combined Mythic+ filters failed")
 B.publicDifficultyFilter, B.publicPage = "All Difficulties", 2
 rows = B:GetSortedPublicGroups()
 assert(#rows == 6, "All Difficulties did not include both normalized difficulties")
+
+-- Exercise the real production dropdown callbacks and the production-created
+-- controls, including their final Phase 6 selection behavior.
+B:ShowPublicGroups()
+local difficultyDrop = assert(B.publicDifficultyDrop, "difficulty dropdown missing")
+local difficultyLabel = assert(B.publicDifficultyLabel, "difficulty label missing")
+local originalInitializer = assert(difficultyDrop.dropdownInitializer, "difficulty dropdown initializer missing")
+local options = difficultyDrop:RunDropdownInitializer()
+assert(#options == 5, "difficulty dropdown duplicated options")
+local byText = {}
+for _, info in ipairs(options) do byText[info.text] = info end
+for _, value in ipairs({"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"}) do assert(byText[value] and type(byText[value].func) == "function", "difficulty dropdown option missing: " .. value) end
+local sentBeforeFilters = #sentChat
+local refreshes = 0
+local originalRefresh = B.RefreshPublicGroups
+B.RefreshPublicGroups = function(self, ...)
+  refreshes = refreshes + 1
+  return originalRefresh and originalRefresh(self, ...)
+end
+B.publicPage = 3
+byText["Mythic"].func()
+assert(B.publicDifficultyFilter == "Mythic" and B.publicPage == 1 and BLFG_DropdownText(difficultyDrop) == "Mythic" and refreshes > 0, "Mythic dropdown callback")
+B.selectedPublic = key.id
+byText["Mythic"].func()
+assert(B.selectedPublic == nil, "filtered-out selected Public Group was retained")
+byText["All Difficulties"].func()
+assert(B.publicDifficultyFilter == "All Difficulties", "All Difficulties dropdown reset")
+B.RefreshPublicGroups = originalRefresh
+assert(#sentChat == sentBeforeFilters, "Public Groups filtering sent chat")
+
+local function leftAndWidth(widget)
+  local _, _, _, x = widget:GetPoint()
+  return tonumber(x or 0) or 0, tonumber(widget:GetWidth() or 0) or 0
+end
+local dps = assert(B.publicRoleFilterButtons and B.publicRoleFilterButtons.D, "DPS role control missing")
+local roleX, roleWidth = leftAndWidth(dps)
+local labelX = select(4, difficultyLabel:GetPoint())
+local dropX, dropWidth = leftAndWidth(difficultyDrop)
+assert(labelX > roleX + roleWidth, "difficulty label overlaps role controls")
+assert(dropX + dropWidth <= B.publicPanel:GetWidth(), "difficulty dropdown escaped Public Groups panel")
+for _ = 1, 20 do
+  B:ShowPublicGroups()
+  local cycleOptions = difficultyDrop:RunDropdownInitializer()
+  assert(B.publicDifficultyLabel == difficultyLabel and B.publicDifficultyDrop == difficultyDrop and difficultyDrop.dropdownInitializer == originalInitializer and #cycleOptions == 5, "difficulty controls duplicated during lifecycle")
+  if B.HidePanels then B:HidePanels() end
+end
+assert(#sentChat == sentBeforeFilters, "Public Groups lifecycle sent chat")
 
 print("activity discovery pass A harness: PASS")

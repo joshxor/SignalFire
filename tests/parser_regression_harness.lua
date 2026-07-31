@@ -64,7 +64,14 @@ function objectMethods:GetChecked() return self.checked end
 function objectMethods:SetValue(value) self.value = value end
 function objectMethods:GetValue() return self.value or 0 end
 function objectMethods:GetFont() return "Fonts\\FRIZQT__.TTF", 12, "" end
-function objectMethods:GetPoint() return "CENTER", UIParent, "CENTER", 0, 0 end
+function objectMethods:SetPoint(point, relativeTo, relativePoint, x, y)
+  self.point = {point, relativeTo, relativePoint, x or 0, y or 0}
+end
+function objectMethods:ClearAllPoints() self.point = nil end
+function objectMethods:GetPoint()
+  if self.point then return unpack(self.point) end
+  return "CENTER", UIParent, "CENTER", 0, 0
+end
 function objectMethods:AddMessage(text) self.lastMessage = text end
 
 UIParent = newObject("UIParent")
@@ -125,6 +132,21 @@ for _, name in ipairs(noops) do _G[name] = noop end
 function UIDropDownMenu_SetText(frame, text) if frame then frame.text = tostring(text or "") end end
 function UIDropDownMenu_GetText(frame) return frame and rawget(frame, "text") or "" end
 function UIDropDownMenu_CreateInfo() return {} end
+function UIDropDownMenu_Initialize(frame, initializer)
+  if not frame then return end
+  frame.dropdownInitializer = initializer
+  frame.RunDropdownInitializer = function(self)
+    self.dropdownOptions = {}
+    _G.SignalFireHarnessActiveDropdown = self
+    initializer()
+    _G.SignalFireHarnessActiveDropdown = nil
+    return self.dropdownOptions
+  end
+end
+function UIDropDownMenu_AddButton(info)
+  local frame = _G.SignalFireHarnessActiveDropdown
+  if frame then table.insert(frame.dropdownOptions, info) end
+end
 function FauxScrollFrame_GetOffset() return 0 end
 
 RAID_CLASS_COLORS = {}
