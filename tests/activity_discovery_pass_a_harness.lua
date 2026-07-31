@@ -16,10 +16,11 @@ end
 
 -- A/B/C: the production profile and create helpers keep plain Mythic separate
 -- from keyed Mythic+ without changing Triumvirate's creation data.
-local diffs = assert(BLFG_CreateDifficultyListFor("Dungeon", "Classic Dungeon"))
-assert(contains(diffs, "Normal") and contains(diffs, "Heroic") and contains(diffs, "Mythic") and contains(diffs, "Mythic+"))
+local diffs = assert(BLFG_CreateDifficultyListFor("Dungeon", "Standard Dungeons"))
+assert(contains(diffs, "Normal") and contains(diffs, "Heroic") and contains(diffs, "Mythic") and not contains(diffs, "Mythic+"))
 assert(not contains(diffs, "Ascended"), "raid-only Ascended leaked into dungeon creation")
-assert(BLFG_ActivitySupportsKeyLevel("Classic Dungeon") == true)
+assert(BLFG_ActivitySupportsKeyLevel("Standard Dungeons") == false)
+assert(BLFG_CreateDifficultyListFor("Mythic+", "Mythic+ Pool")[1] == "Mythic+", "dedicated key flow changed")
 BronzeLFG_DB.options.serverProfile = "Triumvirate"
 assert(not contains(BLFG_CreateDifficultyListFor("Dungeon", "Classic Dungeon"), "Mythic"), "Triumvirate creation changed")
 BronzeLFG_DB.options.serverProfile = "Ascension"
@@ -42,19 +43,32 @@ assert(parse("LFM mythic Molten Core").type == "Raid", "raid precedence lost")
 local guild = parse("<Mythic Friends> mythic raiding guild recruiting members")
 assert(guild.kind == "guild", "guild precedence lost")
 
--- G/H: exact normalized difficulty combines with the production Public Groups view.
-B.publicGroups = {
-  mythic={id="mythic", player="A", message="BFD mythic", activity="Blackfathom Deeps", type="Dungeon", difficulty="Mythic", roles="Healer", seen=time(), created=time()},
-  key={id="key", player="B", message="BFD M+5", activity="Blackfathom Deeps", type="Key", difficulty="Mythic+", keyLevel="5", roles="Tank", seen=time(), created=time()},
-}
+-- G/H: add real chat messages through the production AddPublicGroup path, then
+-- inspect the rows that the live parser/reconciliation pipeline creates.
+B.publicGroups = {}
+local function addLive(author, message)
+  B:AddPublicGroup(author, message, "Harness")
+  local frame = B._sfChatParseFrame
+  if frame and frame.scripts and frame.scripts.OnUpdate then
+    for _ = 1, 4 do frame.scripts.OnUpdate(frame, .1) end
+  end
+  for _, row in pairs(B.publicGroups or {}) do
+    if tostring(row.rawMessage or row.message or "") == message then return row end
+  end
+  error("live AddPublicGroup did not create row for " .. message)
+end
+local mythic = addLive("MythicAuthor", "need healer BFD mythic")
+local key = addLive("KeyAuthor", "LFM BFD M+5 need tank")
+assert(mythic.type == "Dungeon" and mythic.activity == "Blackfathom Deeps" and mythic.difficulty == "Mythic" and tostring(mythic.key or "") == "", "plain Mythic live row")
+assert(key.type == "Key" and key.activity == "Blackfathom Deeps" and key.difficulty == "Mythic+" and tostring(key.keyLevel) == "5", "Mythic+ live row")
 B.publicFilter, B.publicRoleFilter, B.publicSearchText, B.publicSortMode = "All", "All", "", "Newest"
 B.publicDifficultyFilter = "Mythic"
 B:SF151_InvalidatePublicGroupsData("activity-discovery-harness")
 local rows = B:GetSortedPublicGroups()
-assert(#rows == 1 and rows[1].id == "mythic", "Mythic filter included Mythic+")
+assert(#rows == 1 and rows[1].id == mythic.id, "Mythic filter included Mythic+")
 B.publicDifficultyFilter, B.publicFilter, B.publicRoleFilter, B.publicSearchText = "Mythic+", "Key", "T", "blackfathom"
 rows = B:GetSortedPublicGroups()
-assert(#rows == 1 and rows[1].id == "key", "combined Mythic+ filters failed")
+assert(#rows == 1 and rows[1].id == key.id, "combined Mythic+ filters failed")
 B.publicDifficultyFilter, B.publicPage = "All Difficulties", 2
 rows = B:GetSortedPublicGroups()
 assert(#rows == 2, "All Difficulties did not include both normalized difficulties")
