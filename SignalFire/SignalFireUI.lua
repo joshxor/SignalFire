@@ -1711,8 +1711,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
-      row.key = parsed.key or row.key
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2108,7 +2107,7 @@ do
 
     local function p3_copy_authoritative(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "key", "keyLevel", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
       local function genericActivity(value)
         local v = tostring(value or "")
         return v == "" or v == "Group Listing" or v == "Looking For Group"
@@ -2150,8 +2149,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
-      row.key = parsed.key or row.key
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2174,7 +2172,7 @@ do
       row.roles = parsed.roles or row.roles
       row.intent = parsed.intent or row.intent
       row.difficulty = parsed.difficulty or row.difficulty
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
 
       local stamp = p3_epoch_now()
       if isNew then
@@ -4123,7 +4121,7 @@ do
             id=tostring(row.id or id), row=row, player=tostring(row.player or ""),
             message=tostring(row.message or ""), activity=tostring(row.activity or ""),
             kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
-            difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or row.key or ""),
+            difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or ""),
             needsTank=tank, needsHealer=healer, needsDPS=dps,
             intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
             tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),

@@ -3120,7 +3120,7 @@ do
 
     local function sf151_merge_row(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "difficulty", "keyLevel", "key", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
       for _, field in ipairs(fields) do
         if (dst[field] == nil or dst[field] == "") and src[field] ~= nil and src[field] ~= "" then dst[field] = src[field] end
       end

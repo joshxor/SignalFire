@@ -204,6 +204,14 @@ local function normalizedPlayer(value)
   return string.lower(tostring(value or "")):gsub("%-.*", "")
 end
 
+local function assertStablePublicRow(row, label)
+  assert(row and row.id and row.key, label .. " missing stable Public Groups identity")
+  assert(tostring(row.key) == tostring(row.id), label .. " row.key did not retain row.id: " .. tostring(row.key))
+end
+local function assertEmptyKeyLevel(row, label)
+  assert(tostring(row.keyLevel or "") == "", label .. " unexpectedly retained keystone metadata: " .. tostring(row.keyLevel))
+end
+
 B.publicGroups = {}
 local function addLive(author, message)
   local returned = B:AddPublicGroup(author, message, "Harness")
@@ -227,12 +235,22 @@ local prison = addLive("MythicPrison", "BRD Prison mythic need tank")
 local key = addLive("KeyBFD", "LFM BFD M+5 need tank")
 local deadmines = addLive("KeyDM", "need healer keystone Deadmines +7")
 local dmn = addLive("MythicDMN", "DMN mythic need healer")
-assert(mythic.type == "Dungeon" and mythic.activity == "Blackfathom Deeps" and mythic.difficulty == "Mythic" and tostring(mythic.key or "") == "" and tostring(mythic.keyLevel or "") == "", "plain Mythic BFD live row")
+assertStablePublicRow(mythic, "plain Mythic BFD live row")
+assertEmptyKeyLevel(mythic, "plain Mythic BFD live row")
+assert(mythic.type == "Dungeon" and mythic.activity == "Blackfathom Deeps" and mythic.difficulty == "Mythic", "plain Mythic BFD live row metadata")
+assertStablePublicRow(cath, "plain Mythic Cathedral live row")
+assertEmptyKeyLevel(cath, "plain Mythic Cathedral live row")
 assert(cath.type == "Dungeon" and cath.activity == "Scarlet Monastery - Cathedral" and cath.difficulty == "Mythic", "plain Mythic Cathedral live row")
+assertStablePublicRow(prison, "plain Mythic Prison live row")
+assertEmptyKeyLevel(prison, "plain Mythic Prison live row")
 assert(prison.type == "Dungeon" and prison.activity == "Blackrock Depths - Prison" and prison.difficulty == "Mythic", "plain Mythic Prison live row")
+assertStablePublicRow(dmn, "plain Mythic DMN live row")
+assertEmptyKeyLevel(dmn, "plain Mythic DMN live row")
 assert(dmn.type == "Dungeon" and dmn.activity == "Dire Maul - North" and dmn.difficulty == "Mythic", "plain Mythic DMN live row")
-assert(key.type == "Key" and key.activity == "Blackfathom Deeps" and key.difficulty == "Mythic+" and tostring(key.keyLevel) == "5" and tostring(key.key) == "5", "Mythic+ BFD live row")
-assert(deadmines.type == "Key" and deadmines.activity == "Deadmines" and deadmines.difficulty == "Mythic+" and tostring(deadmines.keyLevel) == "7" and tostring(deadmines.key) == "7", "Mythic+ Deadmines live row")
+assertStablePublicRow(key, "Mythic+ BFD live row")
+assert(key.type == "Key" and key.activity == "Blackfathom Deeps" and key.difficulty == "Mythic+" and tostring(key.keyLevel) == "5" and tostring(key.key) ~= "5", "Mythic+ BFD live row")
+assertStablePublicRow(deadmines, "Mythic+ Deadmines live row")
+assert(deadmines.type == "Key" and deadmines.activity == "Deadmines" and deadmines.difficulty == "Mythic+" and tostring(deadmines.keyLevel) == "7" and tostring(deadmines.key) ~= "7", "Mythic+ Deadmines live row")
 B.publicFilter, B.publicRoleFilter, B.publicSearchText, B.publicSortMode = "All", "All", "", "Newest"
 B.publicDifficultyFilter = "Mythic"
 B:SF151_InvalidatePublicGroupsData("activity-discovery-harness")

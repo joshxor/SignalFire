@@ -17,7 +17,7 @@ need(chat, 'discovery.difficulty == "Mythic+" then parsed.type = "Key"', "Mythic
 need(chat, 'parsed.type == "Raid"', "raid precedence");
 need(chat, 'contains(input, " guild ")', "guild protection");
 need(chat, 'result.difficulty = fast.difficulty', "core parser difficulty propagation");
-need(chat, '"difficulty", "keyLevel", "key"', "reconciliation metadata preservation");
+need(chat, "result.keyLevel = fast.keyLevel", "reconciliation metadata preservation");
 need(ui, "publicDifficultyFilter", "Public Groups difficulty state");
 need(ui, '"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"', "difficulty dropdown choices");
 need(ui, "p6_difficulty_matches", "exact difficulty matcher");
@@ -25,6 +25,20 @@ need(ui, "record.difficulty", "difficulty search metadata");
 if (ui.includes('record.difficulty == "Mythic+" and record.kind == "Key"')) throw new Error("activity discovery source verification failed: Mythic+ is incorrectly gated by type");
 need(ui, 'panel, "TOPLEFT", 260, -92', "non-overlapping difficulty label placement");
 need(ui, 'panel, "TOPLEFT", 318, -86', "non-overlapping difficulty dropdown placement");
+need(ui, "row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel", "Public Groups keystone metadata ownership");
+need(ui, 'keyLevel=tostring(row.keyLevel or "")', "Public Groups snapshot keyLevel ownership");
+if (/row\.key\s*=\s*parsed\.key(?:Level|level)?\b/.test(ui)) {
+  throw new Error("activity discovery source verification failed: parser keystone metadata overwrote Public Groups row.key identity");
+}
+if (/keyLevel\s*=\s*tostring\(row\.keyLevel\s+or\s+row\.key\b/.test(ui)) {
+  throw new Error("activity discovery source verification failed: snapshot keyLevel fell back to Public Groups row.key identity");
+}
+const mergeStart = chat.indexOf("local function sf151_merge_row");
+const mergeEnd = chat.indexOf("\n    function B:SF151_ReconcilePublicGroups", mergeStart);
+if (mergeStart < 0 || mergeEnd < 0) throw new Error("activity discovery source verification failed: Public Groups merge boundary");
+if (chat.slice(mergeStart, mergeEnd).includes('"key"')) {
+  throw new Error("activity discovery source verification failed: sf151_merge_row merged stable row.key identity");
+}
 need(workflow, "verify_activity_discovery_pass_a_sources.js", "workflow source verifier");
 need(workflow, "activity_discovery_pass_a_harness.lua", "workflow Lua harness");
 need(harness, "function JoinChannelByName", "joined BLFG channel simulation");
@@ -33,6 +47,9 @@ need(harness, "RunDropdownInitializer", "actual difficulty dropdown callback cov
 need(harness, "filtered-out selected Public Group was retained", "selected row clearing coverage");
 need(harness, "for _ = 1, 20 do", "geometry/reuse lifecycle coverage");
 need(harness, "LIST packet expanded past p[26]", "current LIST packet compatibility coverage");
+need(harness, "assertStablePublicRow", "Public Groups stable identity coverage");
+need(harness, 'tostring(key.key) ~= "5"', "BFD Mythic+ row identity is not keystone metadata");
+need(harness, 'tostring(deadmines.key) ~= "7"', "Deadmines Mythic+ row identity is not keystone metadata");
 need(loaderHarness, "function objectMethods:SetPoint", "stored mock geometry");
 need(loaderHarness, "function UIDropDownMenu_Initialize", "stored dropdown initializer mock");
 if (/p\[27\]|p\[28\]/.test(chat + core + ui)) throw new Error("activity discovery source verification failed: packet expansion");
