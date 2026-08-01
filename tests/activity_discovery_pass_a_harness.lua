@@ -142,16 +142,62 @@ local guild = parse("<Mythic Friends> mythic raiding guild recruiting members")
 assert(guild.kind == "guild", "guild precedence lost")
 
 -- G/H: drain the same deferred Public Groups worker that live chat uses.
+BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+BronzeLFG_DB.options.publicGroups = true
+local runtime = assert(SignalFireChatRuntime151, "Phase 3 chat runtime missing")
+runtime.Apply()
+
+-- SF151_GetChatRuntimeStatus is a legacy counter tuple in this production
+-- revision; GetParserRuntimeState is the authoritative table-valued runtime
+-- status owner for the source/worker lifecycle fields below.
+local function chatRuntimeStatus()
+  local state = assert(runtime.GetParserRuntimeState, "parser runtime status API missing")()
+  local legacyDepth = B:SF151_GetChatRuntimeStatus()
+  assert(tonumber(legacyDepth) == tonumber(state.queueDepth), "chat runtime status depth disagreement")
+  return state
+end
+local function chatRuntimeDiagnostic(state)
+  return "sourceActive=" .. tostring(state.sourceActive)
+    .. " suspended=" .. tostring(state.suspended)
+    .. " reason=" .. tostring(state.lastStopReason)
+    .. " depth=" .. tostring(state.queueDepth)
+    .. " workerActive=" .. tostring(state.workerActive)
+    .. " workerScript=" .. tostring(state.workerScript)
+end
+
+local initialStatus = chatRuntimeStatus()
+assert(initialStatus.sourceActive == true, "Public Groups parser inactive before live fixtures: " .. chatRuntimeDiagnostic(initialStatus))
+assert(initialStatus.queueDepth == 0, "Public Groups queue was not idle before live fixtures: " .. chatRuntimeDiagnostic(initialStatus))
+assert(initialStatus.workerScript == false, "idle Public Groups worker retained OnUpdate: " .. chatRuntimeDiagnostic(initialStatus))
+
 local function drainPublicQueue()
   local frame = assert(B._sfP3Frame, "chat queue frame missing")
+  local runtime = assert(SignalFireChatRuntime151, "chat runtime missing")
+  local function status()
+    return assert(runtime.GetParserRuntimeState, "parser runtime status API missing")()
+  end
+  local depth = #(B._sfP3Queue or {})
+  if depth == 0 then return end
+
+  local state = status()
+  assert(state.sourceActive, "chat parser inactive while queue contains work: " .. chatRuntimeDiagnostic(state))
+
   local update = (frame.GetScript and frame:GetScript("OnUpdate")) or (frame.scripts and frame.scripts.OnUpdate)
-  assert(type(update) == "function", "chat queue update missing")
+  if type(update) ~= "function" then
+    local started = runtime.StartParserWork()
+    assert(started == true, "production parser worker failed to start: depth=" .. tostring(#(B._sfP3Queue or {})))
+    update = (frame.GetScript and frame:GetScript("OnUpdate")) or (frame.scripts and frame.scripts.OnUpdate)
+  end
+  assert(type(update) == "function", "chat queue update missing with queued work")
+
   local guard = 0
   while #(B._sfP3Queue or {}) > 0 do
     update(frame, .07)
     guard = guard + 1
     assert(guard < 100, "chat queue did not drain")
   end
+  local finalState = status()
+  assert(finalState.queueDepth == 0, "chat queue remained populated after drain: " .. chatRuntimeDiagnostic(finalState))
 end
 
 local function normalizedPlayer(value)
@@ -160,13 +206,20 @@ end
 
 B.publicGroups = {}
 local function addLive(author, message)
-  B:AddPublicGroup(author, message, "Harness")
+  local returned = B:AddPublicGroup(author, message, "Harness")
   drainPublicQueue()
   for _, row in pairs(B.publicGroups or {}) do
     if normalizedPlayer(row.player or row.author) == normalizedPlayer(author)
       and tostring(row.rawMessage or row.message or "") == message then return row end
   end
-  error("live AddPublicGroup did not create row for " .. message)
+  if type(returned) == "table"
+    and normalizedPlayer(returned.player or returned.author) == normalizedPlayer(author)
+    and tostring(returned.rawMessage or returned.message or "") == message then
+      return returned
+  end
+  local state = chatRuntimeStatus()
+  error("live AddPublicGroup did not create row for " .. message
+    .. " " .. chatRuntimeDiagnostic(state))
 end
 local mythic = addLive("MythicBFD", "need healer BFD mythic")
 local cath = addLive("MythicCath", "LFM mythic SM Cath need DPS")
