@@ -357,9 +357,30 @@ Live in-game smoke test:
 
 **PASSED**
 
-Status when this master plan was created:
+Final documentation head:
 
-**Implementation complete, CI green, live test passed, controlled merge/closeout pending.**
+`fac0006be5ce555bee73ef325926683432178c76`
+
+Merge SHA:
+
+`a201cab826d1b3859a40cc135355dfafc259b83e`
+
+Post-merge workflow:
+
+- Run `#115`
+- Run ID `30710497798`
+- Package job `91396986881`
+- Conclusion: success
+
+Post-merge artifact:
+
+- `SignalFire-1.5.3`
+- Artifact ID `8821707756`
+- Digest `sha256:536cbd2208c2ff98825e8908b2c7d645c7b0483f37714b99225b154ed62b292d`
+
+Status:
+
+**COMPLETE AND MERGED**
 
 ---
 
@@ -512,51 +533,21 @@ Fix production defects only when production evidence supports them.
 
 ---
 
-# 15. Immediate Action — Pass A Closeout
+# 15. Activity Discovery Pass A — Closeout
 
-This is the immediate project action before Pass B.
+Pass A is complete and merged. The exact RC passed live testing, and the
+post-merge `main` workflow and package construction succeeded.
 
-At the tested code head:
-
-`7d6067e3da0f5dbe8616f5232d0eaebd9d668ba4`
-
-the user has approved the exact RC in-game.
-
-The repository documentation files introduced with this plan are documentation-only and may be committed on PR #20 before merge.
-
-Required closeout sequence:
-
-1. Verify PR #20 still targets `main`.
-2. Verify expected current head before adding documentation.
-3. Add:
-   - `/AGENTS.md`
-   - `/docs/SIGNALFIRE_MASTER_PLAN.md`
-4. Confirm documentation-only diff.
-5. Run applicable validation.
-6. Commit and push the documentation.
-7. Verify replacement PR CI is green.
-8. Because production Lua is unchanged and the prior exact production build passed live testing, no second in-game smoke test is required solely for the documentation commit.
-9. Finalize PR #20 validation notes to record:
-   - green CI;
-   - exact artifact;
-   - live smoke-test pass.
-10. Mark PR ready when appropriate.
-11. Merge normally.
-12. Record exact merge SHA.
-13. Verify post-merge `main` workflow succeeds.
-14. Verify package construction on `main`.
-15. Clean the feature branch/worktree state.
-16. Preserve `SignalFire-2b-exact-links`.
-17. Fetch/prune and leave the reusable worktree ready for the next pass.
-18. Update this master plan after merge with the final merge SHA and main CI evidence.
-
-Do not begin Pass B before this closeout is complete.
+Merge evidence is recorded in Section 12.
 
 ---
 
 # 16. Next Feature Round — Activity Discovery Pass B
 
-This begins in a **new Codex chat** after Pass A has merged and post-merge `main` has been verified.
+**Status: ACTIVE**
+
+Pass A has merged and post-merge `main` has been verified. This pass runs in a
+new feature branch from that exact baseline.
 
 Suggested branch:
 
@@ -914,7 +905,7 @@ Never destroy unrelated local work.
 
 Unless reprioritized by the user:
 
-## Priority 1 — Close Activity Discovery Pass A
+## Priority 1 — Activity Discovery Pass A
 
 Status:
 
@@ -922,9 +913,14 @@ Status:
 - CI green;
 - exact RC tested;
 - live smoke test passed;
-- documentation addition and controlled merge pending.
+- complete and merged as PR #20;
+- post-merge workflow and package construction succeeded.
 
 ## Priority 2 — Activity Discovery Pass B
+
+Status:
+
+- active.
 
 Scope:
 

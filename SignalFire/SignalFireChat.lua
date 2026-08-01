@@ -189,6 +189,8 @@ local function SFActivityDiscoveryPassAInstall()
     end
     function B:SFDiscoverActivityPassA(text)
       local raw, input = tostring(text or ""), words(text)
+      local xpAura = SignalFireFastChatLinks.DetectXPAura
+        and SignalFireFastChatLinks.DetectXPAura(raw) or false
       local key = contains(input, " mythic+ ") or contains(input, " mythic plus ") or contains(input, " m+ ")
         or string.find(string.lower(raw), "m%+%d") ~= nil or string.find(string.lower(raw), "%+%d+") ~= nil
         or contains(input, " keystone ")
@@ -196,14 +198,14 @@ local function SFActivityDiscoveryPassAInstall()
       local level = key and (string.match(string.lower(raw), "m%+%s*(%d+)")
         or string.match(string.lower(raw), "mythic%s*%+%s*(%d+)") or string.match(string.lower(raw), "keystone[^%d]*(%d+)")
         or string.match(string.lower(raw), "%+(%d+)")) or nil
-      return {activity=canonicalActivity(raw, profile()), difficulty=difficulty, keyLevel=level, key=level,
+      return {activity=canonicalActivity(raw, profile()), difficulty=difficulty, keyLevel=level, key=level, xpAura=xpAura,
         classification=key and "Key" or (difficulty and "Dungeon" or nil)}
     end
     function SignalFireFastChatLinks.TestParse(text)
       local parsed = oldTestParse(text)
       local discovery = B:SFDiscoverActivityPassA(text)
       if parsed and parsed.kind == "guild" then return parsed end
-      if not discovery.difficulty then return parsed end
+      if not discovery.difficulty and not discovery.xpAura then return parsed end
       local input = words(text)
       if contains(input, " guild ") and (contains(input, " recruit ") or contains(input, " recruiting ") or contains(input, " members ")) then return parsed end
       if contains(input, " raid ") or contains(input, " raiding ") then return parsed end
@@ -212,12 +214,13 @@ local function SFActivityDiscoveryPassAInstall()
         or tostring(parsed and parsed.intent or "") == "Recruiter"
       if discovery.difficulty == "Mythic" and not discovery.activity and not intent then return parsed end
       if not parsed or parsed.kind ~= "group" then
-        if not discovery.activity then return parsed end
+        if not discovery.activity and not discovery.xpAura then return parsed end
         parsed = {input=tostring(text or ""), eligible=true, kind="group", intent="Recruiter", roles="", reason=nil}
       end
       if parsed.type == "Raid" then return parsed end
       if discovery.activity then parsed.activity = discovery.activity end
       parsed.difficulty, parsed.keyLevel = discovery.difficulty, discovery.keyLevel
+      parsed.xpAura = discovery.xpAura and true or false
       if discovery.difficulty == "Mythic+" then parsed.type = "Key"
       elseif discovery.activity or intent then parsed.type = "Dungeon" end
       return parsed
@@ -720,6 +723,32 @@ do
       return sffcl_trim(tostring(author or ""):gsub("%-.*", ""))
     end
 
+    -- Activity Discovery Pass B: this is affirmative listing metadata, not a
+    -- claim that the aura is currently active on any player. Keep the
+    -- detector narrow so class/combat aura chatter does not become XP Aura.
+    local function sffcl_xp_aura_signal(text)
+      local s = " " .. sffcl_lower(sffcl_clean_text(text))
+      s = string.gsub(s, "[^%w]", " ")
+      s = string.gsub(s, "%s+", " ") .. " "
+      local negated = s:find(" no xp aura ", 1, true) or s:find(" without xp aura ", 1, true)
+        or s:find(" no exp aura ", 1, true) or s:find(" without exp aura ", 1, true)
+        or s:find(" no experience aura ", 1, true) or s:find(" without experience aura ", 1, true)
+        or s:find(" no aura ", 1, true) or s:find(" without aura ", 1, true)
+      if negated then return false end
+      local classOrCombatAura = s:find(" paladin aura ", 1, true)
+        or s:find(" devotion aura ", 1, true)
+        or s:find(" resistance aura ", 1, true)
+        or s:find(" aura mastery ", 1, true)
+        or s:find(" combat aura ", 1, true)
+        or s:find(" buff aura ", 1, true)
+      local explicit = s:find(" xp aura ", 1, true) or s:find(" exp aura ", 1, true)
+        or s:find(" experience aura ", 1, true) or s:find(" aura of experience ", 1, true)
+      if explicit then return not classOrCombatAura end
+      return s:find(" aura spam ", 1, true) ~= nil and not classOrCombatAura
+    end
+
+    SignalFireFastChatLinks.DetectXPAura = sffcl_xp_aura_signal
+
     local function sffcl_player()
       return sffcl_author((UnitName and UnitName("player")) or "")
     end
@@ -770,7 +799,8 @@ do
       -- guild recruitment ad.  Ascension guild ads often say "dungeons, leveling,
       -- and PvP".
       local guildish = s:find("guild", 1, true) or s:find("recruit", 1, true) or s:find("<", 1, true)
-      if s:find(" bis ", 1, true) or (s:find(" leveling ", 1, true) and not guildish) or s:find(" boe ", 1, true) then return true end
+      if s:find(" bis ", 1, true) or (s:find(" leveling ", 1, true) and not guildish
+        and not sffcl_xp_aura_signal(s)) or s:find(" boe ", 1, true) then return true end
       if s:find(" craft ", 1, true) or s:find(" crafting ", 1, true) or s:find(" enchant", 1, true) then return true end
       if s:find(" lf craft", 1, true) or s:find(" lf crafter", 1, true) then return true end
       local taggedGuildAd = s:find("<", 1, true) and s:find(">", 1, true)
@@ -829,6 +859,7 @@ do
       local specificActivity = activity ~= "" and activity ~= "Group Listing" and activity ~= "Looking For Group"
       local hasActivity = sffcl_activity_signal(s) or specificActivity
       local hasRole = sffcl_role_signal(s)
+      local xpAura = sffcl_xp_aura_signal(s)
 
       if s:find(" lf%d+m") or s:find(" lfm", 1, true) then return true end
       if s:find(" lfg ", 1, true) and hasActivity then return true end
@@ -840,6 +871,7 @@ do
       if (s:find("looking for", 1, true) or s:find(" need ", 1, true) or s:find(" last spot", 1, true))
         and (hasRole or hasActivity) then return true end
       if hasActivity and hasRole then return true end
+      if xpAura and (hasRole or s:find(" group ", 1, true) or s:find(" run ", 1, true)) then return true end
       return false
     end
 
@@ -1235,6 +1267,7 @@ do
       result.unknownActivity = unknownActivity
       result.intent = sffcl_intent(raw)
       result.roles = sffcl_roles(raw)
+      result.xpAura = sffcl_xp_aura_signal(raw) and true or false
       result.reason = nil
       return result
     end
@@ -3269,6 +3302,7 @@ do
         result.difficulty = fast.difficulty
         result.keyLevel = fast.keyLevel
         result.key = fast.key
+        result.xpAura = fast.xpAura == true
         result.roles = fast.roles
         result.intent = fast.intent or result.intent
         result.activities = fast.activities or result.activities

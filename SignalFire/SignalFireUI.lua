@@ -1712,6 +1712,7 @@ do
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2107,7 +2108,7 @@ do
 
     local function p3_copy_authoritative(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "xpAura", "ilevel", "score"}
       local function genericActivity(value)
         local v = tostring(value or "")
         return v == "" or v == "Group Listing" or v == "Looking For Group"
@@ -2150,6 +2151,7 @@ do
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2173,6 +2175,7 @@ do
       row.intent = parsed.intent or row.intent
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
 
       local stamp = p3_epoch_now()
       if isNew then
@@ -4122,6 +4125,7 @@ do
             message=tostring(row.message or ""), activity=tostring(row.activity or ""),
             kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
             difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or ""),
+            xpAura=row.xpAura == true,
             needsTank=tank, needsHealer=healer, needsDPS=dps,
             intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
             tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),
@@ -4140,8 +4144,12 @@ do
           record.typeText = p6_type_label(kind)
           record.activityText = p6_shorten(record.activity, 26)
           record.messageText = p6_shorten(record.message, 70)
+          local keySearch = record.keyLevel ~= "" and ("+" .. record.keyLevel) or ""
+          local auraSearch = record.xpAura and "xp aura exp aura experience aura aura of experience aura spam" or ""
           record.searchText = p6_lower(table.concat({record.player, kind, record.activity,
-            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty, record.keyLevel}, " "))
+            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty,
+            record.keyLevel, keySearch, auraSearch, record.playerRole, record.playerSpec,
+            record.playerZone, record.playerGuild}, " "))
           p6_note("normalizedStringsGenerated")
           table.insert(rows, record)
           byId[record.id] = record
@@ -4207,6 +4215,11 @@ do
       return record.difficulty == filter
     end
 
+    local function p6_xp_aura_matches(record, filter)
+      if filter == "XP Aura Only" then return record.xpAura == true end
+      return true
+    end
+
     local function p6_view_inputs()
       local filter = tostring(B.publicFilter or "All")
       if filter == "Ascended" then filter = "Raid" end
@@ -4222,21 +4235,29 @@ do
       local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
       local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
       local difficulty = tostring(B.publicDifficultyFilter or "All Difficulties")
-      return filter, query, role, mode, hidden, profile, invasion, difficulty
+      local xpAura = tostring(B.publicXPAuraFilter or "All XP Aura")
+      if xpAura ~= "XP Aura Only" then xpAura = "All XP Aura" end
+      B.publicXPAuraFilter = xpAura
+      return filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura
     end
 
-    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty)
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty, xpAura)
       if PG.testErrorStage == "view" then error("injected Public Groups view error") end
       p6_note("viewsBuilt")
       local hidden = {}
       for name in string.gmatch(hiddenSignature or "", "[^,]+") do hidden[name] = true end
+      local searchTokens = {}
+      for token in string.gmatch(query or "", "%S+") do table.insert(searchTokens, token) end
       local rows = {}
       for _, record in ipairs(snapshot.rows) do
         p6_note("filterScans")
-        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role) and p6_difficulty_matches(record, difficulty)
-        if keep and query ~= "" then
+        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
+          and p6_difficulty_matches(record, difficulty) and p6_xp_aura_matches(record, xpAura)
+        if keep and #searchTokens > 0 then
           p6_note("searchScans")
-          keep = string.find(record.searchText, query, 1, true) ~= nil
+          for _, token in ipairs(searchTokens) do
+            if string.find(record.searchText, token, 1, true) == nil then keep = false; break end
+          end
         end
         if keep then table.insert(rows, record) end
       end
@@ -4260,12 +4281,12 @@ do
     local function p6_view()
       p6_note("viewRequests")
       local snapshot = p6_snapshot()
-      local filter, query, role, mode, hidden, profile, invasion, difficulty = p6_view_inputs()
-      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty}, "\31")
+      local filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura}, "\31")
       local cached = PG.viewCache[signature]
       if cached then p6_note("viewCacheHits"); return cached, snapshot end
       local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
-        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty)
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty, xpAura)
       end)
       return view, snapshot
     end
@@ -4566,6 +4587,60 @@ do
           drop._sfP6DifficultyInitialized = true
         end
         if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
+      end
+
+      local auraLabel
+      if owned_control(field(panel, "_sfP6XPAuraLabel")) then
+        auraLabel = field(panel, "_sfP6XPAuraLabel")
+      elseif owned_control(B.publicXPAuraLabel) then
+        auraLabel = B.publicXPAuraLabel
+      elseif panel.CreateFontString then
+        auraLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if auraLabel then
+        auraLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 442, -92)
+        auraLabel:SetText("XP Aura")
+        panel._sfP6XPAuraLabel = auraLabel
+        B.publicXPAuraLabel = auraLabel
+      end
+
+      local auraDrop
+      if owned_control(field(panel, "_sfP6XPAuraDrop")) then
+        auraDrop = field(panel, "_sfP6XPAuraDrop")
+      elseif owned_control(B.publicXPAuraDrop) then
+        auraDrop = B.publicXPAuraDrop
+      elseif valid_control(_G.SignalFirePublicXPAuraDrop) then
+        auraDrop = _G.SignalFirePublicXPAuraDrop
+      elseif not _G.SignalFirePublicXPAuraDrop and CreateFrame then
+        auraDrop = CreateFrame("Frame", "SignalFirePublicXPAuraDrop", panel, "UIDropDownMenuTemplate")
+      end
+      if auraDrop and type(auraDrop.GetParent) == "function" and auraDrop:GetParent() ~= panel and auraDrop.SetParent then
+        auraDrop:SetParent(panel)
+      end
+      if auraDrop then
+        auraDrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 492, -86)
+        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(auraDrop, 96) end
+        B.publicXPAuraDrop = auraDrop
+        panel._sfP6XPAuraDrop = auraDrop
+        B.publicXPAuraFilter = B.publicXPAuraFilter or "All XP Aura"
+        if UIDropDownMenu_Initialize and not field(auraDrop, "_sfP6XPAuraInitialized") and not field(auraDrop, "dropdownInitializer") then
+          UIDropDownMenu_Initialize(auraDrop, function()
+            for _, value in ipairs({"All XP Aura", "XP Aura Only"}) do
+              local info = UIDropDownMenu_CreateInfo()
+              info.text, info.notCheckable = value, true
+              info.func = function()
+                B.publicXPAuraFilter, B.publicPage = value, 1
+                UIDropDownMenu_SetText(auraDrop, value)
+                if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+              end
+              UIDropDownMenu_AddButton(info)
+            end
+          end)
+          auraDrop._sfP6XPAuraInitialized = true
+        elseif field(auraDrop, "dropdownInitializer") then
+          auraDrop._sfP6XPAuraInitialized = true
+        end
+        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(auraDrop, B.publicXPAuraFilter) end
       end
 
       if field(panel, "_sfP6ViewHooks") == true then return end
@@ -4921,7 +4996,7 @@ do
       "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
       "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
       "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
-      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "focusDropdown",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "publicXPAuraDrop", "focusDropdown",
       "keystoneAlertDropdown",
     }
 
@@ -6449,7 +6524,8 @@ do
 
     local function p7_public_groups_ready(owner)
       return owner and owner.publicPanel and owner.publicRows
-        and owner.publicDifficultyDrop and owner.publicDifficultyLabel and true or false
+        and owner.publicDifficultyDrop and owner.publicDifficultyLabel
+        and owner.publicXPAuraDrop and owner.publicXPAuraLabel and true or false
     end
 
     local function p7_reconcile_public_groups(owner)

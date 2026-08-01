@@ -248,7 +248,7 @@ Completed milestones include:
 - Runtime FPS Cleanup Pass A / PR #18;
 - Listing and Broadcast UX Pass A / PR #19.
 
-Activity Discovery Pass A / PR #20 has passed automated CI and live in-game testing and is awaiting controlled closeout/merge at the time this file was introduced.
+Activity Discovery Pass A / PR #20 is complete and merged; Activity Discovery Pass B is the active feature round.
 
 ## Codex Reporting
 
