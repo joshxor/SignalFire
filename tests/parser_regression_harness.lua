@@ -128,13 +128,16 @@ local noops = {
   "ChatFrame_AddMessageEventFilter", "ChatFrame_RemoveMessageEventFilter", "SendChatMessage",
   "SendAddonMessage", "RegisterAddonMessagePrefix", "SetCVar", "PlaySound", "PlaySoundFile",
   "ToggleDropDownMenu", "CloseDropDownMenus", "UIDropDownMenu_Initialize",
-  "UIDropDownMenu_SetWidth", "UIDropDownMenu_SetText", "UIDropDownMenu_SetSelectedValue",
+  "UIDropDownMenu_SetText", "UIDropDownMenu_SetSelectedValue",
   "UIDropDownMenu_SetSelectedID", "UIDropDownMenu_SetButtonWidth", "UIDropDownMenu_JustifyText",
   "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "PanelTemplates_SetNumTabs",
   "PanelTemplates_SetTab", "FauxScrollFrame_Update", "FauxScrollFrame_GetOffset",
   "StaticPopup_Show", "ReloadUI", "SetWhoToUI", "FriendsFrame_SendWho", "SendWho",
 }
 for _, name in ipairs(noops) do _G[name] = noop end
+function UIDropDownMenu_SetWidth(frame, width)
+  if frame and frame.SetWidth then frame:SetWidth(width) end
+end
 function UIDropDownMenu_SetText(frame, text) if frame then frame.text = tostring(text or "") end end
 function UIDropDownMenu_GetText(frame) return frame and rawget(frame, "text") or "" end
 function UIDropDownMenu_CreateInfo() return {} end
