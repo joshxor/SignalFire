@@ -79,8 +79,13 @@ assert(B.myListing and B.myListing.type == "Dungeon" and B.myListing.activity ==
 local plainPacket = onlyListPacket("plain Mythic")
 assert(#plainPacket == 26 and plainPacket[7] == "Dungeon" and plainPacket[8] == "Blackfathom Deeps" and plainPacket[9] == "Mythic" and plainPacket[10] == "", "plain Mythic LIST positions")
 assert(plainPacket[21] ~= nil and plainPacket[22] ~= nil and plainPacket[23] ~= nil and plainPacket[24] ~= nil and plainPacket[25] ~= nil and plainPacket[26] ~= nil and plainPacket[27] == nil, "LIST packet expanded past p[26]")
+local plainListingId = assert(B.myListing and B.myListing.id, "plain Mythic listing id missing")
+assert(SignalFireHarnessAdvanceTime, "mock clock helper missing")
+SignalFireHarnessAdvanceTime(1)
+B:ShowCreate()
 
 sentChat = {}
+joinedChannels = {}
 BronzeLFG_DB.createByProfile.Ascension = {
   type="Mythic+", activity=polish.ASC_MYTHIC, specificDungeon="Blackfathom Deeps", difficulty="Mythic+", key="",
   minItemLevel="", maxMembers="5", voice="None", loot="Group Loot", note="", needTank=true, needHealer=true, needDPS=true,
@@ -91,7 +96,11 @@ assert(B:ValidateCreateListing() == false, "Mythic+ accepted a missing key level
 B.keyBox:SetText("5")
 polish.SaveCurrent(B, "Ascension")
 B:CreateListing()
-assert(B.myListing and B.myListing.activity == "Blackfathom Deeps" and B.myListing.difficulty == "Mythic+" and tostring(B.myListing.key) == "5", "Mythic+ listing lifecycle")
+assert(B.myListing, "Mythic+ creation did not produce listing")
+assert(B.myListing.id ~= plainListingId, "Mythic+ reused plain listing id: " .. tostring(B.myListing.id))
+assert(B.myListing.activity == "Blackfathom Deeps", "Mythic+ activity mismatch: " .. tostring(B.myListing.activity))
+assert(B.myListing.difficulty == "Mythic+", "Mythic+ difficulty mismatch: " .. tostring(B.myListing.difficulty))
+assert(tostring(B.myListing.key or "") == "5", "Mythic+ key mismatch: " .. tostring(B.myListing.key))
 local keyPacket = onlyListPacket("Mythic+")
 assert(#keyPacket == 26 and keyPacket[8] == "Blackfathom Deeps" and keyPacket[9] == "Mythic+" and keyPacket[10] == "5", "Mythic+ LIST positions")
 

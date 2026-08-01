@@ -4,6 +4,12 @@ unpack = unpack or table.unpack
 loadstring = loadstring or load
 
 local nowValue = 100000
+function SignalFireHarnessAdvanceTime(seconds)
+  local amount = tonumber(seconds) or 1
+  if amount <= 0 then amount = 1 end
+  nowValue = nowValue + amount
+  return nowValue
+end
 function GetTime() return nowValue end
 function time() return math.floor(nowValue) end
 function now() return nowValue end
