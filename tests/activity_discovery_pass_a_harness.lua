@@ -268,9 +268,28 @@ assert(#rows == 6, "All Difficulties did not include both normalized difficultie
 
 -- Exercise the real production dropdown callbacks and the production-created
 -- controls, including their final Phase 6 selection behavior.
-B:ShowPublicGroups()
-local difficultyDrop = assert(B.publicDifficultyDrop, "difficulty dropdown missing")
-local difficultyLabel = assert(B.publicDifficultyLabel, "difficulty label missing")
+local showPublicGroupsResult = B:ShowPublicGroups()
+if showPublicGroupsResult == false then
+  local lazy = B.SF151_GetLazyPanelDiagnostics and B:SF151_GetLazyPanelDiagnostics() or nil
+  local publicRecord = lazy and lazy.panels and lazy.panels.publicGroups or nil
+  error("ShowPublicGroups failed: panel=" .. tostring(B.publicPanel ~= nil)
+    .. " rows=" .. tostring(B.publicRows ~= nil)
+    .. " hooks=" .. tostring(B.publicPanel and B.publicPanel._sfP6ViewHooks)
+    .. " attach=" .. tostring(SignalFirePublicGroupsView151 and type(SignalFirePublicGroupsView151.AttachPanel) == "function")
+    .. " drop=" .. tostring(B.publicDifficultyDrop ~= nil)
+    .. " label=" .. tostring(B.publicDifficultyLabel ~= nil)
+    .. " lazyFailed=" .. tostring(publicRecord and publicRecord.failed)
+    .. " lastError=" .. tostring(publicRecord and publicRecord.lastError))
+end
+local difficultyDrop = assert(B.publicDifficultyDrop,
+  "difficulty dropdown missing: panel=" .. tostring(B.publicPanel ~= nil)
+    .. " rows=" .. tostring(B.publicRows ~= nil)
+    .. " hooks=" .. tostring(B.publicPanel and B.publicPanel._sfP6ViewHooks)
+    .. " attach=" .. tostring(SignalFirePublicGroupsView151 and type(SignalFirePublicGroupsView151.AttachPanel) == "function"))
+local difficultyLabel = assert(B.publicDifficultyLabel,
+  "difficulty label missing: panel=" .. tostring(B.publicPanel ~= nil)
+    .. " rows=" .. tostring(B.publicRows ~= nil)
+    .. " hooks=" .. tostring(B.publicPanel and B.publicPanel._sfP6ViewHooks))
 local originalInitializer = assert(difficultyDrop.dropdownInitializer, "difficulty dropdown initializer missing")
 local options = difficultyDrop:RunDropdownInitializer()
 assert(#options == 5, "difficulty dropdown duplicated options")

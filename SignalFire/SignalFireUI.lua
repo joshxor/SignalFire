@@ -4492,31 +4492,84 @@ do
     end
 
     local function p6_attach_panel(panel)
-      if not panel or panel._sfP6ViewHooks then return end
-      panel._sfP6ViewHooks = true
-      if not B.publicDifficultyDrop and panel.CreateFontString and CreateFrame and UIDropDownMenu_Initialize then
-        local label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      if not panel then return end
+
+      local function field(owner, name)
+        if type(owner) == "table" then return rawget(owner, name) end
+        return owner and owner[name]
+      end
+
+      local function valid_control(control)
+        local kind = type(control)
+        return (kind == "table" or kind == "userdata")
+          and type(control.SetPoint) == "function"
+      end
+
+      local function owned_control(control)
+        if not valid_control(control) then return false end
+        if type(control.GetParent) == "function" then
+          local parent = control:GetParent()
+          if parent and parent ~= panel then return false end
+        end
+        return true
+      end
+
+      local label
+      if owned_control(field(panel, "_sfP6DifficultyLabel")) then
+        label = field(panel, "_sfP6DifficultyLabel")
+      elseif owned_control(B.publicDifficultyLabel) then
+        label = B.publicDifficultyLabel
+      elseif panel.CreateFontString then
+        label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if label then
         label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
         label:SetText("Difficulty")
-        local drop = CreateFrame("Frame", "SignalFirePublicDifficultyDrop", panel, "UIDropDownMenuTemplate")
-        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
-        UIDropDownMenu_SetWidth(drop, 122)
-        B.publicDifficultyDrop, B.publicDifficultyLabel = drop, label
-        B.publicDifficultyFilter = B.publicDifficultyFilter or "All Difficulties"
-        UIDropDownMenu_Initialize(drop, function()
-          for _, value in ipairs({"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"}) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text, info.notCheckable = value, true
-            info.func = function()
-              B.publicDifficultyFilter, B.publicPage = value, 1
-              UIDropDownMenu_SetText(drop, value)
-              if B.RefreshPublicGroups then B:RefreshPublicGroups() end
-            end
-            UIDropDownMenu_AddButton(info)
-          end
-        end)
-        UIDropDownMenu_SetText(drop, B.publicDifficultyFilter)
+        panel._sfP6DifficultyLabel = label
+        B.publicDifficultyLabel = label
       end
+
+      local drop
+      if owned_control(field(panel, "_sfP6DifficultyDrop")) then
+        drop = field(panel, "_sfP6DifficultyDrop")
+      elseif owned_control(B.publicDifficultyDrop) then
+        drop = B.publicDifficultyDrop
+      elseif valid_control(_G.SignalFirePublicDifficultyDrop) then
+        drop = _G.SignalFirePublicDifficultyDrop
+      elseif not _G.SignalFirePublicDifficultyDrop and CreateFrame then
+        drop = CreateFrame("Frame", "SignalFirePublicDifficultyDrop", panel, "UIDropDownMenuTemplate")
+      end
+      if drop and type(drop.GetParent) == "function" and drop:GetParent() ~= panel and drop.SetParent then
+        drop:SetParent(panel)
+      end
+      if drop then
+        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(drop, 122) end
+        B.publicDifficultyDrop = drop
+        panel._sfP6DifficultyDrop = drop
+        B.publicDifficultyFilter = B.publicDifficultyFilter or "All Difficulties"
+        if UIDropDownMenu_Initialize and not field(drop, "_sfP6DifficultyInitialized") and not field(drop, "dropdownInitializer") then
+          UIDropDownMenu_Initialize(drop, function()
+            for _, value in ipairs({"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"}) do
+              local info = UIDropDownMenu_CreateInfo()
+              info.text, info.notCheckable = value, true
+              info.func = function()
+                B.publicDifficultyFilter, B.publicPage = value, 1
+                UIDropDownMenu_SetText(drop, value)
+                if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+              end
+              UIDropDownMenu_AddButton(info)
+            end
+          end)
+          drop._sfP6DifficultyInitialized = true
+        elseif field(drop, "dropdownInitializer") then
+          drop._sfP6DifficultyInitialized = true
+        end
+        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
+      end
+
+      if field(panel, "_sfP6ViewHooks") == true then return end
+      panel._sfP6ViewHooks = true
       if panel.HookScript then
         panel:HookScript("OnShow", function()
           PG.dirty = true
@@ -6609,7 +6662,11 @@ do
       if not record then return false, "unknown panel: " .. tostring(key) end
       record.buildRequests = record.buildRequests + 1
       p7_note("panelBuildRequests", 1)
-      if key == "publicGroups" then p7_reconcile_public_groups(B) end
+      if key == "publicGroups" then
+        p7_reconcile_public_groups(B)
+        local lifecycle = _G.SignalFireUILifecycle151
+        if lifecycle and lifecycle.RegisterKnownDropdowns then lifecycle:RegisterKnownDropdowns(B) end
+      end
       if record.ready(B) and not record.failed then
         record.built = true
         record.failed = false

@@ -27,6 +27,21 @@ need(ui, 'panel, "TOPLEFT", 260, -92', "non-overlapping difficulty label placeme
 need(ui, 'panel, "TOPLEFT", 318, -86', "non-overlapping difficulty dropdown placement");
 need(ui, "PG.AttachPanel = p6_attach_panel", "Phase 6 Public Groups attachment owner");
 need(ui, '"publicDifficultyDrop"', "known Public Groups difficulty dropdown registration");
+const phase6Start = ui.indexOf("-- SIGNALFIRE_PHASE6_PUBLIC_GROUPS_VIEW_BEGIN");
+const phase6End = ui.indexOf("-- SIGNALFIRE_PHASE6_PUBLIC_GROUPS_VIEW_END", phase6Start);
+if (phase6Start < 0 || phase6End < 0) throw new Error("activity discovery source verification failed: Phase 6 lifecycle boundary");
+const attachStart = ui.indexOf("local function p6_attach_panel", phase6Start);
+const attachEnd = ui.indexOf("PG.AttachPanel = p6_attach_panel", attachStart);
+if (attachStart < 0 || attachEnd < 0 || attachEnd > phase6End) throw new Error("activity discovery source verification failed: Phase 6 attachment boundary");
+const attach = ui.slice(attachStart, attachEnd);
+if (/if not panel or panel\._sfP6ViewHooks then return end/.test(attach)) {
+  throw new Error("activity discovery source verification failed: hook marker still blocks control reconciliation");
+}
+const hookGuard = attach.indexOf('field(panel, "_sfP6ViewHooks") == true');
+const controlReconciliation = attach.indexOf("publicDifficultyDrop");
+if (hookGuard < 0 || controlReconciliation < 0 || controlReconciliation > hookGuard) {
+  throw new Error("activity discovery source verification failed: Phase 6 controls are not reconciled before hook guard");
+}
 const phase7Start = ui.indexOf("-- SIGNALFIRE_PHASE7_LAZY_PANELS_BEGIN");
 const phase7End = ui.indexOf("-- SIGNALFIRE_PHASE7_LAZY_PANELS_END", phase7Start);
 if (phase7Start < 0 || phase7End < 0) throw new Error("activity discovery source verification failed: Phase 7 lifecycle boundary");
@@ -40,6 +55,11 @@ if (ensurePanelStart < 0 || ensurePanelEnd < 0) throw new Error("activity discov
 const ensurePanel = phase7.slice(ensurePanelStart, ensurePanelEnd);
 if ((ensurePanel.match(/p7_reconcile_public_groups\(B\)/g) || []).length < 2) {
   throw new Error("activity discovery source verification failed: Public Groups attachment was not reconciled on reuse and build paths");
+}
+const reuseReady = ensurePanel.indexOf("if record.ready(B)");
+const reuseRegistration = ensurePanel.indexOf("RegisterKnownDropdowns", ensurePanel.indexOf("p7_reconcile_public_groups(B)"));
+if (reuseReady < 0 || reuseRegistration < 0 || reuseRegistration > reuseReady) {
+  throw new Error("activity discovery source verification failed: lazy Public Groups reuse does not register reconciled dropdowns");
 }
 need(ui, "row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel", "Public Groups keystone metadata ownership");
 need(ui, 'keyLevel=tostring(row.keyLevel or "")', "Public Groups snapshot keyLevel ownership");
