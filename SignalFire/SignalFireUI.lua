@@ -1711,7 +1711,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2107,7 +2107,7 @@ do
 
     local function p3_copy_authoritative(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "key", "keyLevel", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
       local function genericActivity(value)
         local v = tostring(value or "")
         return v == "" or v == "Group Listing" or v == "Looking For Group"
@@ -2149,7 +2149,7 @@ do
       row.intent = parsed.intent or row.intent or (row.type == "LFG" and "Applicant" or "Recruiter")
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2172,7 +2172,7 @@ do
       row.roles = parsed.roles or row.roles
       row.intent = parsed.intent or row.intent
       row.difficulty = parsed.difficulty or row.difficulty
-      row.keyLevel = parsed.keyLevel or parsed.keylevel or row.keyLevel
+      row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
 
       local stamp = p3_epoch_now()
       if isNew then
@@ -4121,6 +4121,7 @@ do
             id=tostring(row.id or id), row=row, player=tostring(row.player or ""),
             message=tostring(row.message or ""), activity=tostring(row.activity or ""),
             kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
+            difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or ""),
             needsTank=tank, needsHealer=healer, needsDPS=dps,
             intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
             tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),
@@ -4140,7 +4141,7 @@ do
           record.activityText = p6_shorten(record.activity, 26)
           record.messageText = p6_shorten(record.message, 70)
           record.searchText = p6_lower(table.concat({record.player, kind, record.activity,
-            record.message, record.intent, record.roles, record.tags, record.channel}, " "))
+            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty, record.keyLevel}, " "))
           p6_note("normalizedStringsGenerated")
           table.insert(rows, record)
           byId[record.id] = record
@@ -4200,6 +4201,12 @@ do
       return true
     end
 
+    local function p6_difficulty_matches(record, filter)
+      if filter == "" or filter == "All Difficulties" then return true end
+      if filter == "Mythic+" then return record.difficulty == "Mythic+" end
+      return record.difficulty == filter
+    end
+
     local function p6_view_inputs()
       local filter = tostring(B.publicFilter or "All")
       if filter == "Ascended" then filter = "Raid" end
@@ -4214,10 +4221,11 @@ do
       local hidden = p6_hidden_signature()
       local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
       local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
-      return filter, query, role, mode, hidden, profile, invasion
+      local difficulty = tostring(B.publicDifficultyFilter or "All Difficulties")
+      return filter, query, role, mode, hidden, profile, invasion, difficulty
     end
 
-    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature)
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty)
       if PG.testErrorStage == "view" then error("injected Public Groups view error") end
       p6_note("viewsBuilt")
       local hidden = {}
@@ -4225,7 +4233,7 @@ do
       local rows = {}
       for _, record in ipairs(snapshot.rows) do
         p6_note("filterScans")
-        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
+        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role) and p6_difficulty_matches(record, difficulty)
         if keep and query ~= "" then
           p6_note("searchScans")
           keep = string.find(record.searchText, query, 1, true) ~= nil
@@ -4252,12 +4260,12 @@ do
     local function p6_view()
       p6_note("viewRequests")
       local snapshot = p6_snapshot()
-      local filter, query, role, mode, hidden, profile, invasion = p6_view_inputs()
-      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion}, "\31")
+      local filter, query, role, mode, hidden, profile, invasion, difficulty = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty}, "\31")
       local cached = PG.viewCache[signature]
       if cached then p6_note("viewCacheHits"); return cached, snapshot end
       local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
-        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden)
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty)
       end)
       return view, snapshot
     end
@@ -4443,6 +4451,11 @@ do
       B.publicPage = page
       local start = ((page - 1) * per) + 1
       local selected = tostring(B.selectedPublic or "")
+      if selected ~= "" then
+        local selectedVisible = false
+        for _, record in ipairs(view.rows) do if record.id == selected then selectedVisible = true; break end end
+        if not selectedVisible then B.selectedPublic = nil; selected = "" end
+      end
       if PG.lastRenderedViewSignature == view.signature and PG.lastRenderedSelection ~= nil
         and PG.lastRenderedSelection ~= selected then p6_note("selectionOnlyUpdates") end
       p6_render_controls(snapshot, view, page, pages)
@@ -4479,7 +4492,83 @@ do
     end
 
     local function p6_attach_panel(panel)
-      if not panel or panel._sfP6ViewHooks then return end
+      if not panel then return end
+
+      local function field(owner, name)
+        if type(owner) == "table" then return rawget(owner, name) end
+        return owner and owner[name]
+      end
+
+      local function valid_control(control)
+        local kind = type(control)
+        return (kind == "table" or kind == "userdata")
+          and type(control.SetPoint) == "function"
+      end
+
+      local function owned_control(control)
+        if not valid_control(control) then return false end
+        if type(control.GetParent) == "function" then
+          local parent = control:GetParent()
+          if parent and parent ~= panel then return false end
+        end
+        return true
+      end
+
+      local label
+      if owned_control(field(panel, "_sfP6DifficultyLabel")) then
+        label = field(panel, "_sfP6DifficultyLabel")
+      elseif owned_control(B.publicDifficultyLabel) then
+        label = B.publicDifficultyLabel
+      elseif panel.CreateFontString then
+        label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if label then
+        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
+        label:SetText("Difficulty")
+        panel._sfP6DifficultyLabel = label
+        B.publicDifficultyLabel = label
+      end
+
+      local drop
+      if owned_control(field(panel, "_sfP6DifficultyDrop")) then
+        drop = field(panel, "_sfP6DifficultyDrop")
+      elseif owned_control(B.publicDifficultyDrop) then
+        drop = B.publicDifficultyDrop
+      elseif valid_control(_G.SignalFirePublicDifficultyDrop) then
+        drop = _G.SignalFirePublicDifficultyDrop
+      elseif not _G.SignalFirePublicDifficultyDrop and CreateFrame then
+        drop = CreateFrame("Frame", "SignalFirePublicDifficultyDrop", panel, "UIDropDownMenuTemplate")
+      end
+      if drop and type(drop.GetParent) == "function" and drop:GetParent() ~= panel and drop.SetParent then
+        drop:SetParent(panel)
+      end
+      if drop then
+        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(drop, 122) end
+        B.publicDifficultyDrop = drop
+        panel._sfP6DifficultyDrop = drop
+        B.publicDifficultyFilter = B.publicDifficultyFilter or "All Difficulties"
+        if UIDropDownMenu_Initialize and not field(drop, "_sfP6DifficultyInitialized") and not field(drop, "dropdownInitializer") then
+          UIDropDownMenu_Initialize(drop, function()
+            for _, value in ipairs({"All Difficulties", "Normal", "Heroic", "Mythic", "Mythic+"}) do
+              local info = UIDropDownMenu_CreateInfo()
+              info.text, info.notCheckable = value, true
+              info.func = function()
+                B.publicDifficultyFilter, B.publicPage = value, 1
+                UIDropDownMenu_SetText(drop, value)
+                if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+              end
+              UIDropDownMenu_AddButton(info)
+            end
+          end)
+          drop._sfP6DifficultyInitialized = true
+        elseif field(drop, "dropdownInitializer") then
+          drop._sfP6DifficultyInitialized = true
+        end
+        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
+      end
+
+      if field(panel, "_sfP6ViewHooks") == true then return end
       panel._sfP6ViewHooks = true
       if panel.HookScript then
         panel:HookScript("OnShow", function()
@@ -4555,6 +4644,10 @@ do
         local before = countBefore(self, ...)
         local results = {pcall(old, self, ...)}
         if not results[1] then error(results[2], 0) end
+        if methodName == "ClearPublicGroups" then
+          self.publicDifficultyFilter = "All Difficulties"
+          if self.publicDifficultyDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicDifficultyDrop, self.publicDifficultyFilter) end
+        end
         if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
         return unpack(results, 2)
       end
@@ -4828,7 +4921,7 @@ do
       "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
       "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
       "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
-      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "focusDropdown",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "focusDropdown",
       "keystoneAlertDropdown",
     }
 
@@ -6354,6 +6447,19 @@ do
       end
     end
 
+    local function p7_public_groups_ready(owner)
+      return owner and owner.publicPanel and owner.publicRows
+        and owner.publicDifficultyDrop and owner.publicDifficultyLabel and true or false
+    end
+
+    local function p7_reconcile_public_groups(owner)
+      if not owner or not owner.publicPanel then return end
+      local view = _G.SignalFirePublicGroupsView151
+      if view and type(view.AttachPanel) == "function" then
+        view.AttachPanel(owner.publicPanel)
+      end
+    end
+
     local function p7_frame_visible(field)
       return function(owner)
         local frame = owner and owner[field]
@@ -6377,7 +6483,7 @@ do
       create={builder="BuildCreate", show="ShowCreate", refresh="UpdateCreateControls", ready=p7_frame_ready("create", "typeDrop"), visible=p7_frame_visible("create"), shell=true},
       profile={builder="BuildProfile", show="ShowProfile", refresh="UpdateWhisperPreview569", ready=p7_frame_ready("profile", "profileRole"), visible=p7_frame_visible("profile"), shell=true},
       applicants={builder="BuildApplicants", show="ShowApplicants", refresh="RefreshApplicants", ready=p7_frame_ready("apps", "appRows"), visible=p7_frame_visible("apps"), shell=true},
-      publicGroups={builder="BuildPublicGroups", show="ShowPublicGroups", refresh="RefreshPublicGroups", ready=p7_frame_ready("publicPanel", "publicRows"), visible=p7_frame_visible("publicPanel"), shell=true},
+      publicGroups={builder="BuildPublicGroups", show="ShowPublicGroups", refresh="RefreshPublicGroups", ready=p7_public_groups_ready, visible=p7_frame_visible("publicPanel"), shell=true},
       guildBrowser={builder="BuildGuildBrowser", show="ShowGuildBrowser", refresh="RefreshGuildBrowser", ready=p7_frame_ready("guildPanel"), visible=p7_frame_visible("guildPanel"), shell=true},
       myListing={builder="BuildMyListing", show="ShowMyListing", refresh="RefreshMyListing", ready=p7_frame_ready("myPanel"), visible=p7_frame_visible("myPanel"), shell=true},
       options={builder="BuildOptions", show="ShowOptions", ready=p7_frame_ready("optionsPanel"), shell=true},
@@ -6556,6 +6662,11 @@ do
       if not record then return false, "unknown panel: " .. tostring(key) end
       record.buildRequests = record.buildRequests + 1
       p7_note("panelBuildRequests", 1)
+      if key == "publicGroups" then
+        p7_reconcile_public_groups(B)
+        local lifecycle = _G.SignalFireUILifecycle151
+        if lifecycle and lifecycle.RegisterKnownDropdowns then lifecycle:RegisterKnownDropdowns(B) end
+      end
       if record.ready(B) and not record.failed then
         record.built = true
         record.failed = false
@@ -6604,6 +6715,7 @@ do
       self.activeBuilder = nil
       record.building = false
       local elapsed = math.max(0, p7_now_ms() - started)
+      if key == "publicGroups" then p7_reconcile_public_groups(B) end
       if results[1] and record.ready(B) then
         record.built = true
         record.failed = false

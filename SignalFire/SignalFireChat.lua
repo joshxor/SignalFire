@@ -155,6 +155,76 @@ do
   until true
 end
 
+-- Activity Discovery Pass A setup. Installation waits until the production
+-- TestParse owner below has loaded.
+local function SFActivityDiscoveryPassAInstall()
+  local B = _G.BronzeLFG
+  if B and SignalFireFastChatLinks and SignalFireFastChatLinks.TestParse and not SignalFireFastChatLinks._activityDiscoveryPassA then
+    SignalFireFastChatLinks._activityDiscoveryPassA = true
+    local oldTestParse = SignalFireFastChatLinks.TestParse
+    local function words(value)
+      return " " .. string.lower(tostring(value or "")):gsub("[^%w%+]", " "):gsub("%s+", " ") .. " "
+    end
+    local function contains(value, token) return string.find(value, token, 1, true) ~= nil end
+    local function profile()
+      return SignalFireProfiles and SignalFireProfiles.GetActiveProfile and SignalFireProfiles.GetActiveProfile() or nil
+    end
+    local function canonicalActivity(text, active)
+      local input, candidates = words(text), {}
+      for _, name in ipairs((active and active.dungeons) or {}) do table.insert(candidates, {name=name, alias=name}) end
+      for _, list in pairs((active and active.dungeonModeLists) or {}) do
+        for _, name in ipairs(list or {}) do table.insert(candidates, {name=name, alias=name}) end
+      end
+      for _, pair in ipairs((active and active.activityAliases) or {}) do
+        if active and active.dungeonActivities and active.dungeonActivities[pair[1]] then
+          for _, alias in ipairs(pair[2] or {}) do table.insert(candidates, {name=pair[1], alias=alias}) end
+        end
+      end
+      local best, length = nil, 0
+      for _, candidate in ipairs(candidates) do
+        local alias = words(candidate.alias):gsub("^%s+", ""):gsub("%s+$", "")
+        if alias ~= "" and contains(input, " " .. alias .. " ") and #alias > length then best, length = candidate.name, #alias end
+      end
+      return best
+    end
+    function B:SFDiscoverActivityPassA(text)
+      local raw, input = tostring(text or ""), words(text)
+      local key = contains(input, " mythic+ ") or contains(input, " mythic plus ") or contains(input, " m+ ")
+        or string.find(string.lower(raw), "m%+%d") ~= nil or string.find(string.lower(raw), "%+%d+") ~= nil
+        or contains(input, " keystone ")
+      local difficulty = key and "Mythic+" or (contains(input, " mythic ") and "Mythic" or nil)
+      local level = key and (string.match(string.lower(raw), "m%+%s*(%d+)")
+        or string.match(string.lower(raw), "mythic%s*%+%s*(%d+)") or string.match(string.lower(raw), "keystone[^%d]*(%d+)")
+        or string.match(string.lower(raw), "%+(%d+)")) or nil
+      return {activity=canonicalActivity(raw, profile()), difficulty=difficulty, keyLevel=level, key=level,
+        classification=key and "Key" or (difficulty and "Dungeon" or nil)}
+    end
+    function SignalFireFastChatLinks.TestParse(text)
+      local parsed = oldTestParse(text)
+      local discovery = B:SFDiscoverActivityPassA(text)
+      if parsed and parsed.kind == "guild" then return parsed end
+      if not discovery.difficulty then return parsed end
+      local input = words(text)
+      if contains(input, " guild ") and (contains(input, " recruit ") or contains(input, " recruiting ") or contains(input, " members ")) then return parsed end
+      if contains(input, " raid ") or contains(input, " raiding ") then return parsed end
+      local intent = contains(input, " lfm ") or contains(input, " lfg ") or contains(input, " need ")
+        or contains(input, " group ") or contains(input, " run ") or contains(input, " dungeon ")
+        or tostring(parsed and parsed.intent or "") == "Recruiter"
+      if discovery.difficulty == "Mythic" and not discovery.activity and not intent then return parsed end
+      if not parsed or parsed.kind ~= "group" then
+        if not discovery.activity then return parsed end
+        parsed = {input=tostring(text or ""), eligible=true, kind="group", intent="Recruiter", roles="", reason=nil}
+      end
+      if parsed.type == "Raid" then return parsed end
+      if discovery.activity then parsed.activity = discovery.activity end
+      parsed.difficulty, parsed.keyLevel = discovery.difficulty, discovery.keyLevel
+      if discovery.difficulty == "Mythic+" then parsed.type = "Key"
+      elseif discovery.activity or intent then parsed.type = "Dungeon" end
+      return parsed
+    end
+  end
+end
+
 -- Command input guard
 do
   repeat
@@ -3050,7 +3120,7 @@ do
 
     local function sf151_merge_row(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
       for _, field in ipairs(fields) do
         if (dst[field] == nil or dst[field] == "") and src[field] ~= nil and src[field] ~= "" then dst[field] = src[field] end
       end
@@ -3196,6 +3266,9 @@ do
         result.kind = fast.kind
         result.type = fast.type
         result.activity = fast.activity
+        result.difficulty = fast.difficulty
+        result.keyLevel = fast.keyLevel
+        result.key = fast.key
         result.roles = fast.roles
         result.intent = fast.intent or result.intent
         result.activities = fast.activities or result.activities
@@ -3206,3 +3279,5 @@ do
     end
   end
 end
+
+SFActivityDiscoveryPassAInstall()

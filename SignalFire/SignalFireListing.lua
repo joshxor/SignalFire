@@ -244,7 +244,7 @@ do
           if sfalp_is_rdf_activity(state.activity) then
             state.difficulty = sfalp_rdf_difficulty(state.activity)
             state.specificDungeon = ""
-          elseif state.difficulty ~= "Heroic" then
+          elseif state.difficulty ~= "Heroic" and state.difficulty ~= "Mythic" then
             state.difficulty = "Normal"
           end
         end
@@ -290,7 +290,7 @@ do
           elseif not sfalp_ascension_list_for_mode(state.activity) then
             state.activity = sfalp_category_for_dungeon(state.specificDungeon)
           end
-          if not sfalp_is_rdf_activity(state.activity) and state.difficulty ~= "Heroic" then state.difficulty = "Normal" end
+          if not sfalp_is_rdf_activity(state.activity) and state.difficulty ~= "Heroic" and state.difficulty ~= "Mythic" then state.difficulty = "Normal" end
           state.key = ""
         end
       end
@@ -331,7 +331,7 @@ do
         local level = key ~= "" and key or "?"
         text = "LFM Mythic+ " .. level .. " " .. tostring(activity ~= "" and activity or "Dungeon")
       elseif typeName == "Dungeon" then
-        local prefix = difficulty == "Heroic" and not sfalp_is_rdf_activity(activity) and "Heroic " or ""
+        local prefix = (difficulty == "Heroic" or difficulty == "Mythic") and not sfalp_is_rdf_activity(activity) and (difficulty .. " ") or ""
         text = "LFM " .. prefix .. tostring(activity ~= "" and activity or "Dungeon")
       elseif typeName == "Raid" then
         local prefix = (difficulty ~= "" and difficulty ~= "Normal") and (difficulty .. " ") or ""
@@ -579,7 +579,7 @@ do
     function BLFG_DifficultyListForType(typeName)
       if sfalp_is_ascension() then
         if typeName == "Mythic+" then return {"Mythic+"} end
-        if typeName == "Dungeon" then return {"Normal", "Heroic"} end
+        if typeName == "Dungeon" then return {"Normal", "Heroic", "Mythic"} end
         if typeName == "Raid" then return {"Normal", "Heroic", "Ascended"} end
         if typeName == "World Boss" then return {"Normal", "Custom"} end
         if typeName == "Custom Event" then return {"Custom"} end
@@ -594,7 +594,7 @@ do
         if typeName == "Dungeon" and activity == SFALP.RDF then return {"Normal"} end
         if typeName == "Dungeon" and activity == SFALP.RDF_HEROIC then return {"Heroic"} end
         if typeName == "Dungeon" and activity == SFALP.RDF_MYTHIC then return {"Mythic+"} end
-        if typeName == "Dungeon" then return {"Normal", "Heroic"} end
+        if typeName == "Dungeon" then return {"Normal", "Heroic", "Mythic"} end
         if typeName == "Raid" then return {"Normal", "Heroic", "Ascended"} end
         if typeName == "World Boss" then return {"Normal", "Custom"} end
         if typeName == "Custom Event" then return {"Custom"} end
@@ -1346,7 +1346,13 @@ do
     end
     function B:ListingRecruitmentText(listing)
       listing = self:SFNormalizeListingRoles(listing or self.myListing or {})
-      local bits = {"LFM " .. tostring(listing.activity or "Group"), self:SFRolePhrase(listing)}; local range = self:SFLevelRange(listing)
+      local title = "LFM " .. tostring(listing.activity or "Group")
+      if listing.type == "Dungeon" and (listing.difficulty == "Heroic" or listing.difficulty == "Mythic") then
+        title = "LFM " .. listing.difficulty .. " " .. tostring(listing.activity or "Group")
+      elseif listing.type == "Mythic+" or listing.difficulty == "Mythic+" then
+        title = "LFM Mythic+" .. (tostring(listing.key or "") ~= "" and (" " .. tostring(listing.key)) or "") .. " " .. tostring(listing.activity or "Group")
+      end
+      local bits = {title, self:SFRolePhrase(listing)}; local range = self:SFLevelRange(listing)
       if range ~= "" then table.insert(bits, range) end; return table.concat(bits, " - ")
     end
     function B:PostMyListingToChat()
@@ -1562,6 +1568,7 @@ do
       end
       return self:SFNormalizeListingRoles({
         activity=activity ~= "" and activity or "Group",
+        type=dropdownText(self.typeDrop), difficulty=dropdownText(self.diffDrop), key=boxText(self.keyBox),
         tankCount=count(boxText(self.tankCountBox)), healerCount=count(boxText(self.healerCountBox)),
         supportCount=count(boxText(self.supportCountBox)), dpsCount=count(boxText(self.dpsCountBox)),
         minLevel=level(boxText(self.minLevelBox)), maxLevel=level(boxText(self.maxLevelBox)),

@@ -4,6 +4,12 @@ unpack = unpack or table.unpack
 loadstring = loadstring or load
 
 local nowValue = 100000
+function SignalFireHarnessAdvanceTime(seconds)
+  local amount = tonumber(seconds) or 1
+  if amount <= 0 then amount = 1 end
+  nowValue = nowValue + amount
+  return nowValue
+end
 function GetTime() return nowValue end
 function time() return math.floor(nowValue) end
 function now() return nowValue end
@@ -64,7 +70,14 @@ function objectMethods:GetChecked() return self.checked end
 function objectMethods:SetValue(value) self.value = value end
 function objectMethods:GetValue() return self.value or 0 end
 function objectMethods:GetFont() return "Fonts\\FRIZQT__.TTF", 12, "" end
-function objectMethods:GetPoint() return "CENTER", UIParent, "CENTER", 0, 0 end
+function objectMethods:SetPoint(point, relativeTo, relativePoint, x, y)
+  self.point = {point, relativeTo, relativePoint, x or 0, y or 0}
+end
+function objectMethods:ClearAllPoints() self.point = nil end
+function objectMethods:GetPoint()
+  if self.point then return unpack(self.point) end
+  return "CENTER", UIParent, "CENTER", 0, 0
+end
 function objectMethods:AddMessage(text) self.lastMessage = text end
 
 UIParent = newObject("UIParent")
@@ -115,16 +128,34 @@ local noops = {
   "ChatFrame_AddMessageEventFilter", "ChatFrame_RemoveMessageEventFilter", "SendChatMessage",
   "SendAddonMessage", "RegisterAddonMessagePrefix", "SetCVar", "PlaySound", "PlaySoundFile",
   "ToggleDropDownMenu", "CloseDropDownMenus", "UIDropDownMenu_Initialize",
-  "UIDropDownMenu_SetWidth", "UIDropDownMenu_SetText", "UIDropDownMenu_SetSelectedValue",
+  "UIDropDownMenu_SetText", "UIDropDownMenu_SetSelectedValue",
   "UIDropDownMenu_SetSelectedID", "UIDropDownMenu_SetButtonWidth", "UIDropDownMenu_JustifyText",
   "UIDropDownMenu_AddButton", "UIDropDownMenu_CreateInfo", "PanelTemplates_SetNumTabs",
   "PanelTemplates_SetTab", "FauxScrollFrame_Update", "FauxScrollFrame_GetOffset",
   "StaticPopup_Show", "ReloadUI", "SetWhoToUI", "FriendsFrame_SendWho", "SendWho",
 }
 for _, name in ipairs(noops) do _G[name] = noop end
+function UIDropDownMenu_SetWidth(frame, width)
+  if frame and frame.SetWidth then frame:SetWidth(width) end
+end
 function UIDropDownMenu_SetText(frame, text) if frame then frame.text = tostring(text or "") end end
 function UIDropDownMenu_GetText(frame) return frame and rawget(frame, "text") or "" end
 function UIDropDownMenu_CreateInfo() return {} end
+function UIDropDownMenu_Initialize(frame, initializer)
+  if not frame then return end
+  frame.dropdownInitializer = initializer
+  frame.RunDropdownInitializer = function(self)
+    self.dropdownOptions = {}
+    _G.SignalFireHarnessActiveDropdown = self
+    initializer()
+    _G.SignalFireHarnessActiveDropdown = nil
+    return self.dropdownOptions
+  end
+end
+function UIDropDownMenu_AddButton(info)
+  local frame = _G.SignalFireHarnessActiveDropdown
+  if frame then table.insert(frame.dropdownOptions, info) end
+end
 function FauxScrollFrame_GetOffset() return 0 end
 
 RAID_CLASS_COLORS = {}
