@@ -103,6 +103,7 @@ assert(auraRow.type == "Key" and auraRow.activity == "Blackfathom Deeps" and aur
 assert(tostring(auraRow.keyLevel) == "5" and tostring(auraRow.key) == tostring(auraRow.id) and tostring(auraRow.key) ~= "5",
   "Mythic+ row identity was overloaded with keystone metadata")
 assert(deadminesRow.type == "Key" and deadminesRow.activity == "Deadmines"
+  and deadminesRow.difficulty == "Mythic+"
   and tostring(deadminesRow.keyLevel) == "7" and tostring(deadminesRow.key) ~= "7",
   "Deadmines keystone metadata changed")
 assert(cathRow.activity == "Scarlet Monastery - Cathedral" and prisonRow.activity == "Blackrock Depths - Prison"
@@ -129,7 +130,12 @@ assert(#setView("Dungeon", "H", "Mythic", "bfd mythic healer", "All XP Aura") ==
 
 assert(#setView("All", "All", "All Difficulties", "blackfathom", "All XP Aura") == 2,
   "canonical activity search failed")
-assert(#setView("All", "All", "All Difficulties", "MYTHIC+", "All XP Aura") == 1,
+local mythicPlusSearch = setView("All", "All", "All Difficulties", "MYTHIC+", "All XP Aura")
+local mythicPlusIds = {}
+for _, row in ipairs(mythicPlusSearch) do
+  mythicPlusIds[row.id] = true
+end
+assert(#mythicPlusSearch == 2 and mythicPlusIds[auraRow.id] and mythicPlusIds[deadminesRow.id],
   "case-insensitive Mythic+ search failed")
 assert(#setView("All", "All", "All Difficulties", "+5", "All XP Aura") == 1,
   "numeric key search failed")
