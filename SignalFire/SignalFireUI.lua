@@ -4868,7 +4868,7 @@ do
       "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
       "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
       "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
-      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "focusDropdown",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "focusDropdown",
       "keystoneAlertDropdown",
     }
 
@@ -6394,6 +6394,19 @@ do
       end
     end
 
+    local function p7_public_groups_ready(owner)
+      return owner and owner.publicPanel and owner.publicRows
+        and owner.publicDifficultyDrop and owner.publicDifficultyLabel and true or false
+    end
+
+    local function p7_reconcile_public_groups(owner)
+      if not owner or not owner.publicPanel then return end
+      local view = _G.SignalFirePublicGroupsView151
+      if view and type(view.AttachPanel) == "function" then
+        view.AttachPanel(owner.publicPanel)
+      end
+    end
+
     local function p7_frame_visible(field)
       return function(owner)
         local frame = owner and owner[field]
@@ -6417,7 +6430,7 @@ do
       create={builder="BuildCreate", show="ShowCreate", refresh="UpdateCreateControls", ready=p7_frame_ready("create", "typeDrop"), visible=p7_frame_visible("create"), shell=true},
       profile={builder="BuildProfile", show="ShowProfile", refresh="UpdateWhisperPreview569", ready=p7_frame_ready("profile", "profileRole"), visible=p7_frame_visible("profile"), shell=true},
       applicants={builder="BuildApplicants", show="ShowApplicants", refresh="RefreshApplicants", ready=p7_frame_ready("apps", "appRows"), visible=p7_frame_visible("apps"), shell=true},
-      publicGroups={builder="BuildPublicGroups", show="ShowPublicGroups", refresh="RefreshPublicGroups", ready=p7_frame_ready("publicPanel", "publicRows"), visible=p7_frame_visible("publicPanel"), shell=true},
+      publicGroups={builder="BuildPublicGroups", show="ShowPublicGroups", refresh="RefreshPublicGroups", ready=p7_public_groups_ready, visible=p7_frame_visible("publicPanel"), shell=true},
       guildBrowser={builder="BuildGuildBrowser", show="ShowGuildBrowser", refresh="RefreshGuildBrowser", ready=p7_frame_ready("guildPanel"), visible=p7_frame_visible("guildPanel"), shell=true},
       myListing={builder="BuildMyListing", show="ShowMyListing", refresh="RefreshMyListing", ready=p7_frame_ready("myPanel"), visible=p7_frame_visible("myPanel"), shell=true},
       options={builder="BuildOptions", show="ShowOptions", ready=p7_frame_ready("optionsPanel"), shell=true},
@@ -6596,6 +6609,7 @@ do
       if not record then return false, "unknown panel: " .. tostring(key) end
       record.buildRequests = record.buildRequests + 1
       p7_note("panelBuildRequests", 1)
+      if key == "publicGroups" then p7_reconcile_public_groups(B) end
       if record.ready(B) and not record.failed then
         record.built = true
         record.failed = false
@@ -6644,6 +6658,7 @@ do
       self.activeBuilder = nil
       record.building = false
       local elapsed = math.max(0, p7_now_ms() - started)
+      if key == "publicGroups" then p7_reconcile_public_groups(B) end
       if results[1] and record.ready(B) then
         record.built = true
         record.failed = false

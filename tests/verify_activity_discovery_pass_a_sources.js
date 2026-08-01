@@ -25,6 +25,22 @@ need(ui, "record.difficulty", "difficulty search metadata");
 if (ui.includes('record.difficulty == "Mythic+" and record.kind == "Key"')) throw new Error("activity discovery source verification failed: Mythic+ is incorrectly gated by type");
 need(ui, 'panel, "TOPLEFT", 260, -92', "non-overlapping difficulty label placement");
 need(ui, 'panel, "TOPLEFT", 318, -86', "non-overlapping difficulty dropdown placement");
+need(ui, "PG.AttachPanel = p6_attach_panel", "Phase 6 Public Groups attachment owner");
+need(ui, '"publicDifficultyDrop"', "known Public Groups difficulty dropdown registration");
+const phase7Start = ui.indexOf("-- SIGNALFIRE_PHASE7_LAZY_PANELS_BEGIN");
+const phase7End = ui.indexOf("-- SIGNALFIRE_PHASE7_LAZY_PANELS_END", phase7Start);
+if (phase7Start < 0 || phase7End < 0) throw new Error("activity discovery source verification failed: Phase 7 lifecycle boundary");
+const phase7 = ui.slice(phase7Start, phase7End);
+need(phase7, "p7_reconcile_public_groups", "Phase 7 Public Groups attachment reconciliation");
+need(phase7, "SignalFirePublicGroupsView151", "Phase 7 authoritative Public Groups attachment owner");
+need(phase7, "publicDifficultyDrop", "Phase 7 Public Groups difficulty readiness");
+const ensurePanelStart = phase7.indexOf("function LP:EnsurePanel");
+const ensurePanelEnd = phase7.indexOf("function LP:HideBuiltPanels", ensurePanelStart);
+if (ensurePanelStart < 0 || ensurePanelEnd < 0) throw new Error("activity discovery source verification failed: Phase 7 EnsurePanel boundary");
+const ensurePanel = phase7.slice(ensurePanelStart, ensurePanelEnd);
+if ((ensurePanel.match(/p7_reconcile_public_groups\(B\)/g) || []).length < 2) {
+  throw new Error("activity discovery source verification failed: Public Groups attachment was not reconciled on reuse and build paths");
+}
 need(ui, "row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel", "Public Groups keystone metadata ownership");
 need(ui, 'keyLevel=tostring(row.keyLevel or "")', "Public Groups snapshot keyLevel ownership");
 if (/row\.key\s*=\s*parsed\.key(?:Level|level)?\b/.test(ui)) {
