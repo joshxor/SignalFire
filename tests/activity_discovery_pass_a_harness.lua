@@ -261,7 +261,10 @@ rows = B:GetSortedPublicGroups()
 assert(#rows == 1 and rows[1].id == key.id, "combined Mythic+ filters failed")
 B.publicDifficultyFilter, B.publicPage = "All Difficulties", 2
 rows = B:GetSortedPublicGroups()
-assert(#rows == 6, "All Difficulties did not include both normalized difficulties")
+assert(#rows == 1 and rows[1].id == key.id, "All Difficulties changed more than the difficulty filter")
+B.publicFilter, B.publicRoleFilter, B.publicSearchText = "All", "All", ""
+rows = B:GetSortedPublicGroups()
+assert(#rows == 6, "All Difficulties did not include both normalized difficulties after clearing other filters")
 
 -- Exercise the real production dropdown callbacks and the production-created
 -- controls, including their final Phase 6 selection behavior.
