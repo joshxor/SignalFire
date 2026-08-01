@@ -200,6 +200,21 @@ local function drainPublicQueue()
   assert(finalState.queueDepth == 0, "chat queue remained populated after drain: " .. chatRuntimeDiagnostic(finalState))
 end
 
+local function drainPublicRefresh()
+  local refresh = assert(SignalFireRefresh151, "Public Groups refresh owner missing")
+  local frame = assert(refresh.frame, "Public Groups refresh frame missing")
+  local guard = 0
+  while refresh.pending == true or (refresh.dirty and refresh.dirty.publicGroups == true) do
+    local debounce = tonumber(refresh.debounceSeconds or .15) or .15
+    SignalFireHarnessAdvanceTime(debounce + .05)
+    local update = (frame.GetScript and frame:GetScript("OnUpdate")) or (frame.scripts and frame.scripts.OnUpdate)
+    assert(type(update) == "function", "Public Groups refresh OnUpdate missing while refresh was pending")
+    update(frame, .03)
+    guard = guard + 1
+    assert(guard < 20, "Public Groups refresh scheduler did not drain")
+  end
+end
+
 local function normalizedPlayer(value)
   return string.lower(tostring(value or "")):gsub("%-.*", "")
 end
@@ -268,6 +283,7 @@ assert(#rows == 6, "All Difficulties did not include both normalized difficultie
 
 -- Exercise the real production dropdown callbacks and the production-created
 -- controls, including their final Phase 6 selection behavior.
+B.publicDifficultyFilter, B.publicFilter, B.publicRoleFilter, B.publicSearchText = "All Difficulties", "All", "All", ""
 local showPublicGroupsResult = B:ShowPublicGroups()
 if showPublicGroupsResult == false then
   local lazy = B.SF151_GetLazyPanelDiagnostics and B:SF151_GetLazyPanelDiagnostics() or nil
@@ -303,14 +319,30 @@ B.RefreshPublicGroups = function(self, ...)
   refreshes = refreshes + 1
   return originalRefresh and originalRefresh(self, ...)
 end
+drainPublicRefresh()
+B.selectedPublic = key.id
 B.publicPage = 3
 byText["Mythic"].func()
 assert(B.publicDifficultyFilter == "Mythic" and B.publicPage == 1 and BLFG_DropdownText(difficultyDrop) == "Mythic" and refreshes > 0, "Mythic dropdown callback")
-B.selectedPublic = key.id
-byText["Mythic"].func()
-assert(B.selectedPublic == nil, "filtered-out selected Public Group was retained")
+drainPublicRefresh()
+local function publicRefreshDiagnostic()
+  local refresh = SignalFireRefresh151
+  local refreshStats = B.SF151_GetRefreshStats and B:SF151_GetRefreshStats() or {}
+  local viewStats = B.SF151_GetPublicGroupsViewDiagnostics and B:SF151_GetPublicGroupsViewDiagnostics() or {}
+  local ids = {}
+  for _, row in ipairs(B:GetSortedPublicGroups() or {}) do table.insert(ids, tostring(row.id)) end
+  return "selected=" .. tostring(B.selectedPublic)
+    .. " difficulty=" .. tostring(B.publicDifficultyFilter)
+    .. " pending=" .. tostring(refresh and refresh.pending)
+    .. " dirty=" .. tostring(refresh and refresh.dirty and refresh.dirty.publicGroups)
+    .. " executed=" .. tostring(refreshStats.executedByPanel and refreshStats.executedByPanel.publicGroups)
+    .. " renders=" .. tostring(viewStats.visibleRendersExecuted)
+    .. " rows=" .. table.concat(ids, ",")
+end
+assert(B.selectedPublic == nil, "filtered-out selected Public Group was retained: " .. publicRefreshDiagnostic())
 byText["All Difficulties"].func()
 assert(B.publicDifficultyFilter == "All Difficulties", "All Difficulties dropdown reset")
+drainPublicRefresh()
 B.RefreshPublicGroups = originalRefresh
 assert(#sentChat == sentBeforeFilters, "Public Groups filtering sent chat")
 
