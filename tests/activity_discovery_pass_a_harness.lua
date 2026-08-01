@@ -80,12 +80,28 @@ local plainPacket = onlyListPacket("plain Mythic")
 assert(#plainPacket == 26 and plainPacket[7] == "Dungeon" and plainPacket[8] == "Blackfathom Deeps" and plainPacket[9] == "Mythic" and plainPacket[10] == "", "plain Mythic LIST positions")
 assert(plainPacket[21] ~= nil and plainPacket[22] ~= nil and plainPacket[23] ~= nil and plainPacket[24] ~= nil and plainPacket[25] ~= nil and plainPacket[26] ~= nil and plainPacket[27] == nil, "LIST packet expanded past p[26]")
 local plainListingId = assert(B.myListing and B.myListing.id, "plain Mythic listing id missing")
-assert(SignalFireHarnessAdvanceTime, "mock clock helper missing")
-SignalFireHarnessAdvanceTime(1)
-B:ShowCreate()
 
 sentChat = {}
 joinedChannels = {}
+B:CancelMyListing("harness")
+assert(B.myListing == nil, "plain Mythic listing remained active after cancellation")
+assert(B.selectedListing == nil, "selected listing remained after cancellation")
+assert(#joinedChannels == 0, "CancelMyListing used JoinChannelByName")
+assert(#sentChat == 1, "CancelMyListing did not produce exactly one internal REMOVE packet")
+local removePacket = sentChat[1]
+assert(removePacket.chatType == "CHANNEL" and removePacket.destination == 9, "CancelMyListing did not use joined BLFG channel")
+assert(string.sub(removePacket.payload, 1, 15) == "BLFG312~REMOVE~", "cancellation was not a REMOVE packet")
+local removeParts = split(removePacket.payload)
+assert(removeParts[3] == tostring(plainListingId), "REMOVE packet referenced the wrong listing: " .. tostring(removeParts[3]))
+
+sentChat = {}
+joinedChannels = {}
+assert(SignalFireHarnessAdvanceTime, "mock clock helper missing")
+local beforeTime = time()
+SignalFireHarnessAdvanceTime(1)
+assert(time() > beforeTime, "mock clock did not advance")
+B:ShowCreate()
+
 BronzeLFG_DB.createByProfile.Ascension = {
   type="Mythic+", activity=polish.ASC_MYTHIC, specificDungeon="Blackfathom Deeps", difficulty="Mythic+", key="",
   minItemLevel="", maxMembers="5", voice="None", loot="Group Loot", note="", needTank=true, needHealer=true, needDPS=true,
@@ -95,6 +111,8 @@ assert(B.keyLabel:IsShown() and B.keyBox:IsShown() and B.useKeystoneButton:IsSho
 assert(B:ValidateCreateListing() == false, "Mythic+ accepted a missing key level")
 B.keyBox:SetText("5")
 polish.SaveCurrent(B, "Ascension")
+local validKey = B:ValidateCreateListing()
+assert(validKey == true, "Mythic+ with valid key failed production validation: type=" .. tostring(BLFG_DropdownText(B.typeDrop)) .. ", activity=" .. tostring(BLFG_DropdownText(B.activityDrop)) .. ", specific=" .. tostring(BLFG_DropdownText(B.specificDungeonDrop)) .. ", difficulty=" .. tostring(BLFG_DropdownText(B.diffDrop)) .. ", key=" .. tostring(B.keyBox:GetText()) .. ", active=" .. tostring(B.myListing and B.myListing.id))
 B:CreateListing()
 assert(B.myListing, "Mythic+ creation did not produce listing")
 assert(B.myListing.id ~= plainListingId, "Mythic+ reused plain listing id: " .. tostring(B.myListing.id))
