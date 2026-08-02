@@ -346,16 +346,48 @@ drainPublicRefresh()
 B.RefreshPublicGroups = originalRefresh
 assert(#sentChat == sentBeforeFilters, "Public Groups filtering sent chat")
 
-local function leftAndWidth(widget)
-  local _, _, _, x = widget:GetPoint()
-  return tonumber(x or 0) or 0, tonumber(widget:GetWidth() or 0) or 0
+local topLeftXY, anchorXY
+anchorXY = function(widget, anchor, seen)
+  local left, top = topLeftXY(widget, seen)
+  local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
+  if anchor == "TOPLEFT" then return left, top end
+  if anchor == "TOPRIGHT" then return left + width, top end
+  if anchor == "BOTTOMLEFT" then return left, top - height end
+  if anchor == "BOTTOMRIGHT" then return left + width, top - height end
+  return left + width / 2, top - height / 2
 end
+
+topLeftXY = function(widget, seen)
+  if widget == B.publicPanel then return 0, 0 end
+  seen = seen or {}
+  if seen[widget] then return 0, 0 end
+  seen[widget] = true
+  local point, relative, relativePoint, x, y = widget:GetPoint()
+  if not relative or relative == widget then return 0, 0 end
+  local baseX, baseY = anchorXY(relative, relativePoint or "TOPLEFT", seen)
+  local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
+  local left, top = baseX + (tonumber(x or 0) or 0), baseY + (tonumber(y or 0) or 0)
+  if point == "TOPRIGHT" then left = left - width end
+  if point == "BOTTOMLEFT" then top = top + height end
+  if point == "BOTTOMRIGHT" then left = left - width; top = top + height end
+  if point == "CENTER" then left = left - width / 2; top = top + height / 2 end
+  return left, top
+end
+
+local function rect(widget, visualHeight)
+  local left, top = topLeftXY(widget)
+  local width = tonumber(widget:GetWidth() or 0) or 0
+  local height = tonumber(visualHeight or widget:GetHeight() or 0) or 0
+  return {left=left, right=left + width, top=top, bottom=top - height}
+end
+
 local dps = assert(B.publicRoleFilterButtons and B.publicRoleFilterButtons.D, "DPS role control missing")
-local roleX, roleWidth = leftAndWidth(dps)
-local labelX = select(4, difficultyLabel:GetPoint())
-local dropX, dropWidth = leftAndWidth(difficultyDrop)
-assert(labelX > roleX + roleWidth, "difficulty label overlaps role controls")
-assert(dropX + dropWidth <= B.publicPanel:GetWidth(), "difficulty dropdown escaped Public Groups panel")
+local roleRect = rect(dps, 22)
+local difficultyLabelRect = rect(difficultyLabel, 14)
+local difficultyRect = rect(difficultyDrop, 32)
+assert(difficultyLabelRect.left >= roleRect.right + 12, "difficulty label overlaps role controls")
+assert(difficultyRect.left >= 8 and difficultyRect.right <= B.publicPanel:GetWidth(),
+  "difficulty dropdown escaped Public Groups panel")
 for _ = 1, 20 do
   B:ShowPublicGroups()
   local cycleOptions = difficultyDrop:RunDropdownInitializer()

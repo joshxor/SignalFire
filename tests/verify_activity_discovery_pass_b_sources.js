@@ -28,6 +28,9 @@ if (auraStart < 0 || auraEnd < 0 || /return\s+true\b/.test(chat.slice(auraStart,
 
 need(ui, "row.xpAura = parsed.xpAura == true", "canonical row XP Aura ownership");
 need(ui, "xpAura=row.xpAura == true", "snapshot XP Aura normalization");
+need(ui, "local xpAura = SignalFireFastChatLinks and SignalFireFastChatLinks.DetectXPAura", "final candidate gate XP Aura detector reuse");
+need(ui, "local xpAuraContext = role or activity", "bounded XP Aura candidate context");
+need(ui, "or (xpAura and xpAuraContext)", "XP Aura candidate gate admission");
 need(ui, "local function p3_generic_activity", "generic activity title guard");
 need(ui, 'local title = xpAuraTitle and "XP Aura"', "generic XP Aura link title");
 need(ui, 'local xpAura = tostring(B.publicXPAuraFilter or "All Listings")', "XP Aura filter state");
@@ -89,6 +92,7 @@ need(harness, "All Listings", "unrestricted XP Aura harness state");
 need(harness, "All XP Aura", "legacy XP Aura harness migration");
 need(harness, "|Hbronzelfgpub:", "generic XP Aura hyperlink protocol");
 need(harness, "[XP Aura]", "generic XP Aura hyperlink title");
+need(harness, "runtime.Candidate(auraLinkText)", "final candidate gate regression");
 need(harness, "inlineChatLinks = false", "chat links disabled regression");
 need(workflow, "verify_activity_discovery_pass_b_sources.js", "workflow Pass B source verifier");
 need(workflow, "activity_discovery_pass_b_harness.lua", "workflow Pass B harness");

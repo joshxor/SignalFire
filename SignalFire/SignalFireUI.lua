@@ -1402,6 +1402,13 @@ do
         or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
         or string.find(words, " lf3m ", 1, true) or string.find(words, " lf4m ", 1, true)
         or string.find(words, " lf%d+m ")
+      local xpAura = SignalFireFastChatLinks and SignalFireFastChatLinks.DetectXPAura
+        and SignalFireFastChatLinks.DetectXPAura(raw) or false
+      local xpAuraContext = role or activity
+        or string.find(words, " group ", 1, true) or string.find(words, " grp ", 1, true)
+        or string.find(words, " run ", 1, true) or string.find(words, " spam ", 1, true)
+        or string.find(words, " lf ", 1, true) or direct
+        or string.find(raw, "looking for", 1, true)
       local recruiting = string.find(words, " recruiting ", 1, true)
         or string.find(words, " recruitment ", 1, true)
         or string.find(raw, "looking for members", 1, true)
@@ -1450,6 +1457,7 @@ do
           or string.find(words, " farm ", 1, true) or string.find(words, " farming ", 1, true)
           or string.find(words, " grp ", 1, true) or string.find(words, " group ", 1, true)
           or string.find(words, " aura ", 1, true)))
+        or (xpAura and xpAuraContext)
       if anchored then
         p3_note("candidateGateAccepted")
         p3_note("groupCandidates")

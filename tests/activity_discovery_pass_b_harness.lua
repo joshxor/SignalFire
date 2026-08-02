@@ -157,6 +157,7 @@ assert(#setView("All", "All", "All Difficulties", "", "All Listings") == count(B
 -- The authoritative runtime filter owns inline links when the user enables
 -- them.  Generic affirmative XP Aura rows receive the useful [XP Aura] title.
 local auraLinkText = "LF2 DPS aura of experience prestige run"
+assert(runtime.Candidate(auraLinkText) == true, "generic XP Aura candidate was rejected by final gate")
 local _, linkedDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", auraLinkText, "AuraLinker")
 assert(type(linkedDisplay) == "string" and linkedDisplay:find("|Hbronzelfgpub:", 1, true)
   and linkedDisplay:find("[XP Aura]", 1, true), "generic XP Aura link was not rendered")
