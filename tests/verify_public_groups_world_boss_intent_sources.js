@@ -54,8 +54,8 @@ need(ui, 'and owner.publicIntentDrop', "lazy Public Groups readiness includes In
 need(ui, '"publicIntentDrop"', "standard Intent dropdown lifecycle registration");
 need(ui, 'self.publicIntentFilter = "All Intents"', "Clear resets Intent");
 need(bronze, '"World Boss"', "base Public Groups World Boss control/count");
-need(bronze, "local function publicMatchesIntentFilter", "legacy intent filter compatibility owner");
-need(bronze, 'publicMatchesIntentFilter(g, self.publicIntentFilter)', "base intent filter intersection");
+need(bronze, "function BLFG:PublicMatchesIntentFilter", "legacy intent filter compatibility owner");
+need(bronze, 'self:PublicMatchesIntentFilter(g, self.publicIntentFilter)', "base intent filter intersection");
 
 for (const phrase of [
   "LFM for Worldboss Tour Instance Loot FFA w/ me ilvl+spec start: Kazzak",

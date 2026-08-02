@@ -2815,7 +2815,7 @@ local function publicMatchesFilter(g, filter)
   return g.type == filter
 end
 
-local function publicMatchesIntentFilter(g, filter)
+function BLFG:PublicMatchesIntentFilter(g, filter)
   filter = tostring(filter or "All Intents")
   if filter == "All Intents" or filter == "" then return true end
   if filter == "Recruiting" then return tostring(g and g.intent or "") == "Recruiter" end
@@ -2928,7 +2928,7 @@ function BLFG:GetSortedPublicGroups()
     BLFG_EnrichPublicGroup(self, g)
     if g.message and BronzeLFG_IsAddonSpam(g.message) then
       self.publicGroups[id] = nil
-    elseif publicMatchesFilter(g, filter) and publicMatchesIntentFilter(g, self.publicIntentFilter)
+    elseif publicMatchesFilter(g, filter) and self:PublicMatchesIntentFilter(g, self.publicIntentFilter)
       and publicMatchesSearch(g, query) and publicMatchesRoleFilter(g, self.publicRoleFilter) then
       table.insert(rows, g)
     end
