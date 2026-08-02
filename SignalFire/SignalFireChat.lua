@@ -1369,6 +1369,7 @@ do
       row.intent = typ == "LFG" and "Applicant" or "Recruiter"
       row.roles = sffcl_roles(raw)
       row.tags = typ
+      row.xpAura = sffcl_xp_aura_signal(raw) and true or false
       row.score = 80
       row.created = row.created or stamp
       row.firstSeen = row.firstSeen or row.created

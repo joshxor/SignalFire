@@ -114,41 +114,76 @@ local function setView(filter, role, difficulty, search, aura)
   B.publicRoleFilter = role or "All"
   B.publicDifficultyFilter = difficulty or "All Difficulties"
   B.publicSearchText = search or ""
-  B.publicXPAuraFilter = aura or "All XP Aura"
+  B.publicXPAuraFilter = aura or "All Listings"
   return B:GetSortedPublicGroups()
 end
 
-assert(#setView() == 6, "All XP Aura did not retain ordinary and XP Aura rows")
+assert(#setView() == 6 and B.publicXPAuraFilter == "All Listings",
+  "All Listings did not retain ordinary and XP Aura rows")
+local legacyRows = setView("All", "All", "All Difficulties", "", "All XP Aura")
+assert(#legacyRows == 6 and B.publicXPAuraFilter == "All Listings",
+  "legacy All XP Aura state did not migrate to All Listings")
 local auraOnly = setView("All", "All", "All Difficulties", "", "XP Aura Only")
 assert(#auraOnly == 1 and auraOnly[1].id == auraRow.id and auraOnly[1].xpAura == true,
   "XP Aura Only did not isolate affirmative rows")
 
 local combined = setView("Key", "H", "Mythic+", "bfd mythic healer", "XP Aura Only")
 assert(#combined == 1 and combined[1].id == auraRow.id, "combined XP Aura filters were not intersected")
-assert(#setView("Dungeon", "H", "Mythic", "bfd mythic healer", "All XP Aura") == 1,
+assert(#setView("Dungeon", "H", "Mythic", "bfd mythic healer", "All Listings") == 1,
   "Type/Role/Difficulty/Search intersection changed")
 
-assert(#setView("All", "All", "All Difficulties", "blackfathom", "All XP Aura") == 2,
+assert(#setView("All", "All", "All Difficulties", "blackfathom", "All Listings") == 2,
   "canonical activity search failed")
-local mythicPlusSearch = setView("All", "All", "All Difficulties", "MYTHIC+", "All XP Aura")
+local mythicPlusSearch = setView("All", "All", "All Difficulties", "MYTHIC+", "All Listings")
 local mythicPlusIds = {}
 for _, row in ipairs(mythicPlusSearch) do
   mythicPlusIds[row.id] = true
 end
 assert(#mythicPlusSearch == 2 and mythicPlusIds[auraRow.id] and mythicPlusIds[deadminesRow.id],
   "case-insensitive Mythic+ search failed")
-assert(#setView("All", "All", "All Difficulties", "+5", "All XP Aura") == 1,
+assert(#setView("All", "All", "All Difficulties", "+5", "All Listings") == 1,
   "numeric key search failed")
-assert(#setView("All", "All", "All Difficulties", "xp aura", "All XP Aura") == 1,
+assert(#setView("All", "All", "All Difficulties", "xp aura", "All Listings") == 1,
   "XP Aura search metadata failed")
-assert(#setView("All", "All", "All Difficulties", "AuraOne", "All XP Aura") == 1,
+assert(#setView("All", "All", "All Difficulties", "AuraOne", "All Listings") == 1,
   "player search failed")
-assert(#setView("All", "H", "All Difficulties", "", "All XP Aura") == 3,
+assert(#setView("All", "H", "All Difficulties", "", "All Listings") == 3,
   "role metadata search/filter failed")
-assert(#setView("All", "All", "All Difficulties", "bfd mythic healer", "All XP Aura") == 2,
+assert(#setView("All", "All", "All Difficulties", "bfd mythic healer", "All Listings") == 2,
   "multi-token search did not intersect terms")
-assert(#setView("All", "All", "All Difficulties", "", "All XP Aura") == count(B.publicGroups),
+assert(#setView("All", "All", "All Difficulties", "", "All Listings") == count(B.publicGroups),
   "blank search restricted Public Groups")
+
+-- The authoritative runtime filter owns inline links when the user enables
+-- them.  Generic affirmative XP Aura rows receive the useful [XP Aura] title.
+local auraLinkText = "LF2 DPS aura of experience prestige run"
+local _, linkedDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", auraLinkText, "AuraLinker")
+assert(type(linkedDisplay) == "string" and linkedDisplay:find("|Hbronzelfgpub:", 1, true)
+  and linkedDisplay:find("[XP Aura]", 1, true), "generic XP Aura link was not rendered")
+drainQueue()
+local auraLinkRow
+for _, row in pairs(B.publicGroups or {}) do
+  if row.player == "AuraLinker" and row.rawMessage == auraLinkText then auraLinkRow = row end
+end
+assert(auraLinkRow and auraLinkRow.xpAura == true, "generic XP Aura link row lost affirmative metadata")
+assert(#setView("All", "All", "All Difficulties", "AuraLinker", "XP Aura Only") == 1,
+  "generic XP Aura link row did not qualify for XP Aura Only")
+
+BronzeLFG_DB.options.inlineChatLinks = false
+runtime.Apply()
+local _, disabledDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", auraLinkText, "AuraDisabled")
+assert(disabledDisplay == auraLinkText, "chat links were forced while disabled")
+local disabledRow = ingest(auraLinkText, "AuraDisabled")
+assert(disabledRow.xpAura == true
+  and #setView("All", "All", "All Difficulties", "AuraDisabled", "XP Aura Only") == 1,
+  "XP Aura discovery stopped when chat links were disabled")
+
+BronzeLFG_DB.options.inlineChatLinks = true
+runtime.Apply()
+local _, paladinDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", "paladin aura need healer", "AuraPaladin")
+local _, negatedDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", "LFM 1-60 no XP aura", "AuraNegated")
+assert(paladinDisplay == "paladin aura need healer" and negatedDisplay == "LFM 1-60 no XP aura",
+  "false-positive or negated Aura chat link was rendered")
 
 -- The real Phase 6 controls and Phase 4 scheduler own filter changes.
 local showResult = B:ShowPublicGroups()
@@ -157,12 +192,17 @@ local PG = assert(SignalFirePublicGroupsView151, "Phase 6 Public Groups owner mi
 local difficultyDrop = assert(B.publicDifficultyDrop, "Difficulty control missing after ShowPublicGroups")
 local auraDrop = assert(B.publicXPAuraDrop, "XP Aura control missing after ShowPublicGroups")
 local auraLabel = assert(B.publicXPAuraLabel, "XP Aura label missing after ShowPublicGroups")
+local search = assert(B.publicSearch, "Search control missing after ShowPublicGroups")
+local searchLabel = assert(B.publicSearchLabel, "Search label missing after ShowPublicGroups")
 assert(auraDrop:GetParent() == B.publicPanel and auraLabel:GetParent() == B.publicPanel, "XP Aura control escaped Public Groups")
+assert(search:GetParent() == B.publicPanel and searchLabel:GetParent() == B.publicPanel
+  and searchLabel:GetText() == "Search", "Search control escaped Public Groups")
 local auraOptions = auraDrop:RunDropdownInitializer()
 assert(#auraOptions == 2, "XP Aura dropdown duplicated options")
 local auraByText = {}
 for _, info in ipairs(auraOptions) do auraByText[info.text] = info end
-assert(auraByText["All XP Aura"] and auraByText["XP Aura Only"], "XP Aura dropdown choices changed")
+assert(auraByText["All Listings"] and auraByText["XP Aura Only"] and not auraByText["All XP Aura"],
+  "XP Aura dropdown choices changed")
 
 local refreshCalls = 0
 local originalRefresh = B.RefreshPublicGroups
@@ -171,7 +211,7 @@ B.RefreshPublicGroups = function(self, ...)
   return originalRefresh and originalRefresh(self, ...)
 end
 B.publicFilter, B.publicRoleFilter, B.publicDifficultyFilter = "Dungeon", "H", "Mythic"
-B.publicSearchText, B.publicXPAuraFilter, B.publicPage = "bfd mythic healer", "All XP Aura", 4
+B.publicSearchText, B.publicXPAuraFilter, B.publicPage = "bfd mythic healer", "All Listings", 4
 B.selectedPublic = ordinaryRow.id
 local sentBeforeFilter, joinedBeforeFilter = sentChat, joinedChannels
 auraByText["XP Aura Only"].func()
@@ -214,18 +254,61 @@ for _ = 1, 20 do
     "dropdown options duplicated during reuse")
   if B.HidePanels then B:HidePanels() end
 end
-local function pointX(widget)
-  local _, _, _, x = widget:GetPoint()
-  return tonumber(x or 0) or 0
+local topLeftXY, anchorXY
+anchorXY = function(widget, anchor, seen)
+  local left, top = topLeftXY(widget, seen)
+  local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
+  if anchor == "TOPLEFT" then return left, top end
+  if anchor == "TOPRIGHT" then return left + width, top end
+  if anchor == "BOTTOMLEFT" then return left, top - height end
+  if anchor == "BOTTOMRIGHT" then return left + width, top - height end
+  return left + width / 2, top - height / 2
 end
-local difficultyX, difficultyWidth = pointX(difficultyDrop), difficultyDrop:GetWidth()
-local auraX, auraWidth = pointX(auraDrop), auraDrop:GetWidth()
-local searchX = B.publicSearch and pointX(B.publicSearch) or 0
-local searchLeft = B.publicPanel:GetWidth() + searchX - (B.publicSearch and B.publicSearch:GetWidth() or 0)
-assert(pointX(B.publicDifficultyLabel) > pointX(B.publicRoleFilterButtons.D) + B.publicRoleFilterButtons.D:GetWidth(),
-  "Difficulty overlaps role controls")
-assert(pointX(auraLabel) > difficultyX + difficultyWidth and auraX + auraWidth <= searchLeft,
-  "XP Aura overlaps Difficulty or Search")
-assert(auraX + auraWidth <= B.publicPanel:GetWidth(), "XP Aura escaped Public Groups panel")
+
+topLeftXY = function(widget, seen)
+  if widget == B.publicPanel then return 0, 0 end
+  seen = seen or {}
+  if seen[widget] then return 0, 0 end
+  seen[widget] = true
+  local point, relative, relativePoint, x, y = widget:GetPoint()
+  if not relative or relative == widget then return 0, 0 end
+  local baseX, baseY = anchorXY(relative, relativePoint or "TOPLEFT", seen)
+  local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
+  local left, top = baseX + (tonumber(x or 0) or 0), baseY + (tonumber(y or 0) or 0)
+  if point == "TOPRIGHT" then left = left - width end
+  if point == "BOTTOMLEFT" then top = top + height end
+  if point == "BOTTOMRIGHT" then left = left - width; top = top + height end
+  if point == "CENTER" then left = left - width / 2; top = top + height / 2 end
+  return left, top
+end
+
+local function rect(widget, visualHeight)
+  local left, top = topLeftXY(widget)
+  local width = tonumber(widget:GetWidth() or 0) or 0
+  local height = tonumber(visualHeight or widget:GetHeight() or 0) or 0
+  return {left=left, right=left + width, top=top, bottom=top - height}
+end
+
+local panelWidth = B.publicPanel:GetWidth()
+local roleD = rect(assert(B.publicRoleFilterButtons and B.publicRoleFilterButtons.D, "DPS role control missing"), 22)
+local difficultyLabelRect = rect(B.publicDifficultyLabel, 14)
+local difficultyRect = rect(difficultyDrop, 32)
+local auraLabelRect = rect(auraLabel, 14)
+local auraRect = rect(auraDrop, 32)
+local searchLabelRect = rect(searchLabel, 14)
+local searchRect = rect(search, 22)
+local sortRect = rect(assert(B.publicSortButton, "Sort control missing"), 22)
+assert(difficultyLabelRect.left >= roleD.right + 12, "Difficulty overlaps role controls")
+assert(difficultyLabelRect.right + 8 <= difficultyRect.left, "Difficulty label overlaps its dropdown")
+assert(difficultyLabelRect.left >= 8 and difficultyRect.right <= panelWidth - 8,
+  "Difficulty escaped Public Groups panel")
+assert(difficultyRect.right + 16 <= auraLabelRect.left, "Difficulty overlaps XP Aura label")
+assert(auraLabelRect.right + 8 <= auraRect.left, "XP Aura label overlaps its dropdown")
+assert(auraRect.left >= 8 and auraRect.right <= panelWidth - 8, "XP Aura escaped Public Groups panel")
+assert(searchLabelRect.right + 8 <= searchRect.left, "Search label overlaps its edit box")
+assert(searchLabelRect.left >= 8 and searchRect.left >= 8 and searchRect.right + 12 <= sortRect.left
+  and searchRect.right <= panelWidth - 8,
+  "Search overlaps Sort or escaped Public Groups panel")
+assert(searchRect.bottom >= auraRect.top + 4, "Search row overlaps XP Aura controls")
 
 print("activity discovery pass B harness: PASS")

@@ -2381,17 +2381,27 @@ do
       return table.concat(out, "/")
     end
 
+    local function p3_generic_activity(value)
+      local activity = tostring(value or "")
+      return activity == "" or activity == "Unknown" or activity == "Group Listing"
+        or activity == "Looking For Group" or activity == "SignalFire Group"
+        or activity == "Open Group"
+    end
+
     local function p3_exact_link_title(row)
       local diagnostics = p3_diagnostics_enabled()
       local started = diagnostics and debugprofilestop and debugprofilestop() or nil
       local activity = tostring(row and row.activity or "")
-      if activity == "" or activity == "Unknown" then activity = tostring(row and row.type or "") end
+      local xpAuraTitle = row and row.xpAura == true and p3_generic_activity(activity)
+      if not xpAuraTitle and (activity == "" or activity == "Unknown") then
+        activity = tostring(row and row.type or "")
+      end
       local intent = tostring(row and row.intent or "")
       local applicant = intent == "Applicant" or tostring(row and row.type or "") == "LFG"
       local roles = p3_role_summary(row)
       local suffix = applicant and "LFG" or "LFM"
       if roles ~= "" then suffix = (applicant and "LFG " or "Need ") .. roles end
-      local title = activity ~= "" and (activity .. " - " .. suffix) or suffix
+      local title = xpAuraTitle and "XP Aura" or (activity ~= "" and (activity .. " - " .. suffix) or suffix)
       title = string.gsub(title, "|", "")
       title = string.gsub(title, "%[", "(")
       title = string.gsub(title, "%]", ")")
@@ -2441,7 +2451,7 @@ do
       if row then
         local signature = table.concat({
           tostring(row.id or ""), tostring(row.type or ""), tostring(row.activity or ""),
-          tostring(row.roles or ""), tostring(row.difficulty or ""),
+          tostring(row.roles or ""), tostring(row.difficulty or ""), tostring(row.xpAura == true),
         }, "\031")
         if rec._sfP3CachedLinkSignature == signature and rec._sfP3CachedLink then
           link = rec._sfP3CachedLink
@@ -2449,10 +2459,8 @@ do
         else
           p3_note("linkCacheMisses")
           local activity = tostring(row.activity or "")
-          local generic = activity == "" or activity == "Group Listing"
-            or activity == "Looking For Group" or activity == "SignalFire Group"
-            or activity == "Open Group"
-          if generic then
+          local generic = p3_generic_activity(activity)
+          if generic and row.xpAura ~= true then
             p3_note("genericLinksBuilt")
           elseif row.id then
             local title = p3_exact_link_title(row)
@@ -4235,8 +4243,9 @@ do
       local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
       local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
       local difficulty = tostring(B.publicDifficultyFilter or "All Difficulties")
-      local xpAura = tostring(B.publicXPAuraFilter or "All XP Aura")
-      if xpAura ~= "XP Aura Only" then xpAura = "All XP Aura" end
+      local xpAura = tostring(B.publicXPAuraFilter or "All Listings")
+      if xpAura == "All XP Aura" then xpAura = "All Listings" end
+      if xpAura ~= "XP Aura Only" then xpAura = "All Listings" end
       B.publicXPAuraFilter = xpAura
       return filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura
     end
@@ -4544,7 +4553,14 @@ do
         label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
       end
       if label then
-        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
+        label:ClearAllPoints()
+        label:SetWidth(52)
+        local roleAnchor = B.publicRoleFilterButtons and B.publicRoleFilterButtons.D
+        if owned_control(roleAnchor) then
+          label:SetPoint("TOPLEFT", roleAnchor, "TOPRIGHT", 16, -5)
+        else
+          label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
+        end
         label:SetText("Difficulty")
         panel._sfP6DifficultyLabel = label
         B.publicDifficultyLabel = label
@@ -4564,7 +4580,12 @@ do
         drop:SetParent(panel)
       end
       if drop then
-        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        drop:ClearAllPoints()
+        if label then
+          drop:SetPoint("TOPLEFT", label, "TOPRIGHT", 8, 6)
+        else
+          drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        end
         if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(drop, 122) end
         B.publicDifficultyDrop = drop
         panel._sfP6DifficultyDrop = drop
@@ -4598,7 +4619,13 @@ do
         auraLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
       end
       if auraLabel then
-        auraLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 442, -92)
+        auraLabel:ClearAllPoints()
+        auraLabel:SetWidth(48)
+        if owned_control(drop) then
+          auraLabel:SetPoint("TOPLEFT", drop, "TOPRIGHT", 20, -6)
+        else
+          auraLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 464, -92)
+        end
         auraLabel:SetText("XP Aura")
         panel._sfP6XPAuraLabel = auraLabel
         B.publicXPAuraLabel = auraLabel
@@ -4618,14 +4645,22 @@ do
         auraDrop:SetParent(panel)
       end
       if auraDrop then
-        auraDrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 492, -86)
-        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(auraDrop, 96) end
+        auraDrop:ClearAllPoints()
+        if owned_control(auraLabel) then
+          auraDrop:SetPoint("TOPLEFT", auraLabel, "TOPRIGHT", 10, 6)
+        else
+          auraDrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 522, -86)
+        end
+        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(auraDrop, 116) end
         B.publicXPAuraDrop = auraDrop
         panel._sfP6XPAuraDrop = auraDrop
-        B.publicXPAuraFilter = B.publicXPAuraFilter or "All XP Aura"
+        local xpAuraFilter = tostring(B.publicXPAuraFilter or "All Listings")
+        if xpAuraFilter == "All XP Aura" then xpAuraFilter = "All Listings" end
+        if xpAuraFilter ~= "XP Aura Only" then xpAuraFilter = "All Listings" end
+        B.publicXPAuraFilter = xpAuraFilter
         if UIDropDownMenu_Initialize and not field(auraDrop, "_sfP6XPAuraInitialized") and not field(auraDrop, "dropdownInitializer") then
           UIDropDownMenu_Initialize(auraDrop, function()
-            for _, value in ipairs({"All XP Aura", "XP Aura Only"}) do
+            for _, value in ipairs({"All Listings", "XP Aura Only"}) do
               local info = UIDropDownMenu_CreateInfo()
               info.text, info.notCheckable = value, true
               info.func = function()
@@ -4641,6 +4676,35 @@ do
           auraDrop._sfP6XPAuraInitialized = true
         end
         if UIDropDownMenu_SetText then UIDropDownMenu_SetText(auraDrop, B.publicXPAuraFilter) end
+      end
+
+      local search = B.publicSearch
+      local sortAnchor = B.publicSortButton
+      if owned_control(search) then
+        search:ClearAllPoints()
+        search:SetWidth(220)
+        if owned_control(sortAnchor) then
+          search:SetPoint("TOPRIGHT", sortAnchor, "TOPLEFT", -12, 4)
+        else
+          search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -466, -64)
+        end
+      end
+
+      local searchLabel
+      if owned_control(field(panel, "_sfP6SearchLabel")) then
+        searchLabel = field(panel, "_sfP6SearchLabel")
+      elseif owned_control(B.publicSearchLabel) then
+        searchLabel = B.publicSearchLabel
+      elseif panel.CreateFontString then
+        searchLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if searchLabel and owned_control(search) then
+        searchLabel:ClearAllPoints()
+        searchLabel:SetWidth(48)
+        searchLabel:SetPoint("TOPRIGHT", search, "TOPLEFT", -8, 4)
+        searchLabel:SetText("Search")
+        panel._sfP6SearchLabel = searchLabel
+        B.publicSearchLabel = searchLabel
       end
 
       if field(panel, "_sfP6ViewHooks") == true then return end
