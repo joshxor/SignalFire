@@ -266,6 +266,13 @@ if negatedRow then
     "negated XP Aura row qualified under XP Aura Only")
 end
 
+-- Establish the state owned by the following UI lifecycle assertions.  The
+-- parser/filter checks above intentionally leave XP Aura Only active.
+B.publicPage = 1
+setView("All", "All", "All Difficulties", "", "All Listings")
+assert(B.publicPage == 1 and B.publicXPAuraFilter == "All Listings",
+  "Public Groups UI baseline was not reset after parser/filter coverage")
+
 -- The real Phase 6 controls and Phase 4 scheduler own filter changes.
 local showResult = B:ShowPublicGroups()
 assert(showResult ~= false, "Public Groups did not open for Pass B")
@@ -284,6 +291,21 @@ local snapshotCounts = assert(B:GetPublicFilterCounts(), "Public Groups snapshot
 assert(auraButton:GetText() == "XP Aura (" .. tostring(snapshotCounts.XPAura or 0) .. ")",
   "XP Aura button count did not come from the current snapshot")
 local auraClick = assert(auraButton:GetScript("OnClick"), "XP Aura button callback missing")
+
+-- Reopening the real panel preserves an active user filter and reuses the
+-- same button.  This is distinct from migration/initialization behavior.
+local preservedAuraButton = auraButton
+B.publicXPAuraFilter = "XP Aura Only"
+if B.HidePanels then B:HidePanels() end
+assert(B:ShowPublicGroups() ~= false, "Public Groups active-filter reopen failed")
+assert(B.publicXPAuraFilter == "XP Aura Only" and B.publicXPAuraButton == preservedAuraButton,
+  "active XP Aura filter or button identity was lost during panel reuse")
+PG.Render()
+assert(auraButton._sfP6Highlight == true, "active XP Aura filter was not visually restored on reopen")
+setView("All", "All", "All Difficulties", "", "All Listings")
+PG.Render()
+assert(B.publicXPAuraFilter == "All Listings" and auraButton._sfP6Highlight == false,
+  "Public Groups did not return to the unrestricted baseline")
 
 local refreshCalls = 0
 local originalRefresh = B.RefreshPublicGroups
