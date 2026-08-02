@@ -74,7 +74,7 @@ local function drainQueue()
   local frame = assert(B._sfP3Frame, "Phase 3 worker frame missing")
   local update = frame.GetScript and frame:GetScript("OnUpdate") or nil
   if type(update) ~= "function" then
-    assert(runtime.StartParserWork and runtime.StartParserWork() == true, "Phase 3 worker did not start")
+    assert(runtime.StartParserWork and runtime.StartParserWork() == true, "Phase 3 worker did not start with queued work")
     update = assert(frame:GetScript("OnUpdate"), "Phase 3 worker update missing")
   end
   local guard = 0
@@ -83,6 +83,9 @@ local function drainQueue()
     guard = guard + 1
     assert(guard < 100, "Phase 3 worker did not drain")
   end
+  local state = assert(runtime.GetParserRuntimeState(), "Phase 3 worker runtime state missing")
+  assert(state.queueDepth == 0 and state.workerScript == false and state.workerActive == false,
+    "Phase 3 worker did not return to idle")
 end
 
 local function drainRefresh()
@@ -112,8 +115,13 @@ local function findRow(author, text)
 end
 
 local function ingest(author, text)
-  assert(runtime.IngestSource(author, text, "3. Newcomers", "CHAT_MSG_CHANNEL") ~= false,
-    "source owner rejected fixture: " .. text)
+  local rec, display = runtime.IngestSource(author, text, "3. Newcomers", "CHAT_MSG_CHANNEL")
+  assert(type(rec) == "table", "source owner did not create a parser record: " .. text)
+  assert(rec.done ~= true, "source parser record completed before deferred worker: " .. text)
+  assert(type(B._sfP3Queue) == "table" and #B._sfP3Queue > 0,
+    "source parser record did not enter the deferred queue: " .. text)
+  local queued = assert(runtime.GetParserRuntimeState(), "queued parser runtime state missing")
+  assert(queued.queueDepth > 0, "source parser record queue depth was not positive: " .. text)
   drainQueue()
   local row = assert(findRow(author, text), "canonical Public Groups row missing: " .. text)
   assert(row.key and tostring(row.key) == tostring(row.id), "canonical row identity changed")
@@ -121,7 +129,21 @@ local function ingest(author, text)
 end
 
 -- End-to-end source -> authoritative parser -> deferred worker -> canonical row.
+BronzeLFG_DB.options.serverProfile = "Ascension"
+BronzeLFG_DB.options.publicGroups = true
+BronzeLFG_DB.options.inlineChatLinks = true
+BronzeLFG_DB.options.chatLinkScope = "all"
+runtime.Apply()
+local initialRuntime = assert(runtime.GetParserRuntimeState(), "initial parser runtime state missing")
+assert(initialRuntime.sourceActive == true and initialRuntime.workerOwnerActive == true
+  and initialRuntime.suspended == false and initialRuntime.queueDepth == 0
+  and initialRuntime.workerScript == false,
+  "parser runtime was not active and idle after Apply")
 clearRows()
+local postClearRuntime = assert(runtime.GetParserRuntimeState(), "post-clear parser runtime state missing")
+assert(postClearRuntime.sourceActive == true and postClearRuntime.suspended == false
+  and postClearRuntime.queueDepth == 0 and postClearRuntime.workerScript == false,
+  "ClearRuntimeCaches changed active parser ownership")
 local worldTour = ingest("KazzakTour", "LFM for Worldboss Tour Instance Loot FFA w/ me ilvl+spec start: Kazzak")
 assert(worldTour.type == "World Boss" and worldTour.activity == "Lord Kazzak" and worldTour.intent == "Recruiter",
   "live Kazzak tour canonical metadata was not preserved")
