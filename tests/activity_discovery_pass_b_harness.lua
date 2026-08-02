@@ -32,12 +32,17 @@ local positive = {
   "RDF spam experience aura need tank",
   "1-60 exp aura need DPS",
   "leveling group XP aura",
+  "DPS with aura LFG",
+  "58 Necro DPS with aura LF UBRS/LBRS xp runs",
+  "lfm rfc | tank have aura",
+  "lfm rfc | tank have aura xp",
 }
 for _, text in ipairs(positive) do
   assert(parse(text).xpAura == true, "positive XP Aura fixture was not detected: " .. text)
 end
 
 local negative = {
+  "paladin with aura",
   "paladin aura need healer",
   "devotion aura build",
   "aura mastery healer",
@@ -50,6 +55,18 @@ local negative = {
 for _, text in ipairs(negative) do
   local result = SignalFireFastChatLinks.TestParse(text)
   assert(not (result and result.xpAura == true), "false-positive XP Aura fixture: " .. text)
+end
+
+local liveAuraFixtures = {
+  {text="DPS with aura LFG", activity="Random Dungeon Finder", intent="Applicant"},
+  {text="58 Necro DPS with aura LF UBRS/LBRS xp runs", activity="Lower Blackrock Spire", intent="Applicant"},
+  {text="lfm rfc | tank have aura", activity="Ragefire Chasm", intent="Recruiter"},
+  {text="lfm rfc | tank have aura xp", activity="Ragefire Chasm", intent="Recruiter"},
+}
+for _, fixture in ipairs(liveAuraFixtures) do
+  local result = parse(fixture.text)
+  assert(result.xpAura == true and result.activity == fixture.activity and result.intent == fixture.intent,
+    "live shorthand XP Aura metadata changed: " .. fixture.text)
 end
 
 -- Preserve Pass A parser distinctions and canonical activity spelling.
@@ -170,6 +187,40 @@ assert(auraLinkRow and auraLinkRow.xpAura == true, "generic XP Aura link row los
 assert(#setView("All", "All", "All Difficulties", "AuraLinker", "XP Aura Only") == 1,
   "generic XP Aura link row did not qualify for XP Aura Only")
 
+local liveAuraTitles = {
+  {text="DPS with aura LFG", author="AuraApplicant", activity="Random Dungeon Finder", title="Random Dungeon Finder - LFG D - XP Aura"},
+  {text="58 Necro DPS with aura LF UBRS/LBRS xp runs", author="AuraSpire", activity="Lower Blackrock Spire", title="Lower Blackrock Spire - LFG D - XP Aura"},
+  {text="lfm rfc | tank have aura", author="AuraRfcOne", activity="Ragefire Chasm", title="Ragefire Chasm - Need T - XP Aura"},
+  {text="lfm rfc | tank have aura xp", author="AuraRfcTwo", activity="Ragefire Chasm", title="Ragefire Chasm - Need T - XP Aura"},
+}
+for _, fixture in ipairs(liveAuraTitles) do
+  assert(runtime.Candidate(fixture.text) == true, "affirmative shorthand XP Aura candidate was rejected: " .. fixture.text)
+  local _, display = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", fixture.text, fixture.author)
+  assert(type(display) == "string" and display:find("|Hbronzelfgpub:", 1, true)
+    and display:find("[" .. fixture.title .. "]", 1, true),
+    "affirmative shorthand XP Aura link was not rendered: " .. fixture.text .. " => " .. tostring(display))
+  drainQueue()
+  local row
+  for _, candidate in pairs(B.publicGroups or {}) do
+    if candidate.player == fixture.author and candidate.rawMessage == fixture.text then row = candidate end
+  end
+  assert(row and row.xpAura == true and row.activity == fixture.activity,
+    "affirmative shorthand XP Aura row metadata was not canonical: " .. fixture.text)
+end
+local cappedAuraTitle = assert(runtime.BuildExactLinkTitle({
+  xpAura=true, activity=string.rep("Long Specific Activity ", 4), type="Dungeon", intent="Recruiter", roles="DPS"
+}), "specific XP Aura title owner missing")
+assert(#cappedAuraTitle <= 72 and cappedAuraTitle:sub(-10) == " - XP Aura",
+  "specific XP Aura title cap removed its suffix: " .. cappedAuraTitle)
+
+local ownAuraText = "DPS with aura LFG"
+local ownAuraAuthor = (UnitName and UnitName("player")) or "AuraSelf"
+local _, ownAuraDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_SAY", ownAuraText, ownAuraAuthor)
+assert(type(ownAuraDisplay) == "string" and ownAuraDisplay:find("|Hbronzelfgpub:", 1, true)
+  and ownAuraDisplay:find("[Random Dungeon Finder - LFG D - XP Aura]", 1, true),
+  "self outgoing XP Aura chat did not use the final link path")
+drainQueue()
+
 BronzeLFG_DB.options.inlineChatLinks = false
 runtime.Apply()
 local _, disabledDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", auraLinkText, "AuraDisabled")
@@ -220,19 +271,19 @@ local showResult = B:ShowPublicGroups()
 assert(showResult ~= false, "Public Groups did not open for Pass B")
 local PG = assert(SignalFirePublicGroupsView151, "Phase 6 Public Groups owner missing")
 local difficultyDrop = assert(B.publicDifficultyDrop, "Difficulty control missing after ShowPublicGroups")
-local auraDrop = assert(B.publicXPAuraDrop, "XP Aura control missing after ShowPublicGroups")
-local auraLabel = assert(B.publicXPAuraLabel, "XP Aura label missing after ShowPublicGroups")
+local auraButton = assert(B.publicXPAuraButton, "XP Aura button missing after ShowPublicGroups")
 local search = assert(B.publicSearch, "Search control missing after ShowPublicGroups")
 local searchLabel = assert(B.publicSearchLabel, "Search label missing after ShowPublicGroups")
-assert(auraDrop:GetParent() == B.publicPanel and auraLabel:GetParent() == B.publicPanel, "XP Aura control escaped Public Groups")
+assert(B.publicXPAuraDrop == nil and B.publicXPAuraLabel == nil, "dedicated XP Aura dropdown ownership remained")
+assert(auraButton:GetParent() == B.publicPanel and auraButton:GetText():find("XP Aura (", 1, true),
+  "XP Aura button escaped Public Groups or lost its count label")
 assert(search:GetParent() == B.publicPanel and searchLabel:GetParent() == B.publicPanel
   and searchLabel:GetText() == "Search", "Search control escaped Public Groups")
-local auraOptions = auraDrop:RunDropdownInitializer()
-assert(#auraOptions == 2, "XP Aura dropdown duplicated options")
-local auraByText = {}
-for _, info in ipairs(auraOptions) do auraByText[info.text] = info end
-assert(auraByText["All Listings"] and auraByText["XP Aura Only"] and not auraByText["All XP Aura"],
-  "XP Aura dropdown choices changed")
+assert(B.publicXPAuraFilter == "All Listings", "XP Aura button did not start unrestricted")
+local snapshotCounts = assert(B:GetPublicFilterCounts(), "Public Groups snapshot counts missing")
+assert(auraButton:GetText() == "XP Aura (" .. tostring(snapshotCounts.XPAura or 0) .. ")",
+  "XP Aura button count did not come from the current snapshot")
+local auraClick = assert(auraButton:GetScript("OnClick"), "XP Aura button callback missing")
 
 local refreshCalls = 0
 local originalRefresh = B.RefreshPublicGroups
@@ -244,10 +295,11 @@ B.publicFilter, B.publicRoleFilter, B.publicDifficultyFilter = "Dungeon", "H", "
 B.publicSearchText, B.publicXPAuraFilter, B.publicPage = "bfd mythic healer", "All Listings", 4
 B.selectedPublic = ordinaryRow.id
 local sentBeforeFilter, joinedBeforeFilter = sentChat, joinedChannels
-auraByText["XP Aura Only"].func()
+auraClick(auraButton)
 assert(B.publicFilter == "Dungeon" and B.publicRoleFilter == "H" and B.publicDifficultyFilter == "Mythic"
-  and B.publicSearchText == "bfd mythic healer" and B.publicPage == 1 and refreshCalls > 0,
-  "XP Aura callback cleared another filter or failed to reset page")
+  and B.publicSearchText == "bfd mythic healer" and B.publicXPAuraFilter == "XP Aura Only"
+  and B.publicPage == 1 and refreshCalls > 0,
+  "XP Aura button cleared another filter or failed to reset page")
 assert(B.selectedPublic == ordinaryRow.id, "selection was cleared synchronously before debounce")
 local refresh = assert(SignalFireRefresh151, "Public Groups refresh owner missing")
 local refreshFrame = assert(refresh.frame, "Public Groups refresh frame missing")
@@ -260,28 +312,53 @@ while refresh.pending == true or (refresh.dirty and refresh.dirty.publicGroups =
   assert(guard < 20, "Public Groups debounce did not drain")
 end
 assert(B.selectedPublic == nil, "filtered-out selected row did not clear after debounced render")
+assert(auraButton._sfP6Highlight == true, "XP Aura button did not enter its active visual state")
 assert(sentChat == sentBeforeFilter and joinedChannels == joinedBeforeFilter,
   "XP Aura filtering sent chat or joined a channel")
 B.RefreshPublicGroups = originalRefresh
 
+B.publicPage = 3
+auraClick(auraButton)
+assert(B.publicXPAuraFilter == "All Listings" and B.publicPage == 1
+  and B.publicFilter == "Dungeon" and B.publicRoleFilter == "H"
+  and B.publicDifficultyFilter == "Mythic" and B.publicSearchText == "bfd mythic healer",
+  "XP Aura button did not clear only its additive filter")
+guard = 0
+while refresh.pending == true or (refresh.dirty and refresh.dirty.publicGroups == true) do
+  SignalFireHarnessAdvanceTime((tonumber(refresh.debounceSeconds or .15) or .15) + .05)
+  local update = assert(refreshFrame:GetScript("OnUpdate"), "debounced Public Groups refresh owner missing")
+  update(refreshFrame, .03)
+  guard = guard + 1
+  assert(guard < 20, "Public Groups debounce did not drain after clearing XP Aura")
+end
+assert(auraButton._sfP6Highlight == false, "XP Aura button remained visually active after clearing")
+
+-- Existing state migration remains accepted by the additive button owner.
+B.publicXPAuraFilter = "All XP Aura"
+PG.AttachPanel(B.publicPanel)
+assert(B.publicXPAuraFilter == "All Listings", "legacy All XP Aura state did not migrate")
+B.publicXPAuraFilter = "XP Aura Only"
+PG.AttachPanel(B.publicPanel)
+assert(B.publicXPAuraFilter == "XP Aura Only", "XP Aura Only state did not survive button attachment")
+B.publicXPAuraFilter = "All Listings"
+
 -- Repair and reuse the same named controls through the final lazy lifecycle.
 local originalDifficultyInitializer = difficultyDrop.dropdownInitializer
-local originalAuraInitializer = auraDrop.dropdownInitializer
+local originalAuraButtonScript = auraButton:GetScript("OnClick")
 B.publicDifficultyDrop, B.publicDifficultyLabel = nil, nil
-B.publicXPAuraDrop, B.publicXPAuraLabel = nil, nil
+B.publicXPAuraButton = nil
 PG.AttachPanel(B.publicPanel)
 assert(B.publicDifficultyDrop == difficultyDrop and B.publicDifficultyLabel ~= nil,
   "Difficulty control was not repaired on surviving panel")
-assert(B.publicXPAuraDrop == auraDrop and B.publicXPAuraLabel ~= nil,
-  "XP Aura control was not repaired on surviving panel")
+assert(B.publicXPAuraButton == auraButton and auraButton:GetScript("OnClick") == originalAuraButtonScript,
+  "XP Aura button was not repaired on surviving panel")
 for _ = 1, 20 do
   assert(B:ShowPublicGroups() ~= false, "Public Groups reuse failed")
-  assert(B.publicDifficultyDrop == difficultyDrop and B.publicXPAuraDrop == auraDrop,
+  assert(B.publicDifficultyDrop == difficultyDrop and B.publicXPAuraButton == auraButton
+    and B.publicXPAuraDrop == nil and B.publicXPAuraLabel == nil,
     "Public Groups duplicated controls during reuse")
   assert(difficultyDrop.dropdownInitializer == originalDifficultyInitializer
-    and auraDrop.dropdownInitializer == originalAuraInitializer, "dropdown lifecycle hook duplicated")
-  assert(#difficultyDrop:RunDropdownInitializer() == 5 and #auraDrop:RunDropdownInitializer() == 2,
-    "dropdown options duplicated during reuse")
+    and auraButton:GetScript("OnClick") == originalAuraButtonScript, "Public Groups lifecycle hook duplicated")
   if B.HidePanels then B:HidePanels() end
 end
 local topLeftXY, anchorXY
@@ -290,8 +367,10 @@ anchorXY = function(widget, anchor, seen)
   local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
   if anchor == "TOPLEFT" then return left, top end
   if anchor == "TOPRIGHT" then return left + width, top end
+  if anchor == "TOP" then return left + width / 2, top end
   if anchor == "BOTTOMLEFT" then return left, top - height end
   if anchor == "BOTTOMRIGHT" then return left + width, top - height end
+  if anchor == "BOTTOM" then return left + width / 2, top - height end
   return left + width / 2, top - height / 2
 end
 
@@ -306,8 +385,10 @@ topLeftXY = function(widget, seen)
   local width, height = tonumber(widget:GetWidth() or 0) or 0, tonumber(widget:GetHeight() or 0) or 0
   local left, top = baseX + (tonumber(x or 0) or 0), baseY + (tonumber(y or 0) or 0)
   if point == "TOPRIGHT" then left = left - width end
+  if point == "TOP" then left = left - width / 2 end
   if point == "BOTTOMLEFT" then top = top + height end
   if point == "BOTTOMRIGHT" then left = left - width; top = top + height end
+  if point == "BOTTOM" then left = left - width / 2; top = top + height end
   if point == "CENTER" then left = left - width / 2; top = top + height / 2 end
   return left, top
 end
@@ -323,22 +404,34 @@ local panelWidth = B.publicPanel:GetWidth()
 local roleD = rect(assert(B.publicRoleFilterButtons and B.publicRoleFilterButtons.D, "DPS role control missing"), 22)
 local difficultyLabelRect = rect(B.publicDifficultyLabel, 14)
 local difficultyRect = rect(difficultyDrop, 32)
-local auraLabelRect = rect(auraLabel, 14)
-local auraRect = rect(auraDrop, 32)
+local socialRect = rect(assert(B.publicFilterButtons and B.publicFilterButtons.Social, "Social control missing"), 22)
+local auraRect = rect(auraButton, 22)
 local searchLabelRect = rect(searchLabel, 14)
 local searchRect = rect(search, 22)
 local sortRect = rect(assert(B.publicSortButton, "Sort control missing"), 22)
+local function disjoint(first, second)
+  return first.right <= second.left or second.right <= first.left
+    or first.bottom >= second.top or second.bottom >= first.top
+end
 assert(difficultyLabelRect.left >= roleD.right + 12, "Difficulty overlaps role controls")
 assert(difficultyLabelRect.right + 8 <= difficultyRect.left, "Difficulty label overlaps its dropdown")
 assert(difficultyLabelRect.left >= 8 and difficultyRect.right <= panelWidth - 8,
   "Difficulty escaped Public Groups panel")
-assert(difficultyRect.right + 16 <= auraLabelRect.left, "Difficulty overlaps XP Aura label")
-assert(auraLabelRect.right + 8 <= auraRect.left, "XP Aura label overlaps its dropdown")
-assert(auraRect.left >= 8 and auraRect.right <= panelWidth - 8, "XP Aura escaped Public Groups panel")
-assert(searchLabelRect.right + 8 <= searchRect.left, "Search label overlaps its edit box")
-assert(searchLabelRect.left >= 8 and searchRect.left >= 8 and searchRect.right + 12 <= sortRect.left
-  and searchRect.right <= panelWidth - 8,
-  "Search overlaps Sort or escaped Public Groups panel")
-assert(searchRect.bottom >= auraRect.top + 4, "Search row overlaps XP Aura controls")
+assert(auraRect.left >= socialRect.right + 8 and auraRect.left >= 8 and auraRect.right <= panelWidth - 8,
+  "XP Aura button is not an additive top-row control")
+assert(searchLabelRect.left >= 8 and searchRect.left >= 8 and searchRect.right <= panelWidth - 8,
+  "Search escaped Public Groups panel")
+assert(math.abs((searchLabelRect.left + searchLabelRect.right) / 2
+  - (searchRect.left + searchRect.right) / 2) <= 1,
+  "Search label is not centered over its edit box")
+assert(searchLabelRect.bottom > searchRect.top and disjoint(searchLabelRect, sortRect),
+  "Search label overlaps its edit box or Sort control")
+assert(searchRect.top <= sortRect.bottom - 1 and disjoint(searchRect, sortRect),
+  "Search edit box overlaps Sort control")
+assert(disjoint(difficultyRect, searchRect), "Difficulty overlaps Search")
+
+B.publicXPAuraFilter = "XP Aura Only"
+B:ClearPublicGroups()
+assert(B.publicXPAuraFilter == "All Listings", "Clear did not reset XP Aura filter state")
 
 print("activity discovery pass B harness: PASS")

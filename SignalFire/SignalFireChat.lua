@@ -736,6 +736,10 @@ do
         or s:find(" no aura ", 1, true) or s:find(" without aura ", 1, true)
       if negated then return false end
       local classOrCombatAura = s:find(" paladin aura ", 1, true)
+        or s:find(" paladin with aura ", 1, true)
+        or s:find(" paladin has aura ", 1, true)
+        or s:find(" paladin have aura ", 1, true)
+        or s:find(" paladin got aura ", 1, true)
         or s:find(" devotion aura ", 1, true)
         or s:find(" resistance aura ", 1, true)
         or s:find(" aura mastery ", 1, true)
@@ -744,6 +748,26 @@ do
       local explicit = s:find(" xp aura ", 1, true) or s:find(" exp aura ", 1, true)
         or s:find(" experience aura ", 1, true) or s:find(" aura of experience ", 1, true)
       if explicit then return not classOrCombatAura end
+      local shorthand = s:find(" with aura ", 1, true) or s:find(" have aura ", 1, true)
+        or s:find(" has aura ", 1, true) or s:find(" got aura ", 1, true)
+        or s:find(" aura xp ", 1, true) or s:find(" aura exp ", 1, true)
+      if shorthand and not classOrCombatAura then
+        local role = s:find(" tank ", 1, true) or s:find(" heal ", 1, true)
+          or s:find(" healer ", 1, true) or s:find(" dps ", 1, true)
+          or s:find(" damage ", 1, true)
+        local activity = s:find(" dungeon ", 1, true) or s:find(" dung ", 1, true)
+          or s:find(" rdf ", 1, true) or s:find(" random dungeon ", 1, true)
+          or s:find(" heroic ", 1, true) or s:find(" mythic ", 1, true)
+          or s:find(" keystone ", 1, true) or s:find(" raid ", 1, true)
+        local intent = s:find(" lfm ", 1, true) or s:find(" lfg ", 1, true)
+          or s:find(" lf ", 1, true) or s:find(" lf%d+m ") or s:find(" lf%d+ ")
+        local need = s:find(" need ", 1, true)
+        local group = s:find(" group ", 1, true) or s:find(" grp ", 1, true)
+          or s:find(" run ", 1, true) or s:find(" spam ", 1, true)
+        if intent or (need and (role or activity)) or ((role or activity) and group) then
+          return true
+        end
+      end
       return s:find(" aura spam ", 1, true) ~= nil and not classOrCombatAura
     end
 

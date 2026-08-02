@@ -2409,11 +2409,22 @@ do
       local roles = p3_role_summary(row)
       local suffix = applicant and "LFG" or "LFM"
       if roles ~= "" then suffix = (applicant and "LFG " or "Need ") .. roles end
-      local title = xpAuraTitle and "XP Aura" or (activity ~= "" and (activity .. " - " .. suffix) or suffix)
+      local auraSuffix = row and row.xpAura == true and not xpAuraTitle and " - XP Aura" or ""
+      local title = xpAuraTitle and "XP Aura" or ((activity ~= "" and (activity .. " - " .. suffix) or suffix) .. auraSuffix)
       title = string.gsub(title, "|", "")
       title = string.gsub(title, "%[", "(")
       title = string.gsub(title, "%]", ")")
-      if string.len(title) > 72 then title = string.sub(title, 1, 69) .. "..." end
+      if string.len(title) > 72 then
+        if auraSuffix ~= "" then
+          local suffixLength = string.len(auraSuffix)
+          local prefixLength = math.max(1, 72 - suffixLength)
+          local prefix = string.sub(title, 1, prefixLength)
+          if string.len(prefix) > 3 then prefix = string.sub(prefix, 1, string.len(prefix) - 3) .. "..." end
+          title = prefix .. auraSuffix
+        else
+          title = string.sub(title, 1, 69) .. "..."
+        end
+      end
       if diagnostics and started and debugprofilestop then
         local elapsed = math.max(0, debugprofilestop() - started)
         local stats = p3_stats()
@@ -4125,7 +4136,7 @@ do
       if PG.testErrorStage == "snapshot" then error("injected Public Groups snapshot error") end
       p6_note("snapshotsBuilt")
       local rows, byId = {}, {}
-      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0}
+      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0, XPAura=0}
       local nearest = nil
       for id, row in pairs(B.publicGroups or {}) do
         if p6_displayable(id, row) then
@@ -4170,6 +4181,7 @@ do
           table.insert(rows, record)
           byId[record.id] = record
           counts.All = counts.All + 1
+          if record.xpAura then counts.XPAura = counts.XPAura + 1 end
           if kind == "Dungeon" then counts.Dungeon = counts.Dungeon + 1 end
           if kind == "Raid" then counts.Raid = counts.Raid + 1 end
           if kind == "Key" then counts.Key = counts.Key + 1 end
@@ -4428,6 +4440,10 @@ do
           p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
         end
       end
+      if B.publicXPAuraButton then
+        p6_set_text(B.publicXPAuraButton, "XP Aura (" .. tostring(snapshot.counts.XPAura or 0) .. ")")
+        p6_set_highlight(B.publicXPAuraButton, tostring(B.publicXPAuraFilter or "All Listings") == "XP Aura Only")
+      end
       for key, button in pairs(B.publicRoleFilterButtons or {}) do
         p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
       end
@@ -4618,84 +4634,54 @@ do
         if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
       end
 
-      local auraLabel
-      if owned_control(field(panel, "_sfP6XPAuraLabel")) then
-        auraLabel = field(panel, "_sfP6XPAuraLabel")
-      elseif owned_control(B.publicXPAuraLabel) then
-        auraLabel = B.publicXPAuraLabel
-      elseif panel.CreateFontString then
-        auraLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      local auraButton
+      if owned_control(field(panel, "_sfP6XPAuraButton")) then
+        auraButton = field(panel, "_sfP6XPAuraButton")
+      elseif owned_control(B.publicXPAuraButton) then
+        auraButton = B.publicXPAuraButton
+      elseif valid_control(_G.SignalFirePublicXPAuraButton) then
+        auraButton = _G.SignalFirePublicXPAuraButton
+      elseif not _G.SignalFirePublicXPAuraButton and CreateFrame then
+        auraButton = CreateFrame("Button", "SignalFirePublicXPAuraButton", panel, "UIPanelButtonTemplate")
       end
-      if auraLabel then
-        auraLabel:ClearAllPoints()
-        auraLabel:SetWidth(48)
-        if owned_control(drop) then
-          auraLabel:SetPoint("TOPLEFT", drop, "TOPRIGHT", 20, -6)
+      if auraButton and type(auraButton.GetParent) == "function" and auraButton:GetParent() ~= panel and auraButton.SetParent then
+        auraButton:SetParent(panel)
+      end
+      if auraButton then
+        auraButton:ClearAllPoints()
+        local auraAnchor = B.publicFilterButtons and (B.publicFilterButtons.Social
+          or B.publicFilterButtons.LFG or B.publicFilterButtons.Event)
+        if owned_control(auraAnchor) then
+          auraButton:SetPoint("TOPLEFT", auraAnchor, "TOPRIGHT", 12, 0)
         else
-          auraLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 464, -92)
+          auraButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 650, -36)
         end
-        auraLabel:SetText("XP Aura")
-        panel._sfP6XPAuraLabel = auraLabel
-        B.publicXPAuraLabel = auraLabel
-      end
-
-      local auraDrop
-      if owned_control(field(panel, "_sfP6XPAuraDrop")) then
-        auraDrop = field(panel, "_sfP6XPAuraDrop")
-      elseif owned_control(B.publicXPAuraDrop) then
-        auraDrop = B.publicXPAuraDrop
-      elseif valid_control(_G.SignalFirePublicXPAuraDrop) then
-        auraDrop = _G.SignalFirePublicXPAuraDrop
-      elseif not _G.SignalFirePublicXPAuraDrop and CreateFrame then
-        auraDrop = CreateFrame("Frame", "SignalFirePublicXPAuraDrop", panel, "UIDropDownMenuTemplate")
-      end
-      if auraDrop and type(auraDrop.GetParent) == "function" and auraDrop:GetParent() ~= panel and auraDrop.SetParent then
-        auraDrop:SetParent(panel)
-      end
-      if auraDrop then
-        auraDrop:ClearAllPoints()
-        if owned_control(auraLabel) then
-          auraDrop:SetPoint("TOPLEFT", auraLabel, "TOPRIGHT", 10, 6)
-        else
-          auraDrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 522, -86)
+        auraButton:SetWidth(112)
+        auraButton:SetHeight(22)
+        if not field(auraButton, "_sfP6XPAuraWired") then
+          auraButton:SetScript("OnClick", function()
+            local current = tostring(B.publicXPAuraFilter or "All Listings")
+            B.publicXPAuraFilter = current == "XP Aura Only" and "All Listings" or "XP Aura Only"
+            B.publicPage = 1
+            if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+          end)
+          auraButton._sfP6XPAuraWired = true
         end
-        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(auraDrop, 116) end
-        B.publicXPAuraDrop = auraDrop
-        panel._sfP6XPAuraDrop = auraDrop
+        auraButton:SetText("XP Aura (0)")
+        auraButton:Show()
+        panel._sfP6XPAuraButton = auraButton
+        B.publicXPAuraButton = auraButton
         local xpAuraFilter = tostring(B.publicXPAuraFilter or "All Listings")
         if xpAuraFilter == "All XP Aura" then xpAuraFilter = "All Listings" end
         if xpAuraFilter ~= "XP Aura Only" then xpAuraFilter = "All Listings" end
         B.publicXPAuraFilter = xpAuraFilter
-        if UIDropDownMenu_Initialize and not field(auraDrop, "_sfP6XPAuraInitialized") and not field(auraDrop, "dropdownInitializer") then
-          UIDropDownMenu_Initialize(auraDrop, function()
-            for _, value in ipairs({"All Listings", "XP Aura Only"}) do
-              local info = UIDropDownMenu_CreateInfo()
-              info.text, info.notCheckable = value, true
-              info.func = function()
-                B.publicXPAuraFilter, B.publicPage = value, 1
-                UIDropDownMenu_SetText(auraDrop, value)
-                if B.RefreshPublicGroups then B:RefreshPublicGroups() end
-              end
-              UIDropDownMenu_AddButton(info)
-            end
-          end)
-          auraDrop._sfP6XPAuraInitialized = true
-        elseif field(auraDrop, "dropdownInitializer") then
-          auraDrop._sfP6XPAuraInitialized = true
-        end
-        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(auraDrop, B.publicXPAuraFilter) end
       end
 
       local search = B.publicSearch
-      local sortAnchor = B.publicSortButton
       if owned_control(search) then
         search:ClearAllPoints()
         search:SetWidth(220)
-        if owned_control(sortAnchor) then
-          search:SetPoint("TOPRIGHT", sortAnchor, "TOPLEFT", -12, 4)
-        else
-          search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -466, -64)
-        end
+        search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -87)
       end
 
       local searchLabel
@@ -4708,8 +4694,9 @@ do
       end
       if searchLabel and owned_control(search) then
         searchLabel:ClearAllPoints()
-        searchLabel:SetWidth(48)
-        searchLabel:SetPoint("TOPRIGHT", search, "TOPLEFT", -8, 4)
+        searchLabel:SetWidth(220)
+        if searchLabel.SetJustifyH then searchLabel:SetJustifyH("CENTER") end
+        searchLabel:SetPoint("BOTTOM", search, "TOP", 0, 4)
         searchLabel:SetText("Search")
         panel._sfP6SearchLabel = searchLabel
         B.publicSearchLabel = searchLabel
@@ -4794,6 +4781,7 @@ do
         if methodName == "ClearPublicGroups" then
           self.publicDifficultyFilter = "All Difficulties"
           if self.publicDifficultyDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicDifficultyDrop, self.publicDifficultyFilter) end
+          self.publicXPAuraFilter = "All Listings"
         end
         if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
         return unpack(results, 2)
@@ -5068,7 +5056,7 @@ do
       "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
       "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
       "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
-      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "publicXPAuraDrop", "focusDropdown",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "focusDropdown",
       "keystoneAlertDropdown",
     }
 
@@ -6597,7 +6585,7 @@ do
     local function p7_public_groups_ready(owner)
       return owner and owner.publicPanel and owner.publicRows
         and owner.publicDifficultyDrop and owner.publicDifficultyLabel
-        and owner.publicXPAuraDrop and owner.publicXPAuraLabel and true or false
+        and true or false
     end
 
     local function p7_reconcile_public_groups(owner)
