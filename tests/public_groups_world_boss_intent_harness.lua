@@ -42,7 +42,11 @@ assertParsed("LF2 DPS Azuregos", "World Boss", "Azuregos", "Recruiter", "DPS")
 assertParsed("LFM Kazzak", "World Boss", "Lord Kazzak", "Recruiter")
 assertParsed("need healer Kazzak", "World Boss", "Lord Kazzak", "Recruiter", "Healer")
 assertParsed("LFG Kazzak", "World Boss", "Lord Kazzak", "Applicant")
-assertParsed("Mythic geared dps LFG Snowgrave/Kaldros/Soggoth", "World Boss", "Snowgrave / Kaldros / Soggoth", "Applicant", "DPS")
+local multiBossApplicant = assertParsed("Mythic geared dps LFG Snowgrave/Kaldros/Soggoth", "World Boss", "Snowgrave / Kaldros / Soggoth", "Applicant", "DPS")
+assert(multiBossApplicant.difficulty ~= "Mythic" and multiBossApplicant.difficulty ~= "Mythic+"
+  and multiBossApplicant.type ~= "Dungeon" and multiBossApplicant.type ~= "Key",
+  "Mythic gear wording leaked Dungeon difficulty into the World Boss result")
+assertParsed("LFM Kazzak mythic geared", "World Boss", "Lord Kazzak", "Recruiter")
 assertParsed("LFM world boss tour need healer", "World Boss", "World Boss", "Recruiter", "Healer")
 assertParsed("LFM ZG", "Raid", "Zul'Gurub", "Recruiter")
 assertParsed("tank looking for group ZG", "Raid", "Zul'Gurub", "Applicant", "Tank")

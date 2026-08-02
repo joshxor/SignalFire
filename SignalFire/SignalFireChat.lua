@@ -217,7 +217,7 @@ local function SFActivityDiscoveryPassAInstall()
         if not discovery.activity and not discovery.xpAura then return parsed end
         parsed = {input=tostring(text or ""), eligible=true, kind="group", intent="Recruiter", roles="", reason=nil}
       end
-      if parsed.type == "Raid" then return parsed end
+      if parsed.type == "Raid" or parsed.type == "World Boss" then return parsed end
       if discovery.activity then parsed.activity = discovery.activity end
       parsed.difficulty, parsed.keyLevel = discovery.difficulty, discovery.keyLevel
       parsed.xpAura = discovery.xpAura and true or false

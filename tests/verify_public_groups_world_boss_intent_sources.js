@@ -28,6 +28,14 @@ need(chat, "result.intent = sffcl_intent(raw)", "canonical parser intent metadat
 need(chat, '"Lord Kazzak"', "Kazzak canonicalization");
 need(chat, '"Snowgrave / Kaldros / Soggoth"', "preserved multi-boss fixture expectation");
 
+const passAWrapperStart = chat.indexOf("function SignalFireFastChatLinks.TestParse(text)\n      local parsed = oldTestParse(text)");
+const worldBossGuard = 'if parsed.type == "Raid" or parsed.type == "World Boss" then return parsed end';
+const worldBossGuardAt = chat.indexOf(worldBossGuard, passAWrapperStart);
+const dungeonOverwriteAt = chat.indexOf('parsed.type = "Dungeon"', passAWrapperStart);
+if (passAWrapperStart < 0 || worldBossGuardAt < 0 || dungeonOverwriteAt < 0 || worldBossGuardAt > dungeonOverwriteAt) {
+  throw new Error("Pass C source verification failed: World Boss type was not protected before Pass A Dungeon overwrite");
+}
+
 const worldBlockStart = chat.indexOf("local function sffcl_world_activities");
 const worldBlockEnd = chat.indexOf("local function sffcl_specific_dungeon", worldBlockStart);
 if (worldBlockStart < 0 || worldBlockEnd < 0) throw new Error("Pass C source verification failed: World Boss matcher boundary");
