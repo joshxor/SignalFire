@@ -4360,6 +4360,21 @@ do
       return true
     end
 
+    local p6_type_filter_names = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social", "World Boss"}
+
+    local function p6_update_type_filter_buttons(snapshot)
+      for _, name in ipairs(p6_type_filter_names) do
+        local button = B.publicFilterButtons and B.publicFilterButtons[name]
+        if button then
+          if snapshot and snapshot.counts then
+            p6_set_text(button, p6_filter_label(name, snapshot.counts[name] or 0))
+          end
+          p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
+        end
+      end
+      return true
+    end
+
     local function p6_set_backdrop(row, selected)
       if not row or row._sfP6Selected == selected then return false end
       row._sfP6Selected = selected
@@ -4454,14 +4469,7 @@ do
         B.onlinePanelButton._sfP6Width = 146
         B.onlinePanelButton:SetWidth(146)
       end
-      local names = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social", "World Boss"}
-      for _, name in ipairs(names) do
-        local button = B.publicFilterButtons and B.publicFilterButtons[name]
-        if button then
-          p6_set_text(button, p6_filter_label(name, snapshot.counts[name] or 0))
-          p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
-        end
-      end
+      p6_update_type_filter_buttons(snapshot)
       p6_update_xp_aura_button(snapshot)
       for key, button in pairs(B.publicRoleFilterButtons or {}) do
         p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
@@ -4722,6 +4730,11 @@ do
         panel._sfP6IntentDrop = intentDrop
       end
 
+      local snapshot = PG.snapshot
+        and PG.snapshotGeneration == PG.dataGeneration
+        and PG.snapshot
+        or nil
+
       local auraButton
       local createdAuraButton = false
       if owned_control(field(panel, "_sfP6XPAuraButton")) then
@@ -4765,9 +4778,10 @@ do
         if xpAuraFilter == "All XP Aura" then xpAuraFilter = "All Listings" end
         if xpAuraFilter ~= "XP Aura Only" then xpAuraFilter = "All Listings" end
         B.publicXPAuraFilter = xpAuraFilter
-        local snapshot = PG.snapshot and PG.snapshotGeneration == PG.dataGeneration and PG.snapshot or nil
         p6_update_xp_aura_button(snapshot)
       end
+
+      p6_update_type_filter_buttons(snapshot)
 
       local search = B.publicSearch
       if owned_control(search) then

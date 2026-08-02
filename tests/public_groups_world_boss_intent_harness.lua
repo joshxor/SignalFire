@@ -221,7 +221,9 @@ local PG = assert(SignalFirePublicGroupsView151, "Phase 6 Public Groups owner mi
 local worldButton = assert(B.publicFilterButtons and B.publicFilterButtons["World Boss"], "World Boss control missing")
 local intentDrop = assert(B.publicIntentDrop, "Intent dropdown missing")
 assert(worldButton:GetParent() == B.publicPanel and intentDrop:GetParent() == B.publicPanel, "Pass C controls escaped panel geometry")
-assert(worldButton:GetText():find("World Boss (", 1, true), "World Boss count label missing")
+local expectedWorldLabel = "World Boss (" .. tostring(counts["World Boss"]) .. ")"
+assert(tostring(worldButton:GetText() or ""):find(expectedWorldLabel, 1, true),
+  "World Boss count label did not hydrate from the current snapshot")
 local intentOptions = assert(intentDrop:RunDropdownInitializer(), "Intent dropdown initializer missing")
 assert(#intentOptions == 3 and intentOptions[1].text == "All Intents" and intentOptions[2].text == "Recruiting"
   and intentOptions[3].text == "Seeking Group", "Intent dropdown options changed")
@@ -244,17 +246,25 @@ assert(sentChat == sentBeforeFilters and joinedChannels == joinedBeforeFilters, 
 recruitingOption.func()
 drainRefresh()
 assert(B.publicIntentFilter == "Recruiting" and B.publicPage == 1, "Recruiting dropdown callback changed state incorrectly")
+assert(B.publicFilter == "World Boss" and worldButton._sfP6Highlight == true,
+  "World Boss selection or highlight was not preserved")
 
 local preservedWorldButton, preservedIntentDrop = worldButton, intentDrop
 for _ = 1, 20 do
   assert(B:ShowPublicGroups() ~= false, "Public Groups reuse failed")
   assert(B.publicFilterButtons["World Boss"] == preservedWorldButton and B.publicIntentDrop == preservedIntentDrop,
     "Public Groups controls duplicated during lifecycle reuse")
+  assert(B.publicFilter == "World Boss" and worldButton._sfP6Highlight == true,
+    "World Boss selection or highlight changed during lifecycle reuse")
+  assert(tostring(worldButton:GetText() or ""):find(expectedWorldLabel, 1, true),
+    "World Boss count label changed during lifecycle reuse")
   if B.HidePanels then B:HidePanels() end
 end
 PG.AttachPanel(B.publicPanel)
 assert(B.publicIntentDrop == preservedIntentDrop and B.publicFilterButtons["World Boss"] == preservedWorldButton,
   "Public Groups controls were not idempotently repaired")
+assert(tostring(worldButton:GetText() or ""):find(expectedWorldLabel, 1, true),
+  "World Boss count label was lost during final panel reconciliation")
 
 -- Candidate admission and parser ownership stay bounded, single-pass, and idle
 -- after the deferred work is drained.
