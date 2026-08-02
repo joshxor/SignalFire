@@ -105,6 +105,10 @@ jobs:
         shell: bash
         run: node tests/verify_activity_discovery_pass_b_sources.js
 
+      - name: Run Public Groups World Boss and intent source verifier
+        shell: bash
+        run: node tests/verify_public_groups_world_boss_intent_sources.js
+
       - name: Prepare Marketplace test loader
         shell: bash
         run: |
@@ -149,6 +153,7 @@ jobs:
           run_harness tests/listing_broadcast_ux_harness.lua
           run_harness tests/activity_discovery_pass_a_harness.lua
           run_harness tests/activity_discovery_pass_b_harness.lua
+          run_harness tests/public_groups_world_boss_intent_harness.lua
           exit "$status"
 
       - name: Read version

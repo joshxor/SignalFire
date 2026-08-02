@@ -217,7 +217,7 @@ local function SFActivityDiscoveryPassAInstall()
         if not discovery.activity and not discovery.xpAura then return parsed end
         parsed = {input=tostring(text or ""), eligible=true, kind="group", intent="Recruiter", roles="", reason=nil}
       end
-      if parsed.type == "Raid" then return parsed end
+      if parsed.type == "Raid" or parsed.type == "World Boss" then return parsed end
       if discovery.activity then parsed.activity = discovery.activity end
       parsed.difficulty, parsed.keyLevel = discovery.difficulty, discovery.keyLevel
       parsed.xpAura = discovery.xpAura and true or false
@@ -872,6 +872,7 @@ do
         or s:find(" hcbb", 1, true) or s:find(" bbhc", 1, true) or s:find(" invasion", 1, true)
         or s:find(" de other side", 1, true) or s:find(" other side", 1, true)
         or s:find(" vault ", 1, true) or s:find(" wc ", 1, true)
+        or s:find(" world boss ", 1, true) or s:find(" worldboss ", 1, true)
         or s:find(" azuregos", 1, true)
     end
 
@@ -954,6 +955,7 @@ do
       end
       if s:find(" lfm ", 1, true) or s:find(" lf%d+m") or s:find(" need ", 1, true)
         or s:find(" lf %d+ tank") or s:find(" lf %d+ heal") or s:find(" lf %d+ dps")
+        or s:find(" lf%d+%s+")
         or s:find(" lf tank", 1, true) or s:find(" lf heal", 1, true)
         or s:find(" lf dps", 1, true) then
         return "Recruiter"
@@ -1105,19 +1107,73 @@ do
       return nil
     end
 
-    local function sffcl_world_activities(text)
-      if not sffcl_is_ascension() then return nil end
-      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
-      local out = {}
-      if sffcl_word(s, "azuregos") then table.insert(out, "Azuregos") end
-      if sffcl_word(s, "snowgrave") then table.insert(out, "Snowgrave") end
-      if sffcl_word(s, "kaldros depthbreaker") then
-        table.insert(out, "Kaldros Depthbreaker")
-      elseif sffcl_word(s, "kaldros") then
-        table.insert(out, "Kaldros")
+    -- World Boss names and aliases are owned by the active server profile. The
+    -- small cache is rebuilt only when the profile table changes, so the chat
+    -- candidate path does not scan profile data on every receiving frame.
+    local sffcl_world_boss_cache = {profile=nil, entries=nil}
+    local function sffcl_world_boss_entries()
+      local active = SignalFireProfiles and SignalFireProfiles.GetActiveProfile
+        and SignalFireProfiles.GetActiveProfile() or nil
+      if sffcl_world_boss_cache.profile == active and sffcl_world_boss_cache.entries then
+        return sffcl_world_boss_cache.entries
       end
-      if sffcl_word(s, "soggoth") or sffcl_word(s, "sogoth") then table.insert(out, "Soggoth") end
-      if sffcl_word(s, "lord kazzak") or sffcl_word(s, "kazzak") then table.insert(out, "Lord Kazzak") end
+      local entries = {}
+      local seen = {}
+      local function add(canonical, token)
+        canonical, token = tostring(canonical or ""), tostring(token or "")
+        if canonical == "" or canonical == "Custom World Boss" or token == "" then return end
+        local key = string.lower(canonical) .. "\031" .. string.lower(token)
+        if seen[key] then return end
+        seen[key] = true
+        table.insert(entries, {canonical=canonical, token=token})
+      end
+      for _, canonical in ipairs((active and active.worldBosses) or {}) do
+        add(canonical, canonical)
+        local aliases = active and active.worldBossAliases and active.worldBossAliases[canonical] or nil
+        for _, alias in ipairs(aliases or {}) do add(canonical, alias) end
+      end
+      sffcl_world_boss_cache.profile = active
+      sffcl_world_boss_cache.entries = entries
+      return entries
+    end
+
+    local function sffcl_world_boss_signal(text)
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      if s:find(" world boss ", 1, true) or s:find(" worldboss ", 1, true)
+        or s:find(" world boss tour ", 1, true) then return true end
+      for _, entry in ipairs(sffcl_world_boss_entries()) do
+        if sffcl_word(s, entry.token) then return true end
+      end
+      return false
+    end
+
+    local function sffcl_world_activities(text)
+      local s = " " .. sffcl_lower(sffcl_clean_text(text)) .. " "
+      local out, matched = {}, {}
+      local entries = sffcl_world_boss_entries()
+      for _, entry in ipairs(entries) do
+        local shadowed = false
+        if sffcl_word(s, entry.token) then
+          for _, longer in ipairs(entries) do
+            if longer.token ~= entry.token
+              and string.len(longer.token) > string.len(entry.token)
+              and string.find(string.lower(longer.token), string.lower(entry.token), 1, true) == 1
+              and sffcl_word(s, longer.token) then
+              shadowed = true
+              break
+            end
+          end
+        end
+        if sffcl_word(s, entry.token) and not shadowed and not matched[entry.canonical] then
+          matched[entry.canonical] = true
+          table.insert(out, entry.canonical)
+        end
+      end
+      -- A generic World Boss post is useful, but it must not invent a boss
+      -- name. Specific profile-owned names above always take precedence.
+      if #out == 0 and (s:find(" world boss ", 1, true) or s:find(" worldboss ", 1, true)) then
+        table.insert(out, "World Boss")
+      end
       return #out > 0 and out or nil
     end
 
@@ -1216,6 +1272,10 @@ do
       local unknownActivity = sffcl_is_ascension() and sffcl_word(s, "sc") and "SC" or nil
       if s:find("invasion", 1, true) then return "Event", "Invasion" end
       if s:find("boss blitz", 1, true) or s:find("hcbb", 1, true) or s:find("bbhc", 1, true) then return "Event", "Boss Blitz" end
+      -- A specific raid remains authoritative when a raid post mentions World
+      -- Bosses in its surrounding recruitment language.
+      local raid = sffcl_specific_raid(text)
+      if raid then return "Raid", raid end
       local worldActivities = sffcl_world_activities(text)
       if worldActivities then return "World Boss", table.concat(worldActivities, " / "), worldActivities, unknownActivity end
       local randomFinder = s:find(" rdf ", 1, true) or s:find("random dungeon", 1, true)
@@ -1227,8 +1287,6 @@ do
         local dungeon = sffcl_specific_dungeon(text)
         return "Key", dungeon or "Mythic+"
       end
-      local raid = sffcl_specific_raid(text)
-      if raid then return "Raid", raid end
       if s:find("raid", 1, true) then return "Raid", "General Raid" end
       local dungeon = sffcl_specific_dungeon(text)
       if dungeon then return "Dungeon", dungeon end
@@ -1295,6 +1353,11 @@ do
       result.reason = nil
       return result
     end
+
+    -- Public consumers use these same authoritative helpers for cheap
+    -- candidate admission and diagnostics; they never invoke TestParse twice.
+    SignalFireFastChatLinks.IsWorldBossCandidate = sffcl_world_boss_signal
+    SignalFireFastChatLinks.DetectIntent = sffcl_intent
 
     local function sffcl_prune(B)
       if not (B and B.publicGroups) then return end
@@ -1390,7 +1453,8 @@ do
       row.channel = channelName or row.channel or "Public"
       row.type = typ
       row.activity = activity
-      row.intent = typ == "LFG" and "Applicant" or "Recruiter"
+      row.intent = SignalFireFastChatLinks.DetectIntent and SignalFireFastChatLinks.DetectIntent(raw)
+        or (typ == "LFG" and "Applicant" or "Recruiter")
       row.roles = sffcl_roles(raw)
       row.tags = typ
       row.xpAura = sffcl_xp_aura_signal(raw) and true or false

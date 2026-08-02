@@ -62,7 +62,7 @@ for (const forbidden of ["p3_parse(", "TestParse", "p3_upsert_canonical(",
 
 for (const alias of ["snowgrave", "kaldros", "soggoth", "sogoth", "kazzak", "vault",
   "blackfathom", "rdf", "molten core", "heasl", "azuregos", "recluta", "guild latina"]) {
-  requireText(chat.toLowerCase(), alias, `field alias ${alias}`);
+  requireText((chat + "\n" + core).toLowerCase(), alias, `field alias ${alias}`);
 }
 for (const field of ["exactResolverCalls", "exactResolverCacheHits", "exactResolverCacheMisses",
   "exactResolverFilterFallbacks", "exactResolverSourceOwners", "exactResolverFilterOwners",
