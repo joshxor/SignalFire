@@ -288,7 +288,8 @@ assert(search:GetParent() == B.publicPanel and searchLabel:GetParent() == B.publ
   and searchLabel:GetText() == "Search", "Search control escaped Public Groups")
 assert(B.publicXPAuraFilter == "All Listings", "XP Aura button did not start unrestricted")
 local snapshotCounts = assert(B:GetPublicFilterCounts(), "Public Groups snapshot counts missing")
-assert(auraButton:GetText() == "XP Aura (" .. tostring(snapshotCounts.XPAura or 0) .. ")",
+local expectedAuraButtonText = "XP Aura (" .. tostring(snapshotCounts.XPAura or 0) .. ")"
+assert(auraButton:GetText() == expectedAuraButtonText,
   "XP Aura button count did not come from the current snapshot")
 local auraClick = assert(auraButton:GetScript("OnClick"), "XP Aura button callback missing")
 
@@ -301,7 +302,8 @@ assert(B:ShowPublicGroups() ~= false, "Public Groups active-filter reopen failed
 assert(B.publicXPAuraFilter == "XP Aura Only" and B.publicXPAuraButton == preservedAuraButton,
   "active XP Aura filter or button identity was lost during panel reuse")
 PG.Render()
-assert(auraButton._sfP6Highlight == true, "active XP Aura filter was not visually restored on reopen")
+assert(auraButton._sfP6Highlight == true and auraButton:GetText() == expectedAuraButtonText,
+  "active XP Aura filter was not visually restored on reopen")
 setView("All", "All", "All Difficulties", "", "All Listings")
 PG.Render()
 assert(B.publicXPAuraFilter == "All Listings" and auraButton._sfP6Highlight == false,

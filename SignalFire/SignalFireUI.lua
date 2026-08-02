@@ -4338,6 +4338,16 @@ do
       return true
     end
 
+    local function p6_update_xp_aura_button(snapshot)
+      local button = B.publicXPAuraButton
+      if not button then return false end
+      if snapshot and snapshot.counts then
+        p6_set_text(button, "XP Aura (" .. tostring(snapshot.counts.XPAura or 0) .. ")")
+      end
+      p6_set_highlight(button, tostring(B.publicXPAuraFilter or "All Listings") == "XP Aura Only")
+      return true
+    end
+
     local function p6_set_backdrop(row, selected)
       if not row or row._sfP6Selected == selected then return false end
       row._sfP6Selected = selected
@@ -4440,10 +4450,7 @@ do
           p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
         end
       end
-      if B.publicXPAuraButton then
-        p6_set_text(B.publicXPAuraButton, "XP Aura (" .. tostring(snapshot.counts.XPAura or 0) .. ")")
-        p6_set_highlight(B.publicXPAuraButton, tostring(B.publicXPAuraFilter or "All Listings") == "XP Aura Only")
-      end
+      p6_update_xp_aura_button(snapshot)
       for key, button in pairs(B.publicRoleFilterButtons or {}) do
         p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
       end
@@ -4635,6 +4642,7 @@ do
       end
 
       local auraButton
+      local createdAuraButton = false
       if owned_control(field(panel, "_sfP6XPAuraButton")) then
         auraButton = field(panel, "_sfP6XPAuraButton")
       elseif owned_control(B.publicXPAuraButton) then
@@ -4643,6 +4651,7 @@ do
         auraButton = _G.SignalFirePublicXPAuraButton
       elseif not _G.SignalFirePublicXPAuraButton and CreateFrame then
         auraButton = CreateFrame("Button", "SignalFirePublicXPAuraButton", panel, "UIPanelButtonTemplate")
+        createdAuraButton = true
       end
       if auraButton and type(auraButton.GetParent) == "function" and auraButton:GetParent() ~= panel and auraButton.SetParent then
         auraButton:SetParent(panel)
@@ -4667,7 +4676,7 @@ do
           end)
           auraButton._sfP6XPAuraWired = true
         end
-        auraButton:SetText("XP Aura (0)")
+        if createdAuraButton then auraButton:SetText("XP Aura (0)") end
         auraButton:Show()
         panel._sfP6XPAuraButton = auraButton
         B.publicXPAuraButton = auraButton
@@ -4675,6 +4684,8 @@ do
         if xpAuraFilter == "All XP Aura" then xpAuraFilter = "All Listings" end
         if xpAuraFilter ~= "XP Aura Only" then xpAuraFilter = "All Listings" end
         B.publicXPAuraFilter = xpAuraFilter
+        local snapshot = PG.snapshot and PG.snapshotGeneration == PG.dataGeneration and PG.snapshot or nil
+        p6_update_xp_aura_button(snapshot)
       end
 
       local search = B.publicSearch

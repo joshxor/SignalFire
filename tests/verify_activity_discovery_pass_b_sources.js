@@ -47,7 +47,8 @@ need(ui, 'if filter == "XP Aura Only"', "positive-only filter semantics");
 need(ui, "counts.XPAura", "snapshot XP Aura count");
 need(ui, "publicXPAuraButton", "additive XP Aura button owner");
 need(ui, '"XP Aura ("', "XP Aura button count label");
-need(ui, 'p6_set_highlight(B.publicXPAuraButton', "XP Aura button active state");
+need(ui, "local function p6_update_xp_aura_button", "shared XP Aura button state helper");
+need(ui, 'if createdAuraButton then auraButton:SetText("XP Aura (0)") end', "first-creation-only XP Aura fallback");
 need(ui, "local searchTokens = {}", "multi-token search owner");
 need(ui, "auraSearch", "XP Aura search corpus");
 need(ui, "keySearch", "numeric key search corpus");
@@ -63,6 +64,9 @@ need(ui, "RegisterKnownDropdowns", "standard dropdown lifecycle registration");
 need(ui, "difficulty, xpAura},", "XP Aura filter participates in view signature");
 need(ui, '"XP Aura Only"', "XP Aura filter option");
 need(ui, '"All Listings"', "unrestricted XP Aura filter option");
+if ((ui.match(/auraButton:SetText\("XP Aura \(0\)"\)/g) || []).length !== 1) {
+  throw new Error("activity discovery Pass B source verification failed: XP Aura zero fallback was not creation-only");
+}
 if (/\{"All XP Aura",\s*"XP Aura Only"\}/.test(ui)) {
   throw new Error("activity discovery Pass B source verification failed: obsolete XP Aura option remained");
 }
