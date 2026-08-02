@@ -544,11 +544,11 @@ Merge evidence is recorded in Section 12.
 
 # 16. Activity Discovery Pass B - Closeout
 
-**Status: LIVE APPROVED / CLOSEOUT PENDING**
+**Status: COMPLETE AND MERGED**
 
 Activity Discovery Pass B was implemented on PR #21 from the verified Pass A
-baseline. The exact production RC passed live testing and is ready for normal
-PR finalization.
+baseline. The exact production RC passed live testing, merged successfully,
+and passed the post-merge `main` workflow and package construction.
 
 PR:
 
@@ -558,15 +558,15 @@ Feature branch:
 
 `feature/activity-discovery-pass-b`
 
-Final tested RC evidence:
+Final tested and merged evidence:
 
-- production head: `d6007b1c4dd0bb39f74dc0c291033f3cd98c20d2`;
-- workflow #123;
-- run ID `30764036373`;
-- package job `91539509575`;
+- merge commit: `2780abd279a3973089008df8c51216ae13953164`;
+- post-merge `main` workflow #125;
+- run ID `30766863644`;
+- package job `91547044785`;
 - artifact `SignalFire-1.5.3`;
-- artifact ID `8838360016`;
-- artifact digest `sha256:178721e4722e02d570873ba020c6bbdf8b352bc41d160f42dd41703460ae71b5`;
+- artifact ID `8839225729`;
+- artifact digest `sha256:b5ac4b98bb613d54fb2f257b3a737c0608f6898fcc8d71a58b4a6017e927a6f4`;
 - live smoke test: passed.
 
 ## 16.1 Delivered Pass B behavior
@@ -622,14 +622,17 @@ or a clearer selected/off state. Do not implement this in PR #21.
 # 18. Public Groups Discovery and Alerts Roadmap
 
 The previous vague conditional Search Pass C is superseded by the concrete
-follow-up sequence below. These are future feature rounds and are not part of
-Pass B closeout.
+follow-up sequence below. Pass C is the active feature round. Pass D remains
+explicitly deferred until Pass C establishes reliable canonical rows and
+intent.
 
-## 18.1 Next Pass C - World Boss Discovery and Recruiting Intent
+## 18.1 Public Groups World Boss Discovery and Recruiting Intent - Pass C
 
-Pass C must begin in a new Codex chat after Pass B is merged. Its purpose is to
-make Public Groups reliably identify the high-value group posts that alerting
-will later consume.
+**Status: ACTIVE**
+
+Pass C makes Public Groups reliably identify the high-value group posts that
+alerting will later consume. Pass D alerts and rules are out of scope for this
+round and remain deferred.
 
 ### World Boss discovery robustness
 
@@ -942,23 +945,22 @@ Never destroy unrelated local work.
 
 Unless reprioritized by the user:
 
-## Priority 1 — Activity Discovery Pass B
+## Priority 1 — Public Groups World Boss Discovery and Recruiting Intent
 
 Status:
 
-- implementation complete;
-- exact RC passed CI;
-- exact RC passed live smoke testing;
-- closeout/merge pending on PR #21;
-- no production scope remains open in this pass.
+- Pass C is the active feature round;
+- World Boss discovery and canonical Recruiting/Seeking intent are in scope;
+- Pass D alerts and rules remain deferred;
+- no alerting production scope is part of this pass.
 
-## Priority 2 — Public Groups World Boss Discovery and Recruiting Intent
+## Priority 2 — Activity Discovery Pass B
 
 Status:
 
-- planned as the next feature round, Pass C;
-- start in a new Codex chat after PR #21 is merged;
-- use the requirements in Section 18.1.
+- complete and merged;
+- exact merged artifact passed CI and live smoke testing;
+- use the closeout evidence in Section 16.
 
 ## Priority 3 — Public Groups Alerts and Rules
 

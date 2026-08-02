@@ -61,7 +61,7 @@ need(ui, 'searchLabel:SetJustifyH("CENTER")', "centered Search label alignment")
 need(ui, 'B.publicSearchLabel', "inherited Search label ownership");
 need(ui, "p7_reconcile_public_groups", "Phase 7 Public Groups reconciliation");
 need(ui, "RegisterKnownDropdowns", "standard dropdown lifecycle registration");
-need(ui, "difficulty, xpAura},", "XP Aura filter participates in view signature");
+need(ui, "difficulty, xpAura, intent},", "XP Aura and intent filters participate in view signature");
 need(ui, '"XP Aura Only"', "XP Aura filter option");
 need(ui, '"All Listings"', "unrestricted XP Aura filter option");
 if ((ui.match(/auraButton:SetText\("XP Aura \(0\)"\)/g) || []).length !== 1) {

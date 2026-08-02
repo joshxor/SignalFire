@@ -1392,16 +1392,16 @@ do
         or string.find(words, " sfk ", 1, true) or string.find(words, " hol ", 1, true)
         or string.find(words, " zf ", 1, true) or string.find(words, " wc ", 1, true)
         or string.find(words, " aq40 ", 1, true) or string.find(words, " naxx ", 1, true)
-        or string.find(words, " ony ", 1, true) or string.find(words, " boss ", 1, true)
-        or string.find(words, " snowgrave ", 1, true) or string.find(words, " kaldros ", 1, true)
-        or string.find(words, " soggoth ", 1, true) or string.find(words, " sogoth ", 1, true)
-        or string.find(words, " kazzak ", 1, true)
-        or string.find(words, " azuregos ", 1, true)
+        or string.find(words, " ony ", 1, true)
         or string.find(raw, "other side", 1, true) or string.find(raw, "otha side", 1, true)
       local direct = string.find(words, " lfm ", 1, true) or string.find(words, " lfg ", 1, true)
         or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
         or string.find(words, " lf3m ", 1, true) or string.find(words, " lf4m ", 1, true)
+        or string.find(words, " lf%d+ ")
         or string.find(words, " lf%d+m ")
+      local worldBoss = SignalFireFastChatLinks and SignalFireFastChatLinks.IsWorldBossCandidate
+        and SignalFireFastChatLinks.IsWorldBossCandidate(raw) or false
+      activity = activity or worldBoss
       local xpAura = SignalFireFastChatLinks and SignalFireFastChatLinks.DetectXPAura
         and SignalFireFastChatLinks.DetectXPAura(raw) or false
       local xpAuraContext = role or activity
@@ -3964,6 +3964,7 @@ do
       Raid="Interface\\Icons\\Achievement_Boss_CThun",
       Key="Interface\\Icons\\INV_Misc_Key_03",
       Event="Interface\\Icons\\INV_Misc_Ticket_Tarot_Madness",
+      ["World Boss"]="Interface\\Icons\\Achievement_Boss_CThun",
       Guild="Interface\\Icons\\INV_Misc_TabardPVP_01",
       LFG="Interface\\Icons\\INV_Misc_GroupNeedMore",
       Social="Interface\\Icons\\INV_Misc_GroupLooking",
@@ -3972,7 +3973,7 @@ do
     local typeColor = {
       Dungeon="|cff3fa7ff", Raid="|cff4dff7a", Key="|cffb866ff",
       Event="|cffff9a33", Guild="|cff00e6cc", LFG="|cffffff66",
-      Social="|cffff66cc", Other="|cffaaaaaa",
+      ["World Boss"]="|cffffcc00", Social="|cffff66cc", Other="|cffaaaaaa",
     }
     local classColors = {
       WARRIOR="|cffc79c6e", PALADIN="|cfff58cba", HUNTER="|cffabd473",
@@ -4136,7 +4137,7 @@ do
       if PG.testErrorStage == "snapshot" then error("injected Public Groups snapshot error") end
       p6_note("snapshotsBuilt")
       local rows, byId = {}, {}
-      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0, XPAura=0}
+      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0, ["World Boss"]=0, XPAura=0}
       local nearest = nil
       for id, row in pairs(B.publicGroups or {}) do
         if p6_displayable(id, row) then
@@ -4185,6 +4186,7 @@ do
           if kind == "Dungeon" then counts.Dungeon = counts.Dungeon + 1 end
           if kind == "Raid" then counts.Raid = counts.Raid + 1 end
           if kind == "Key" then counts.Key = counts.Key + 1 end
+          if kind == "World Boss" then counts["World Boss"] = counts["World Boss"] + 1 end
           if kind == "Event" or record.activity == "Event" or record.activity == "Seasonal Event"
             or string.find(record.tags, "Boss Blitz", 1, true) then counts.Event = counts.Event + 1 end
           if kind == "LFG" or record.intent == "Applicant" then counts.LFG = counts.LFG + 1 end
@@ -4237,6 +4239,12 @@ do
       return true
     end
 
+    local function p6_intent_matches(record, filter)
+      if filter == "Recruiting" then return record.intent == "Recruiter" end
+      if filter == "Seeking Group" then return record.intent == "Applicant" end
+      return true
+    end
+
     local function p6_difficulty_matches(record, filter)
       if filter == "" or filter == "All Difficulties" then return true end
       if filter == "Mythic+" then return record.difficulty == "Mythic+" end
@@ -4267,10 +4275,13 @@ do
       if xpAura == "All XP Aura" then xpAura = "All Listings" end
       if xpAura ~= "XP Aura Only" then xpAura = "All Listings" end
       B.publicXPAuraFilter = xpAura
-      return filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura
+      local intent = tostring(B.publicIntentFilter or "All Intents")
+      if intent ~= "Recruiting" and intent ~= "Seeking Group" then intent = "All Intents" end
+      B.publicIntentFilter = intent
+      return filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura, intent
     end
 
-    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty, xpAura)
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty, xpAura, intent)
       if PG.testErrorStage == "view" then error("injected Public Groups view error") end
       p6_note("viewsBuilt")
       local hidden = {}
@@ -4282,6 +4293,7 @@ do
         p6_note("filterScans")
         local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
           and p6_difficulty_matches(record, difficulty) and p6_xp_aura_matches(record, xpAura)
+          and p6_intent_matches(record, intent)
         if keep and #searchTokens > 0 then
           p6_note("searchScans")
           for _, token in ipairs(searchTokens) do
@@ -4310,12 +4322,12 @@ do
     local function p6_view()
       p6_note("viewRequests")
       local snapshot = p6_snapshot()
-      local filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura = p6_view_inputs()
-      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura}, "\31")
+      local filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura, intent = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura, intent}, "\31")
       local cached = PG.viewCache[signature]
       if cached then p6_note("viewCacheHits"); return cached, snapshot end
       local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
-        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty, xpAura)
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty, xpAura, intent)
       end)
       return view, snapshot
     end
@@ -4442,7 +4454,7 @@ do
         B.onlinePanelButton._sfP6Width = 146
         B.onlinePanelButton:SetWidth(146)
       end
-      local names = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social"}
+      local names = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social", "World Boss"}
       for _, name in ipairs(names) do
         local button = B.publicFilterButtons and B.publicFilterButtons[name]
         if button then
@@ -4453,6 +4465,9 @@ do
       p6_update_xp_aura_button(snapshot)
       for key, button in pairs(B.publicRoleFilterButtons or {}) do
         p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
+      end
+      if B.publicIntentDrop and UIDropDownMenu_SetText then
+        UIDropDownMenu_SetText(B.publicIntentDrop, tostring(B.publicIntentFilter or "All Intents"))
       end
       p6_set_text(B.publicPageText, "Page " .. tostring(page) .. " / " .. tostring(pages))
     end
@@ -4641,6 +4656,72 @@ do
         if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
       end
 
+      local intentLabel
+      if owned_control(field(panel, "_sfP6IntentLabel")) then
+        intentLabel = field(panel, "_sfP6IntentLabel")
+      elseif owned_control(B.publicIntentLabel) then
+        intentLabel = B.publicIntentLabel
+      elseif panel.CreateFontString then
+        intentLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if intentLabel then
+        intentLabel:ClearAllPoints()
+        intentLabel:SetWidth(42)
+        local worldBossAnchor = B.publicFilterButtons and B.publicFilterButtons["World Boss"]
+        if owned_control(worldBossAnchor) then
+          intentLabel:SetPoint("TOPLEFT", worldBossAnchor, "TOPRIGHT", 14, -5)
+        else
+          intentLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 156, -66)
+        end
+        intentLabel:SetText("Intent")
+        panel._sfP6IntentLabel = intentLabel
+        B.publicIntentLabel = intentLabel
+      end
+
+      local intentDrop
+      if owned_control(field(panel, "_sfP6IntentDrop")) then
+        intentDrop = field(panel, "_sfP6IntentDrop")
+      elseif owned_control(B.publicIntentDrop) then
+        intentDrop = B.publicIntentDrop
+      elseif valid_control(_G.SignalFirePublicIntentDrop) then
+        intentDrop = _G.SignalFirePublicIntentDrop
+      elseif not _G.SignalFirePublicIntentDrop and CreateFrame then
+        intentDrop = CreateFrame("Frame", "SignalFirePublicIntentDrop", panel, "UIDropDownMenuTemplate")
+      end
+      if intentDrop and type(intentDrop.GetParent) == "function" and intentDrop:GetParent() ~= panel and intentDrop.SetParent then
+        intentDrop:SetParent(panel)
+      end
+      if intentDrop then
+        intentDrop:ClearAllPoints()
+        if intentLabel then
+          intentDrop:SetPoint("TOPLEFT", intentLabel, "TOPRIGHT", 8, 6)
+        else
+          intentDrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 210, -60)
+        end
+        if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(intentDrop, 126) end
+        B.publicIntentFilter = B.publicIntentFilter or "All Intents"
+        if UIDropDownMenu_Initialize and not field(intentDrop, "_sfP6IntentInitialized") and not field(intentDrop, "dropdownInitializer") then
+          UIDropDownMenu_Initialize(intentDrop, function()
+            for _, value in ipairs({"All Intents", "Recruiting", "Seeking Group"}) do
+              local info = UIDropDownMenu_CreateInfo()
+              info.text, info.notCheckable = value, true
+              info.func = function()
+                B.publicIntentFilter, B.publicPage = value, 1
+                UIDropDownMenu_SetText(intentDrop, value)
+                if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+              end
+              UIDropDownMenu_AddButton(info)
+            end
+          end)
+          intentDrop._sfP6IntentInitialized = true
+        elseif field(intentDrop, "dropdownInitializer") then
+          intentDrop._sfP6IntentInitialized = true
+        end
+        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(intentDrop, B.publicIntentFilter) end
+        B.publicIntentDrop = intentDrop
+        panel._sfP6IntentDrop = intentDrop
+      end
+
       local auraButton
       local createdAuraButton = false
       if owned_control(field(panel, "_sfP6XPAuraButton")) then
@@ -4792,6 +4873,8 @@ do
         if methodName == "ClearPublicGroups" then
           self.publicDifficultyFilter = "All Difficulties"
           if self.publicDifficultyDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicDifficultyDrop, self.publicDifficultyFilter) end
+          self.publicIntentFilter = "All Intents"
+          if self.publicIntentDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicIntentDrop, self.publicIntentFilter) end
           self.publicXPAuraFilter = "All Listings"
         end
         if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
@@ -5067,7 +5150,7 @@ do
       "typeDrop", "activityDrop", "specificDungeonDrop", "diffDrop", "voiceDrop", "lootDrop",
       "profileRole", "serverProfileDD", "scaleDropdown", "eventFilterDD", "raidFilterDD", "keyFilterDD",
       "dungeonFilterDD", "dungeonFilterDD5612", "dungeonAlertDropdown5613", "dungeonAlertDropdown5614",
-      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "focusDropdown",
+      "dungeonAlertDropdown5615", "publicSortDropdown", "publicHideTypesDropdown", "publicDifficultyDrop", "publicIntentDrop", "focusDropdown",
       "keystoneAlertDropdown",
     }
 
@@ -6596,6 +6679,7 @@ do
     local function p7_public_groups_ready(owner)
       return owner and owner.publicPanel and owner.publicRows
         and owner.publicDifficultyDrop and owner.publicDifficultyLabel
+        and owner.publicIntentDrop
         and true or false
     end
 

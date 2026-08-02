@@ -2583,20 +2583,26 @@ function BLFG:BuildPublicGroups()
 
   self.publicFilter = self.publicFilter or "All"
   self.publicFilterButtons = {}
-  local publicFilters = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social"}
-  local publicFilterWidths = {All=62, Dungeon=98, Raid=78, Key=72, Event=86, Guild=84, LFG=70, Social=86}
+  local publicFilters = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social", "World Boss"}
+  local publicFilterWidths = {All=62, Dungeon=98, Raid=78, Key=72, Event=86, Guild=84, LFG=70, Social=86, ["World Boss"]=104}
   local fx = 38
   for _, f in ipairs(publicFilters) do
     local bw = publicFilterWidths[f] or 76
     local fb = button(p, f, bw, 22)
-    fb:SetPoint("TOPLEFT", p, "TOPLEFT", fx, -36)
+    if f == "World Boss" then
+      -- Keep the new type control inside the panel while leaving the existing
+      -- XP Aura button's first-row anchor untouched.
+      fb:SetPoint("TOPLEFT", p, "TOPLEFT", 38, -61)
+    else
+      fb:SetPoint("TOPLEFT", p, "TOPLEFT", fx, -36)
+      fx = fx + bw + 8
+    end
     fb:SetScript("OnClick", function()
       BLFG.publicFilter = f
       BLFG.publicPage = 1
       BLFG:RefreshPublicGroups()
     end)
     self.publicFilterButtons[f] = fb
-    fx = fx + bw + 8
   end
 
   font(p, "Need", 10, .65, .85, 1):SetPoint("TOPLEFT", p, "TOPLEFT", 38, -92)
@@ -2809,8 +2815,16 @@ local function publicMatchesFilter(g, filter)
   return g.type == filter
 end
 
+local function publicMatchesIntentFilter(g, filter)
+  filter = tostring(filter or "All Intents")
+  if filter == "All Intents" or filter == "" then return true end
+  if filter == "Recruiting" then return tostring(g and g.intent or "") == "Recruiter" end
+  if filter == "Seeking Group" then return tostring(g and g.intent or "") == "Applicant" end
+  return true
+end
+
 function BLFG:GetPublicFilterCounts()
-  local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0}
+  local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0, ["World Boss"]=0}
   for _, g in pairs(self.publicGroups or {}) do
     if g.message and not BronzeLFG_IsAddonSpam(g.message) then
       counts.All = counts.All + 1
@@ -2821,6 +2835,7 @@ function BLFG:GetPublicFilterCounts()
       if g.type == "Guild" or g.activity == "Guild Recruitment" then counts.Guild = counts.Guild + 1 end
       if g.type == "LFG" or g.intent == "Applicant" then counts.LFG = counts.LFG + 1 end
       if g.type == "Social" or g.intent == "Social" then counts.Social = counts.Social + 1 end
+      if g.type == "World Boss" then counts["World Boss"] = counts["World Boss"] + 1 end
     end
   end
   return counts
@@ -2913,7 +2928,8 @@ function BLFG:GetSortedPublicGroups()
     BLFG_EnrichPublicGroup(self, g)
     if g.message and BronzeLFG_IsAddonSpam(g.message) then
       self.publicGroups[id] = nil
-    elseif publicMatchesFilter(g, filter) and publicMatchesSearch(g, query) and publicMatchesRoleFilter(g, self.publicRoleFilter) then
+    elseif publicMatchesFilter(g, filter) and publicMatchesIntentFilter(g, self.publicIntentFilter)
+      and publicMatchesSearch(g, query) and publicMatchesRoleFilter(g, self.publicRoleFilter) then
       table.insert(rows, g)
     end
   end
@@ -2981,7 +2997,7 @@ function BLFG:RefreshPublicGroups()
     self:RefreshOnlinePanel()
   end
   if self.publicFilterButtons then
-    local labels = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social"}
+    local labels = {"All", "Dungeon", "Raid", "Key", "Event", "Guild", "LFG", "Social", "World Boss"}
     for _, f in ipairs(labels) do
       local b = self.publicFilterButtons[f]
       if b then

@@ -390,6 +390,12 @@ do
         "Azuregos",
         "Lord Kazzak",
         "Dragons of Nightmare",
+        -- These CoA activities were already supported by the live parser. Keep
+        -- them in the active profile so World Boss discovery has one owner.
+        "Snowgrave",
+        "Kaldros Depthbreaker",
+        "Kaldros",
+        "Soggoth",
       }
 
       -- Keep Ascension/CoA creation usable: the final listing still broadcasts the
@@ -546,6 +552,10 @@ do
         wrathDungeons = {},
         raids = ASCENSION_RAIDS_143,
         worldBosses = ASCENSION_WORLDBOSSES_143,
+        worldBossAliases = {
+          ["Lord Kazzak"] = {"kazzak"},
+          ["Soggoth"] = {"sogoth"},
+        },
         keys = ASCENSION_DUNGEONS_143,
         keyAlertOptions = (function()
           local t = {"Any Keystone"}
