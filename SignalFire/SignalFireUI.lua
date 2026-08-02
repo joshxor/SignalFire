@@ -1402,6 +1402,13 @@ do
         or string.find(words, " lf1m ", 1, true) or string.find(words, " lf2m ", 1, true)
         or string.find(words, " lf3m ", 1, true) or string.find(words, " lf4m ", 1, true)
         or string.find(words, " lf%d+m ")
+      local xpAura = SignalFireFastChatLinks and SignalFireFastChatLinks.DetectXPAura
+        and SignalFireFastChatLinks.DetectXPAura(raw) or false
+      local xpAuraContext = role or activity
+        or string.find(words, " group ", 1, true) or string.find(words, " grp ", 1, true)
+        or string.find(words, " run ", 1, true) or string.find(words, " spam ", 1, true)
+        or string.find(words, " lf ", 1, true) or direct
+        or string.find(raw, "looking for", 1, true)
       local recruiting = string.find(words, " recruiting ", 1, true)
         or string.find(words, " recruitment ", 1, true)
         or string.find(raw, "looking for members", 1, true)
@@ -1450,6 +1457,7 @@ do
           or string.find(words, " farm ", 1, true) or string.find(words, " farming ", 1, true)
           or string.find(words, " grp ", 1, true) or string.find(words, " group ", 1, true)
           or string.find(words, " aura ", 1, true)))
+        or (xpAura and xpAuraContext)
       if anchored then
         p3_note("candidateGateAccepted")
         p3_note("groupCandidates")
@@ -1712,6 +1720,7 @@ do
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2107,7 +2116,7 @@ do
 
     local function p3_copy_authoritative(dst, src)
       if not (dst and src) then return end
-      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "ilevel", "score"}
+      local fields = {"player", "message", "rawMessage", "channel", "type", "activity", "activities", "roles", "intent", "tags", "difficulty", "keyLevel", "xpAura", "ilevel", "score"}
       local function genericActivity(value)
         local v = tostring(value or "")
         return v == "" or v == "Group Listing" or v == "Looking For Group"
@@ -2150,6 +2159,7 @@ do
       row.tags = parsed.tags or row.tags or row.type
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
       row.ilevel = parsed.ilevel or row.ilevel
       row.score = tonumber(parsed.score or row.score or 80) or 80
       row.sf151CanonicalKey = key
@@ -2173,6 +2183,7 @@ do
       row.intent = parsed.intent or row.intent
       row.difficulty = parsed.difficulty or row.difficulty
       row.keyLevel = parsed.keyLevel or parsed.keylevel or parsed.key or row.keyLevel
+      row.xpAura = parsed.xpAura == true
 
       local stamp = p3_epoch_now()
       if isNew then
@@ -2378,21 +2389,42 @@ do
       return table.concat(out, "/")
     end
 
+    local function p3_generic_activity(value)
+      local activity = tostring(value or "")
+      return activity == "" or activity == "Unknown" or activity == "Group Listing"
+        or activity == "Looking For Group" or activity == "SignalFire Group"
+        or activity == "Open Group"
+    end
+
     local function p3_exact_link_title(row)
       local diagnostics = p3_diagnostics_enabled()
       local started = diagnostics and debugprofilestop and debugprofilestop() or nil
       local activity = tostring(row and row.activity or "")
-      if activity == "" or activity == "Unknown" then activity = tostring(row and row.type or "") end
+      local xpAuraTitle = row and row.xpAura == true and p3_generic_activity(activity)
+      if not xpAuraTitle and (activity == "" or activity == "Unknown") then
+        activity = tostring(row and row.type or "")
+      end
       local intent = tostring(row and row.intent or "")
       local applicant = intent == "Applicant" or tostring(row and row.type or "") == "LFG"
       local roles = p3_role_summary(row)
       local suffix = applicant and "LFG" or "LFM"
       if roles ~= "" then suffix = (applicant and "LFG " or "Need ") .. roles end
-      local title = activity ~= "" and (activity .. " - " .. suffix) or suffix
+      local auraSuffix = row and row.xpAura == true and not xpAuraTitle and " - XP Aura" or ""
+      local title = xpAuraTitle and "XP Aura" or ((activity ~= "" and (activity .. " - " .. suffix) or suffix) .. auraSuffix)
       title = string.gsub(title, "|", "")
       title = string.gsub(title, "%[", "(")
       title = string.gsub(title, "%]", ")")
-      if string.len(title) > 72 then title = string.sub(title, 1, 69) .. "..." end
+      if string.len(title) > 72 then
+        if auraSuffix ~= "" then
+          local suffixLength = string.len(auraSuffix)
+          local prefixLength = math.max(1, 72 - suffixLength)
+          local prefix = string.sub(title, 1, prefixLength)
+          if string.len(prefix) > 3 then prefix = string.sub(prefix, 1, string.len(prefix) - 3) .. "..." end
+          title = prefix .. auraSuffix
+        else
+          title = string.sub(title, 1, 69) .. "..."
+        end
+      end
       if diagnostics and started and debugprofilestop then
         local elapsed = math.max(0, debugprofilestop() - started)
         local stats = p3_stats()
@@ -2438,7 +2470,7 @@ do
       if row then
         local signature = table.concat({
           tostring(row.id or ""), tostring(row.type or ""), tostring(row.activity or ""),
-          tostring(row.roles or ""), tostring(row.difficulty or ""),
+          tostring(row.roles or ""), tostring(row.difficulty or ""), tostring(row.xpAura == true),
         }, "\031")
         if rec._sfP3CachedLinkSignature == signature and rec._sfP3CachedLink then
           link = rec._sfP3CachedLink
@@ -2446,10 +2478,8 @@ do
         else
           p3_note("linkCacheMisses")
           local activity = tostring(row.activity or "")
-          local generic = activity == "" or activity == "Group Listing"
-            or activity == "Looking For Group" or activity == "SignalFire Group"
-            or activity == "Open Group"
-          if generic then
+          local generic = p3_generic_activity(activity)
+          if generic and row.xpAura ~= true then
             p3_note("genericLinksBuilt")
           elseif row.id then
             local title = p3_exact_link_title(row)
@@ -4106,7 +4136,7 @@ do
       if PG.testErrorStage == "snapshot" then error("injected Public Groups snapshot error") end
       p6_note("snapshotsBuilt")
       local rows, byId = {}, {}
-      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0}
+      local counts = {All=0, Dungeon=0, Raid=0, Key=0, Event=0, Guild=0, LFG=0, Social=0, XPAura=0}
       local nearest = nil
       for id, row in pairs(B.publicGroups or {}) do
         if p6_displayable(id, row) then
@@ -4122,6 +4152,7 @@ do
             message=tostring(row.message or ""), activity=tostring(row.activity or ""),
             kind=kind, roles=tostring(row.roles or ""), rolesText=rolesText,
             difficulty=tostring(row.difficulty or ""), keyLevel=tostring(row.keyLevel or ""),
+            xpAura=row.xpAura == true,
             needsTank=tank, needsHealer=healer, needsDPS=dps,
             intent=tostring(row.intent or (kind == "LFG" and "Applicant" or "Recruiter")),
             tags=tostring(row.tags or ""), channel=tostring(row.channel or "Public"),
@@ -4140,12 +4171,17 @@ do
           record.typeText = p6_type_label(kind)
           record.activityText = p6_shorten(record.activity, 26)
           record.messageText = p6_shorten(record.message, 70)
+          local keySearch = record.keyLevel ~= "" and ("+" .. record.keyLevel) or ""
+          local auraSearch = record.xpAura and "xp aura exp aura experience aura aura of experience aura spam" or ""
           record.searchText = p6_lower(table.concat({record.player, kind, record.activity,
-            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty, record.keyLevel}, " "))
+            record.message, record.intent, record.roles, record.tags, record.channel, record.difficulty,
+            record.keyLevel, keySearch, auraSearch, record.playerRole, record.playerSpec,
+            record.playerZone, record.playerGuild}, " "))
           p6_note("normalizedStringsGenerated")
           table.insert(rows, record)
           byId[record.id] = record
           counts.All = counts.All + 1
+          if record.xpAura then counts.XPAura = counts.XPAura + 1 end
           if kind == "Dungeon" then counts.Dungeon = counts.Dungeon + 1 end
           if kind == "Raid" then counts.Raid = counts.Raid + 1 end
           if kind == "Key" then counts.Key = counts.Key + 1 end
@@ -4207,6 +4243,11 @@ do
       return record.difficulty == filter
     end
 
+    local function p6_xp_aura_matches(record, filter)
+      if filter == "XP Aura Only" then return record.xpAura == true end
+      return true
+    end
+
     local function p6_view_inputs()
       local filter = tostring(B.publicFilter or "All")
       if filter == "Ascended" then filter = "Raid" end
@@ -4222,21 +4263,30 @@ do
       local profile = tostring(BronzeLFG_DB and BronzeLFG_DB.options and BronzeLFG_DB.options.serverProfile or "")
       local invasion = B.SFModuleIsEnabled and tostring(B:SFModuleIsEnabled("invasions")) or "true"
       local difficulty = tostring(B.publicDifficultyFilter or "All Difficulties")
-      return filter, query, role, mode, hidden, profile, invasion, difficulty
+      local xpAura = tostring(B.publicXPAuraFilter or "All Listings")
+      if xpAura == "All XP Aura" then xpAura = "All Listings" end
+      if xpAura ~= "XP Aura Only" then xpAura = "All Listings" end
+      B.publicXPAuraFilter = xpAura
+      return filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura
     end
 
-    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty)
+    local function p6_view_build(snapshot, signature, filter, query, role, mode, hiddenSignature, difficulty, xpAura)
       if PG.testErrorStage == "view" then error("injected Public Groups view error") end
       p6_note("viewsBuilt")
       local hidden = {}
       for name in string.gmatch(hiddenSignature or "", "[^,]+") do hidden[name] = true end
+      local searchTokens = {}
+      for token in string.gmatch(query or "", "%S+") do table.insert(searchTokens, token) end
       local rows = {}
       for _, record in ipairs(snapshot.rows) do
         p6_note("filterScans")
-        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role) and p6_difficulty_matches(record, difficulty)
-        if keep and query ~= "" then
+        local keep = not hidden[record.kind] and p6_filter_matches(record, filter) and p6_role_matches(record, role)
+          and p6_difficulty_matches(record, difficulty) and p6_xp_aura_matches(record, xpAura)
+        if keep and #searchTokens > 0 then
           p6_note("searchScans")
-          keep = string.find(record.searchText, query, 1, true) ~= nil
+          for _, token in ipairs(searchTokens) do
+            if string.find(record.searchText, token, 1, true) == nil then keep = false; break end
+          end
         end
         if keep then table.insert(rows, record) end
       end
@@ -4260,12 +4310,12 @@ do
     local function p6_view()
       p6_note("viewRequests")
       local snapshot = p6_snapshot()
-      local filter, query, role, mode, hidden, profile, invasion, difficulty = p6_view_inputs()
-      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty}, "\31")
+      local filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura = p6_view_inputs()
+      local signature = table.concat({tostring(PG.dataGeneration), filter, query, role, mode, hidden, profile, invasion, difficulty, xpAura}, "\31")
       local cached = PG.viewCache[signature]
       if cached then p6_note("viewCacheHits"); return cached, snapshot end
       local view = p6_time_call("viewBuildMsTotal", "viewBuildMsMax", function()
-        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty)
+        return p6_view_build(snapshot, signature, filter, query, role, mode, hidden, difficulty, xpAura)
       end)
       return view, snapshot
     end
@@ -4285,6 +4335,16 @@ do
       button._sfP6Highlight = active
       if active and button.LockHighlight then button:LockHighlight()
       elseif not active and button.UnlockHighlight then button:UnlockHighlight() end
+      return true
+    end
+
+    local function p6_update_xp_aura_button(snapshot)
+      local button = B.publicXPAuraButton
+      if not button then return false end
+      if snapshot and snapshot.counts then
+        p6_set_text(button, "XP Aura (" .. tostring(snapshot.counts.XPAura or 0) .. ")")
+      end
+      p6_set_highlight(button, tostring(B.publicXPAuraFilter or "All Listings") == "XP Aura Only")
       return true
     end
 
@@ -4390,6 +4450,7 @@ do
           p6_set_highlight(button, tostring(B.publicFilter or "All") == name)
         end
       end
+      p6_update_xp_aura_button(snapshot)
       for key, button in pairs(B.publicRoleFilterButtons or {}) do
         p6_set_highlight(button, tostring(B.publicRoleFilter or "All") == tostring(key))
       end
@@ -4523,7 +4584,14 @@ do
         label = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
       end
       if label then
-        label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
+        label:ClearAllPoints()
+        label:SetWidth(52)
+        local roleAnchor = B.publicRoleFilterButtons and B.publicRoleFilterButtons.D
+        if owned_control(roleAnchor) then
+          label:SetPoint("TOPLEFT", roleAnchor, "TOPRIGHT", 16, -5)
+        else
+          label:SetPoint("TOPLEFT", panel, "TOPLEFT", 260, -92)
+        end
         label:SetText("Difficulty")
         panel._sfP6DifficultyLabel = label
         B.publicDifficultyLabel = label
@@ -4543,7 +4611,12 @@ do
         drop:SetParent(panel)
       end
       if drop then
-        drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        drop:ClearAllPoints()
+        if label then
+          drop:SetPoint("TOPLEFT", label, "TOPRIGHT", 8, 6)
+        else
+          drop:SetPoint("TOPLEFT", panel, "TOPLEFT", 318, -86)
+        end
         if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(drop, 122) end
         B.publicDifficultyDrop = drop
         panel._sfP6DifficultyDrop = drop
@@ -4566,6 +4639,78 @@ do
           drop._sfP6DifficultyInitialized = true
         end
         if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, B.publicDifficultyFilter) end
+      end
+
+      local auraButton
+      local createdAuraButton = false
+      if owned_control(field(panel, "_sfP6XPAuraButton")) then
+        auraButton = field(panel, "_sfP6XPAuraButton")
+      elseif owned_control(B.publicXPAuraButton) then
+        auraButton = B.publicXPAuraButton
+      elseif valid_control(_G.SignalFirePublicXPAuraButton) then
+        auraButton = _G.SignalFirePublicXPAuraButton
+      elseif not _G.SignalFirePublicXPAuraButton and CreateFrame then
+        auraButton = CreateFrame("Button", "SignalFirePublicXPAuraButton", panel, "UIPanelButtonTemplate")
+        createdAuraButton = true
+      end
+      if auraButton and type(auraButton.GetParent) == "function" and auraButton:GetParent() ~= panel and auraButton.SetParent then
+        auraButton:SetParent(panel)
+      end
+      if auraButton then
+        auraButton:ClearAllPoints()
+        local auraAnchor = B.publicFilterButtons and (B.publicFilterButtons.Social
+          or B.publicFilterButtons.LFG or B.publicFilterButtons.Event)
+        if owned_control(auraAnchor) then
+          auraButton:SetPoint("TOPLEFT", auraAnchor, "TOPRIGHT", 12, 0)
+        else
+          auraButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 650, -36)
+        end
+        auraButton:SetWidth(112)
+        auraButton:SetHeight(22)
+        if not field(auraButton, "_sfP6XPAuraWired") then
+          auraButton:SetScript("OnClick", function()
+            local current = tostring(B.publicXPAuraFilter or "All Listings")
+            B.publicXPAuraFilter = current == "XP Aura Only" and "All Listings" or "XP Aura Only"
+            B.publicPage = 1
+            if B.RefreshPublicGroups then B:RefreshPublicGroups() end
+          end)
+          auraButton._sfP6XPAuraWired = true
+        end
+        if createdAuraButton then auraButton:SetText("XP Aura (0)") end
+        auraButton:Show()
+        panel._sfP6XPAuraButton = auraButton
+        B.publicXPAuraButton = auraButton
+        local xpAuraFilter = tostring(B.publicXPAuraFilter or "All Listings")
+        if xpAuraFilter == "All XP Aura" then xpAuraFilter = "All Listings" end
+        if xpAuraFilter ~= "XP Aura Only" then xpAuraFilter = "All Listings" end
+        B.publicXPAuraFilter = xpAuraFilter
+        local snapshot = PG.snapshot and PG.snapshotGeneration == PG.dataGeneration and PG.snapshot or nil
+        p6_update_xp_aura_button(snapshot)
+      end
+
+      local search = B.publicSearch
+      if owned_control(search) then
+        search:ClearAllPoints()
+        search:SetWidth(220)
+        search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -87)
+      end
+
+      local searchLabel
+      if owned_control(field(panel, "_sfP6SearchLabel")) then
+        searchLabel = field(panel, "_sfP6SearchLabel")
+      elseif owned_control(B.publicSearchLabel) then
+        searchLabel = B.publicSearchLabel
+      elseif panel.CreateFontString then
+        searchLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      end
+      if searchLabel and owned_control(search) then
+        searchLabel:ClearAllPoints()
+        searchLabel:SetWidth(220)
+        if searchLabel.SetJustifyH then searchLabel:SetJustifyH("CENTER") end
+        searchLabel:SetPoint("BOTTOM", search, "TOP", 0, 4)
+        searchLabel:SetText("Search")
+        panel._sfP6SearchLabel = searchLabel
+        B.publicSearchLabel = searchLabel
       end
 
       if field(panel, "_sfP6ViewHooks") == true then return end
@@ -4647,6 +4792,7 @@ do
         if methodName == "ClearPublicGroups" then
           self.publicDifficultyFilter = "All Difficulties"
           if self.publicDifficultyDrop and UIDropDownMenu_SetText then UIDropDownMenu_SetText(self.publicDifficultyDrop, self.publicDifficultyFilter) end
+          self.publicXPAuraFilter = "All Listings"
         end
         if before > 0 then self:SF151_InvalidatePublicGroupsData(methodName) end
         return unpack(results, 2)
@@ -6449,7 +6595,8 @@ do
 
     local function p7_public_groups_ready(owner)
       return owner and owner.publicPanel and owner.publicRows
-        and owner.publicDifficultyDrop and owner.publicDifficultyLabel and true or false
+        and owner.publicDifficultyDrop and owner.publicDifficultyLabel
+        and true or false
     end
 
     local function p7_reconcile_public_groups(owner)
