@@ -542,147 +542,184 @@ Merge evidence is recorded in Section 12.
 
 ---
 
-# 16. Next Feature Round — Activity Discovery Pass B
+# 16. Activity Discovery Pass B - Closeout
 
-**Status: ACTIVE**
+**Status: LIVE APPROVED / CLOSEOUT PENDING**
 
-Pass A has merged and post-merge `main` has been verified. This pass runs in a
-new feature branch from that exact baseline.
+Activity Discovery Pass B was implemented on PR #21 from the verified Pass A
+baseline. The exact production RC passed live testing and is ready for normal
+PR finalization.
 
-Suggested branch:
+PR:
+
+`#21 - Add XP Aura discovery and Public Groups search`
+
+Feature branch:
 
 `feature/activity-discovery-pass-b`
 
-Before editing:
+Final tested RC evidence:
 
-inspect current post-PR20 `main`.
+- production head: `d6007b1c4dd0bb39f74dc0c291033f3cd98c20d2`;
+- workflow #123;
+- run ID `30764036373`;
+- package job `91539509575`;
+- artifact `SignalFire-1.5.3`;
+- artifact ID `8838360016`;
+- artifact digest `sha256:178721e4722e02d570873ba020c6bbdf8b352bc41d160f42dd41703460ae71b5`;
+- live smoke test: passed.
 
-Do not assume Pass A line numbers or wrappers remain identical after merge/documentation changes.
+## 16.1 Delivered Pass B behavior
 
-## Primary Pass B goals
+- affirmative XP Aura is authoritative canonical metadata owned by discovery/parser results and Public Groups rows; it did not require LIST expansion;
+- Aura shorthand is conservative and bounded to useful XP Aura candidate context;
+- negated XP Aura, class/combat aura, and unrelated aura wording do not become affirmative XP Aura metadata;
+- useful exact chat links receive the specific `- XP Aura` suffix;
+- messages without a more specific exact activity link can receive the generic `[XP Aura]` fallback;
+- Public Groups exposes a top `XP Aura (N)` additive filter button;
+- XP Aura was not added as a new Type or transport/protocol category, and LIST remains through `p26`;
+- Public Groups search normalizes its corpus and requires all whitespace-separated search tokens to match;
+- existing Normal, Heroic, Mythic, Mythic+, role, Type, pagination, selected-row, and search behavior remains authoritative;
+- Public Groups lazy-panel lifecycle, repeated-open reuse, control idempotence, and XP Aura count/highlight hydration are covered;
+- Search label and layout corrections are retained;
+- existing Runtime FPS, Marketplace, and Listing/Broadcast regressions remain green.
 
-### 16.1 XP Aura metadata representation
+## 16.2 Pass B validation and handoff
 
-Establish one canonical internal representation for XP Aura information associated with discovered activity/listing data.
+The production-loaded Pass B harness covers positive and negative XP Aura
+fixtures, parser precedence, generic and exact links, canonical Public Groups
+rows, combined filters, normalized multi-token search, pagination, selected-row
+clearing, lazy-panel reuse, control duplication, and the no-chat-send/no-new-
+protocol constraints. Pass A compatibility coverage remains in the same CI
+workflow.
 
-Before adding packet fields, determine whether XP Aura is local discovery metadata or truly requires transport.
-
-Default preference:
-
-**do not modify LIST `p3-p26` unless required and explicitly approved.**
-
-Define:
-
-- canonical field name;
-- supported values;
-- unknown/unset behavior;
-- parsed-result ownership;
-- Public Groups row ownership;
-- listing-object ownership only if required.
-
-### 16.2 XP Aura parser recognition
-
-Teach the production discovery/parser architecture to recognize supported XP Aura language/signals in public group messages.
-
-Requirements:
-
-- reuse the existing parser/normalization owner;
-- do not create a second parser database;
-- preserve Guild/Raid precedence;
-- preserve Mythic/Mythic+ precedence;
-- preserve canonical activity matching;
-- minimize false positives;
-- add positive and negative production-loaded fixtures.
-
-### 16.3 XP Aura Public Groups filter
-
-After metadata ownership is stable, add an XP Aura filter.
-
-Requirements:
-
-- combines with Type;
-- combines with Role;
-- combines with Difficulty;
-- combines with Search;
-- resets page appropriately;
-- stale selected rows clear through the real renderer;
-- follows the established lazy-panel lifecycle;
-- attachment is idempotent;
-- controls are not duplicated;
-- dropdown lifecycle is registered normally;
-- no permanent background work.
-
-Reuse the Difficulty-control lifecycle lessons instead of creating another independent UI ownership system.
-
-### 16.4 Broader Public Groups search improvement
-
-Pass B should also improve the current search experience.
-
-Inspect the final search owner first.
-
-Search should consistently cover useful canonical metadata such as:
-
-- player;
-- activity;
-- raw message;
-- normalized difficulty;
-- key level;
-- XP Aura;
-- role/intent metadata where useful.
-
-Avoid expensive repeated normalization per row per keystroke.
-
-Prefer snapshot/index/cache ownership consistent with the current Public Groups performance pipeline.
+Workflow #123 passed Lua 5.1 syntax, all applicable source verifiers, loader
+preparation, Marketplace Create/Edit and regression harnesses, Runtime FPS
+cleanup, Listing/Broadcast, Activity Discovery Pass A, Activity Discovery Pass
+B, release validation, and package construction.
 
 ---
 
-# 17. Pass B Regression Requirements
+# 17. Deferred XP Aura UI polish
 
-Production-loaded tests should cover:
+## 17.1 XP Aura additive-button interaction consistency
 
-- XP Aura positive fixtures;
-- XP Aura negative/ambiguous fixtures;
-- parser precedence;
-- Mythic regression;
-- Mythic+ regression;
-- canonical dungeon regression;
-- exact XP Aura filter behavior;
-- XP Aura + Difficulty;
-- XP Aura + Type;
-- XP Aura + Role;
-- XP Aura + Search;
-- pagination reset;
-- selected-row clearing;
-- real lazy-panel lifecycle;
-- repeated open/close reuse;
-- no duplicate controls;
-- no filtering-related chat sends;
-- no LIST packet expansion without explicit approval;
-- no permanent parser worker `OnUpdate`;
-- Runtime FPS regression coverage;
-- Listing/Broadcast regression coverage;
-- Marketplace regression coverage.
+The current XP Aura button behavior is functionally correct and intentionally
+different from the mutually exclusive Type buttons:
+
+- the first click shows XP Aura-only rows;
+- the second click returns to all permitted rows;
+- repeated clicks toggle between those two states.
+
+This is a future UI consistency/polish item, not a Pass B blocker. Future work
+should make the additive-vs-mutually-exclusive distinction more visually
+obvious without changing the underlying semantic model merely for visual
+symmetry. Possible treatments include a visually distinct additive filter chip
+or a clearer selected/off state. Do not implement this in PR #21.
 
 ---
 
-# 18. Conditional Activity Discovery / Search Pass C
+# 18. Public Groups Discovery and Alerts Roadmap
 
-Do not implement automatically.
+The previous vague conditional Search Pass C is superseded by the concrete
+follow-up sequence below. These are future feature rounds and are not part of
+Pass B closeout.
 
-After Pass B live testing, evaluate whether a dedicated follow-up is justified.
+## 18.1 Next Pass C - World Boss Discovery and Recruiting Intent
 
-Potential scope:
+Pass C must begin in a new Codex chat after Pass B is merged. Its purpose is to
+make Public Groups reliably identify the high-value group posts that alerting
+will later consume.
 
-- saved searches;
-- reusable filter presets;
-- advanced search syntax;
-- search-driven alerts/notifications;
-- XP Aura/activity notification rules;
-- additional compact Public Groups filter UX.
+### World Boss discovery robustness
 
-These remain conditional.
+Audit the historical World Boss parser behavior and use active server-profile
+World Boss names and aliases as authoritative data. Do not create a separate
+manually duplicated boss database when the active profile already owns these
+names.
 
-Do not add them to Pass B unless scope is explicitly expanded.
+Add production-loaded regression fixtures including at minimum:
+
+- `LF DPS Azuregos`;
+- `LFM Azuregos need DPS`;
+- `LFM Kazzak`;
+- `LFM for Worldboss Tour Instance Loot FFA w/ me ilvl+spec start: Kazzak`.
+
+Recognize appropriate concepts such as `world boss`, `worldboss`, `world boss
+tour`, and known boss names/aliases, without treating arbitrary uses of
+`boss` as World Boss. The missed Kazzak tour fixture must create a canonical
+Public Groups row when it otherwise satisfies discovery rules.
+
+Canonical World Boss rows should expose `Type = World Boss` and the correct
+canonical activity/boss when known.
+
+### World Boss filter
+
+Expose a dedicated `World Boss (N)` Public Groups filter or an equally clear
+final UX based on authoritative Type metadata. Do not hide World Boss rows only
+inside a generic category.
+
+### Recruiter versus seeker intent
+
+Create or normalize canonical intent metadata distinguishing approximately:
+
+- Recruiting / Hosting: `LFM`, `need healer`, `LF DPS Azuregos` when clearly a
+  group seeking a player, `LF2 DPS`, `need tank/heals`, or a group with slots;
+- Seeking Group: `LFG ZG`, `DPS LFG ZG`, or `healer looking for group`.
+
+Do not implement this as a naive substring test where every `LF` means
+Recruiting. Reuse and extend the authoritative intent parser so the canonical
+row distinguishes a group that needs players from a player who needs a group.
+
+### Recruiting-only filter
+
+Add a Recruiting Only Public Groups filter/facet based on canonical intent.
+Keep seeker rows discoverable and filterable; do not discard them globally.
+
+### Mythic versus RDF discoverability
+
+Audit whether the existing canonical Difficulty filter remains sufficient once
+Recruiting intent exists. If needed, add a compact quick-filter/preset while
+keeping Normal, Heroic, Mythic, and Mythic+ Difficulty as the single parser
+owner. Do not invent a second Mythic classification system.
+
+## 18.2 Pass D - Public Groups Alerts and Rules
+
+Pass D begins only after Pass C establishes reliable canonical rows and intent.
+Alerts must be driven by genuinely new or meaningfully changed canonical Public
+Groups rows, never by raw chat substring matches.
+
+### World Boss and recruiting-only alerts
+
+- alert on a new matching World Boss recruiting row;
+- support any-World-Boss rules and, where practical, individual boss enable/
+  disable choices using active profile data;
+- allow rules to require `Intent = Recruiting`, so `LFG ZG` does not alert but
+  `LFM ZG need healer` can.
+
+### Filter-aware rules and quick filters
+
+Rules should be able to use canonical Type, Activity, Difficulty, Role,
+Recruiting/Seeking intent, XP Aura when useful, and normalized search terms.
+Support a simple custom keyword/quick rule such as `Azuregos`, `Kazzak`,
+`world boss`, or `Mythic` before considering advanced query syntax. Do not
+reparse raw chat independently inside alerts.
+
+### Dedupe, cooldown, and rule controls
+
+- dedupe repeated rebroadcasts using canonical row identity/generation and
+  bounded cooldown ownership;
+- do not play a sound for every equivalent repost;
+- provide global alert enable/disable, a default/chosen sound, and per-rule
+  enabled state;
+- remain compatible with WoW 3.3.5 APIs.
+
+### Alert safety and performance
+
+Require authoritative canonical discovery before alerting. Preserve the
+existing performance architecture: no permanent idle parser `OnUpdate`, no raw
+full-table scan per chat line, bounded cache/dedupe ownership, hidden-panel
+inactivity, one authoritative parser pass, and no duplicate ChatFrame parsing.
 
 ---
 
@@ -905,51 +942,43 @@ Never destroy unrelated local work.
 
 Unless reprioritized by the user:
 
-## Priority 1 — Activity Discovery Pass A
+## Priority 1 — Activity Discovery Pass B
 
 Status:
 
 - implementation complete;
-- CI green;
-- exact RC tested;
-- live smoke test passed;
-- complete and merged as PR #20;
-- post-merge workflow and package construction succeeded.
+- exact RC passed CI;
+- exact RC passed live smoke testing;
+- closeout/merge pending on PR #21;
+- no production scope remains open in this pass.
 
-## Priority 2 — Activity Discovery Pass B
+## Priority 2 — Public Groups World Boss Discovery and Recruiting Intent
 
 Status:
 
-- active.
+- planned as the next feature round, Pass C;
+- start in a new Codex chat after PR #21 is merged;
+- use the requirements in Section 18.1.
 
-Scope:
+## Priority 3 — Public Groups Alerts and Rules
 
-- XP Aura metadata;
-- XP Aura parsing;
-- XP Aura filter;
-- broader Public Groups search improvements.
+Status:
 
-## Priority 3 — Evaluate conditional Search/Discovery Pass C
-
-Possible:
-
-- advanced search;
-- saved searches/presets;
-- notification integration.
-
-Conditional only.
+- planned after Pass C, as Pass D;
+- alert only from canonical Public Groups rows and intent metadata;
+- use the requirements in Section 18.2.
 
 ## Priority 4 — Runtime FPS Cleanup follow-up
 
-Evidence-driven performance work on newly verified main.
-
-Move ahead of Pass C if a serious measured regression requires it.
+Evidence-driven performance work remains planned after the high-value discovery
+and alert work unless measured regression requires it to move earlier.
 
 ## Priority 5 — Future user-approved work
 
 Do not invent the next major feature automatically.
 
-Reassess current main and user priorities.
+Reassess current `main` and user priorities after the planned discovery and
+alert passes.
 
 ---
 
@@ -980,6 +1009,7 @@ A SignalFire pass is complete only when:
 Do not accidentally reopen:
 
 - PR #19 Listing/Broadcast UX;
+- Activity Discovery Pass B / PR #21 after closeout;
 - Runtime FPS Cleanup Pass A;
 - Marketplace Phase 2B;
 - v1.4.33 UI/version consolidation;
