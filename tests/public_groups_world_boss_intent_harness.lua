@@ -192,7 +192,15 @@ assert(#worldRows == 5, "World Boss filter leaked another type")
 local worldRecruiting = setView("World Boss", "Recruiting", "All Difficulties")
 assert(#worldRecruiting == 3, "Recruiting World Boss filter was not exact")
 local worldSeeking = setView("World Boss", "Seeking Group", "All Difficulties")
-assert(#worldSeeking == 2 and worldSeeking[1].type == "World Boss", "Seeking Group World Boss filter was not exact")
+assert(#worldSeeking == 2, "Seeking Group World Boss filter count changed")
+local seekingIds = {}
+for _, record in ipairs(worldSeeking) do
+  assert(record.kind == "World Boss", "Seeking Group filter leaked a non-World-Boss record")
+  assert(record.intent == "Applicant", "Seeking Group filter leaked a non-Applicant record")
+  seekingIds[record.id] = true
+end
+assert(seekingIds[worldApplicant.id] and seekingIds[kazzakApplicant.id],
+  "Seeking Group World Boss filter returned the wrong Applicant rows")
 local auraWorld = setView("World Boss", "Recruiting", "All Difficulties", "D", "azuregos xp aura", "XP Aura Only")
 assert(#auraWorld == 1 and auraWorld[1].id == worldAura.id, "World Boss/search/role/XP Aura intersection changed")
 
@@ -259,8 +267,8 @@ local function assertOneParsePerReceivingFrame(frameCount)
   clearRows()
   local before = tonumber(B._sfP3Stats and B._sfP3Stats.TestParseCalls or 0) or 0
   for index = 1, frameCount do
-    assert(runtime.IngestSource("Perf" .. tostring(frameCount) .. "-" .. tostring(index), "LFM Kazzak", "3. Newcomers", "CHAT_MSG_CHANNEL") ~= false,
-      "performance fixture was rejected")
+    local rec = runtime.IngestSource("Perf" .. tostring(frameCount) .. "-" .. tostring(index), "LFM Kazzak", "3. Newcomers", "CHAT_MSG_CHANNEL")
+    assert(type(rec) == "table", "performance fixture did not create a parser record")
   end
   drainQueue()
   local after = tonumber(B._sfP3Stats and B._sfP3Stats.TestParseCalls or 0) or 0
