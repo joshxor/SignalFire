@@ -181,10 +181,39 @@ assert(disabledRow.xpAura == true
 
 BronzeLFG_DB.options.inlineChatLinks = true
 runtime.Apply()
-local _, paladinDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", "paladin aura need healer", "AuraPaladin")
-local _, negatedDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", "LFM 1-60 no XP aura", "AuraNegated")
-assert(paladinDisplay == "paladin aura need healer" and negatedDisplay == "LFM 1-60 no XP aura",
-  "false-positive or negated Aura chat link was rendered")
+local paladinText = "paladin aura need healer"
+local negatedText = "LFM 1-60 no XP aura"
+local paladinParsed = SignalFireFastChatLinks.TestParse(paladinText)
+local negatedParsed = SignalFireFastChatLinks.TestParse(negatedText)
+assert(not (paladinParsed and paladinParsed.xpAura == true), "paladin Aura parser metadata became affirmative")
+assert(not (negatedParsed and negatedParsed.xpAura == true), "negated XP Aura parser metadata became affirmative")
+assert(SignalFireFastChatLinks.DetectXPAura(paladinText) == false, "paladin Aura detector became affirmative")
+assert(SignalFireFastChatLinks.DetectXPAura(negatedText) == false, "negated XP Aura detector became affirmative")
+local _, paladinDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", paladinText, "AuraPaladin")
+local _, negatedDisplay = runtime.Filter(DEFAULT_CHAT_FRAME, "CHAT_MSG_CHANNEL", negatedText, "AuraNegated")
+local function hasXPAuraLink(value)
+  value = tostring(value or "")
+  return value:find("|Hbronzelfgpub:", 1, true) ~= nil and value:find("[XP Aura]", 1, true) ~= nil
+end
+assert(not hasXPAuraLink(paladinDisplay) and not hasXPAuraLink(negatedDisplay),
+  "false-positive or negated Aura received an XP Aura link")
+assert(paladinDisplay == paladinText, "class/combat Aura changed from its established raw chat behavior")
+drainQueue()
+local paladinRow, negatedRow
+for _, row in pairs(B.publicGroups or {}) do
+  if row.player == "AuraPaladin" and row.rawMessage == paladinText then paladinRow = row end
+  if row.player == "AuraNegated" and row.rawMessage == negatedText then negatedRow = row end
+end
+assert(not (paladinRow and paladinRow.xpAura == true), "paladin Aura canonical row became affirmative")
+assert(not (negatedRow and negatedRow.xpAura == true), "negated XP Aura canonical row became affirmative")
+if paladinRow then
+  assert(#setView("All", "All", "All Difficulties", "AuraPaladin", "XP Aura Only") == 0,
+    "paladin Aura row qualified under XP Aura Only")
+end
+if negatedRow then
+  assert(#setView("All", "All", "All Difficulties", "AuraNegated", "XP Aura Only") == 0,
+    "negated XP Aura row qualified under XP Aura Only")
+end
 
 -- The real Phase 6 controls and Phase 4 scheduler own filter changes.
 local showResult = B:ShowPublicGroups()
