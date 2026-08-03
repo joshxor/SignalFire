@@ -307,8 +307,30 @@ configure(B.sf153ConfigureAlertRulesButton)
 local rulesPanel = assert(B.sfe153AlertsRulesPanel, "Pass D rules panel was not built")
 assert(rulesPanel:IsShown() and B.sf153IntentDrop and B.sf153WorldModeDrop and B.sf153CustomEdit,
   "Pass D controls were not created")
+assert(type(rulesPanel.sf153BossChecks) == "table", "World Boss control registry was not a table")
+local bossRegistry = rulesPanel.sf153BossChecks
+local bossRegistryCount = 0
+local bossControls = {}
+local bossVisibleCount = 0
+for key, control in pairs(bossRegistry) do
+  bossRegistryCount = bossRegistryCount + 1
+  if control and control.IsShown and control:IsShown() then
+    bossControls[key] = control
+    bossVisibleCount = bossVisibleCount + 1
+  end
+end
+assert(bossVisibleCount > 0, "no active-profile World Boss controls were visible")
 configure(B.sf153ConfigureAlertRulesButton)
 assert(B.sfe153AlertsRulesPanel == rulesPanel, "repeated rule-panel opens duplicated the panel")
+assert(rulesPanel.sf153BossChecks == bossRegistry, "World Boss registry table was replaced on refresh")
+local repeatedBossRegistryCount = 0
+for key, control in pairs(rulesPanel.sf153BossChecks) do
+  repeatedBossRegistryCount = repeatedBossRegistryCount + 1
+end
+assert(repeatedBossRegistryCount == bossRegistryCount, "World Boss registry count changed on same-profile refresh")
+for key, control in pairs(bossControls) do
+  assert(rulesPanel.sf153BossChecks[key] == control, "World Boss control was recreated on same-profile refresh")
+end
 B:HidePanels()
 assert(not rulesPanel:IsShown(), "rules panel did not close with Options lifecycle")
 

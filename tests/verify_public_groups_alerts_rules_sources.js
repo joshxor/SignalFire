@@ -92,6 +92,28 @@ need(passDUI, "publicAlertCustomText", "custom quick keyword text");
 need(passDUI, "SignalFireUILifecycle151", "standard dropdown lifecycle registration");
 forbid(passDUI, "publicFilter =", "Public Groups visible Type filter ownership reused by alerts");
 forbid(passDUI, "publicIntentFilter =", "Public Groups visible Intent filter ownership reused by alerts");
+const bossesStart = passDUI.indexOf("local function sf153_refresh_bosses");
+const bossesEnd = passDUI.indexOf("local function sf153_build_rules", bossesStart);
+if (bossesStart < 0 || bossesEnd < 0) throw new Error("Pass D source verification failed: World Boss registry boundary");
+const bosses = passDUI.slice(bossesStart, bossesEnd);
+needPattern(bosses, /type\s*\(\s*panel\.sf153BossChecks\s*\)\s*~=\s*["']table["']/, "World Boss registry type safety");
+needPattern(bosses, /local\s+registry\s*=\s*panel\.sf153BossChecks/, "World Boss registry reuse owner");
+needPattern(bosses, /for\s+_,\s*control\s+in\s+pairs\s*\(\s*registry\s*\)/, "World Boss controls hidden from stable registry");
+needPattern(bosses, /local\s+check\s*=\s*registry\s*\[\s*key\s*\]/, "World Boss control registry lookup");
+needPattern(bosses, /check\.sf153BossName\s*=\s*name/, "World Boss control metadata refresh");
+if (bosses.indexOf("registry[key] = nil") >= 0 || bosses.indexOf("panel.sf153BossChecks[key] = nil") >= 0) {
+  throw new Error("Pass D source verification failed: World Boss refresh deletes registry entries");
+}
+const hideIndex = bosses.indexOf("control:Hide()");
+const showIndex = bosses.indexOf("check:Show()");
+if (hideIndex < 0 || showIndex < 0 || hideIndex > showIndex) {
+  throw new Error("Pass D source verification failed: World Boss controls are not hidden before refresh");
+}
+const lookupIndex = bosses.indexOf("local check = registry[key]");
+const createIndex = bosses.indexOf('CreateFrame("CheckButton"');
+if (lookupIndex < 0 || createIndex < 0 || lookupIndex > createIndex) {
+  throw new Error("Pass D source verification failed: World Boss controls are not reused before creation");
+}
 
 need(harness, "World Boss recruiter did not fire exactly once", "World Boss visual/sound regression");
 need(harness, "Applicant row alerted under Recruiting", "Recruiting intent regression");

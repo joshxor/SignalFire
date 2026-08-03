@@ -8215,27 +8215,32 @@ do
       end
       local selected = A.GetWorldBossSelections and A:GetWorldBossSelections() or {}
       local names = A:GetWorldBosses()
-      panel.sf153BossChecks = panel.sf153BossChecks or {}
-      for key, control in pairs(panel.sf153BossChecks) do
-        control:Hide()
-        if control.sf153Label then control.sf153Label:Hide() end
-        panel.sf153BossChecks[key] = nil
+      if type(panel.sf153BossChecks) ~= "table" then
+        panel.sf153BossChecks = {}
+      end
+      local registry = panel.sf153BossChecks
+      for _, control in pairs(registry) do
+        if control and control.Hide then control:Hide() end
+        if control and control.sf153Label and control.sf153Label.Hide then
+          control.sf153Label:Hide()
+        end
       end
       for index, name in ipairs(names or {}) do
         local key = sf153_boss_key(name)
-        local check = panel.sf153BossChecks[key]
+        local check = registry[key]
         if not check then
           check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
           check:SetWidth(22); check:SetHeight(22)
-          check.sf153BossName = name
           check.sf153Label = sf153_font(panel, name, 10, .92, .92, .92)
           check.sf153Label:SetPoint("LEFT", check, "RIGHT", 3, 0)
           check:SetScript("OnClick", function(self)
             A:SetWorldBossSelection(self.sf153BossName, self:GetChecked() and true or false)
             sf153_set_status("Alert rules saved.")
           end)
-          panel.sf153BossChecks[key] = check
+          registry[key] = check
         end
+        check.sf153BossName = name
+        if check.sf153Label and check.sf153Label.SetText then check.sf153Label:SetText(name) end
         check:ClearAllPoints()
         check:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -224 - ((index - 1) * 22))
         check:SetChecked(selected[name] ~= false)
