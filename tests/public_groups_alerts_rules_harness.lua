@@ -225,11 +225,34 @@ BronzeLFG_DB.options.publicAlertCustomEnabled = true
 BronzeLFG_DB.options.publicAlertCustomText = "azuregos, kazzak, bfd mythic"
 BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
 ingest("CustomAzuregos", "LF DPS Azuregos")
+local customAzuregosDiag = diagnostics()
+assert(customAzuregosDiag.customMatched == 1 and customAzuregosDiag.fired == 1,
+  "custom Azuregos OR clause did not fire exactly once")
 ingest("CustomKazzak", "LFM Kazzak")
-ingest("CustomBfdMythic", "LFM BFD Mythic need healer")
+local customKazzakDiag = diagnostics()
+assert(customKazzakDiag.customMatched == 2 and customKazzakDiag.fired == 2,
+  "custom Kazzak OR clause did not fire exactly once")
+local customBfdMythic = ingest("CustomBfdMythic", "LFM BFD Mythic need healer")
+assert(customBfdMythic.type == "Dungeon"
+  and customBfdMythic.activity == "Blackfathom Deeps"
+  and customBfdMythic.difficulty == "Mythic"
+  and customBfdMythic.intent == "Recruiter"
+  and (string.find(string.lower(tostring(customBfdMythic.message or "")), "bfd", 1, true)
+    or string.find(string.lower(tostring(customBfdMythic.rawMessage or "")), "bfd", 1, true)),
+  "custom BFD Mythic row did not retain canonical and original searchable metadata")
+local customBfdMythicDiag = diagnostics()
+assert(customBfdMythicDiag.customMatched == 3 and customBfdMythicDiag.fired == 3,
+  "custom BFD Mythic AND clause did not fire exactly once")
 ingest("CustomBfdNormal", "LFM BFD need healer")
+local customBfdNormalDiag = diagnostics()
+assert(customBfdNormalDiag.customMatched == 3 and customBfdNormalDiag.fired == 3,
+  "custom BFD normal row incorrectly matched the Mythic AND clause")
 ingest("CustomApplicant", "DPS LFG Azuregos")
-assert(diagnostics().customMatched == 3 and diagnostics().fired == 3, "custom comma OR or whitespace AND semantics changed")
+local customApplicantDiag = diagnostics()
+assert(customApplicantDiag.customMatched == 3 and customApplicantDiag.fired == 3
+  and customApplicantDiag.intentRejected > customBfdNormalDiag.intentRejected,
+  "custom applicant bypassed Recruiting intent refinement")
+assert(customApplicantDiag.customMatched == 3 and customApplicantDiag.fired == 3, "custom comma OR or whitespace AND semantics changed")
 resetCase()
 BronzeLFG_DB.options.publicAlertWorldBoss = true
 BronzeLFG_DB.options.publicAlertCustomEnabled = true

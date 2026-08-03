@@ -484,11 +484,27 @@ do
     end
 
     local function sf153_corpus(row)
+      row = row or {}
+
+      local activities = ""
+      if type(row.activities) == "table" then
+        local values = {}
+        for _, value in ipairs(row.activities) do
+          table.insert(values, tostring(value or ""))
+        end
+        activities = table.concat(values, " ")
+      elseif type(row.activities) == "string" then
+        activities = row.activities
+      end
+
       local parts = {
-        row and row.player, row and row.type, row and row.activity, row and row.message,
-        row and row.rawMessage, row and row.intent, row and row.roles, row and row.tags,
-        row and row.channel, row and row.difficulty, row and row.keyLevel,
-        row and row.xpAura and "XP Aura" or "",
+        tostring(row.player or ""), tostring(row.type or ""),
+        tostring(row.activity or ""), tostring(activities or ""),
+        tostring(row.message or ""), tostring(row.rawMessage or ""),
+        tostring(row.intent or ""), tostring(row.roles or ""),
+        tostring(row.tags or ""), tostring(row.channel or ""),
+        tostring(row.difficulty or ""), tostring(row.keyLevel or ""),
+        row.xpAura == true and "XP Aura" or "",
       }
       return " " .. sf153_normalize(table.concat(parts, " ")) .. " "
     end

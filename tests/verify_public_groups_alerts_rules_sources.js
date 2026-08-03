@@ -12,6 +12,9 @@ const toc = fs.readFileSync("SignalFire/SignalFire.toc", "utf8");
 const need = (source, value, label) => {
   if (!source.includes(value)) throw new Error(`Pass D source verification failed: ${label}`);
 };
+const needPattern = (source, pattern, label) => {
+  if (!pattern.test(source)) throw new Error(`Pass D source verification failed: ${label}`);
+};
 const forbid = (source, value, label) => {
   if (source.includes(value)) throw new Error(`Pass D source verification failed: ${label}`);
 };
@@ -23,9 +26,20 @@ const owner = runtime.slice(ownerStart, ownerEnd);
 
 need(owner, "SignalFirePublicGroupAlerts153", "single named Runtime alert owner");
 need(owner, "sf151StableLink", "canonical-row gate");
-for (const field of ["row.type", "row.activity", "row.activities", "row.intent", "row.roles", "row.difficulty", "row.keyLevel", "row.xpAura"]) {
+for (const field of ["row.type", "row.activity", "row.activities", "row.message", "row.rawMessage", "row.intent", "row.roles", "row.tags", "row.channel", "row.difficulty", "row.keyLevel", "row.xpAura"]) {
   need(owner, field, `canonical ${field} consumption`);
 }
+const corpusStart = owner.indexOf("local function sf153_corpus");
+const corpusEnd = owner.indexOf("local function sf153_custom_matches", corpusStart);
+if (corpusStart < 0 || corpusEnd < 0) throw new Error("Pass D source verification failed: custom corpus boundary");
+const corpus = owner.slice(corpusStart, corpusEnd);
+needPattern(corpus, /type\s*\(\s*row\.activities\s*\)\s*==\s*["']table["']/, "multi-activity corpus handling");
+needPattern(corpus, /table\.concat\s*\(\s*values\s*,\s*["']\s["']\s*\)/, "dense multi-activity corpus handling");
+for (const field of ["player", "type", "activity", "message", "rawMessage", "intent", "roles", "tags", "channel", "difficulty", "keyLevel"]) {
+  needPattern(corpus, new RegExp(`tostring\\(\\s*row\\.${field}\\s+or\\s+""\\s*\\)`), `string-safe corpus field ${field}`);
+}
+needPattern(corpus, /tostring\(\s*value\s+or\s+""\s*\)/, "string-safe multi-activity corpus values");
+needPattern(corpus, /row\.xpAura\s*==\s*true\s+and\s+"XP Aura"\s+or\s+""/, "string-safe XP Aura corpus field");
 need(owner, 'typeName == "World Boss"', "first-class World Boss rule");
 need(owner, 'typeName == "Raid"', "canonical Raid rule");
 need(owner, 'typeName == "Dungeon"', "canonical Dungeon rule");
