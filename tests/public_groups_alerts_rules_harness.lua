@@ -130,6 +130,14 @@ end
 
 -- A/B: World Boss canonical type and Recruiting intent, while the UI remains hidden.
 resetCase()
+local zeroDiag = diagnostics()
+assert(zeroDiag.evaluations == 0
+  and zeroDiag.fired == 0
+  and zeroDiag.deduped == 0
+  and zeroDiag.intentRejected == 0
+  and zeroDiag.customMatched == 0
+  and zeroDiag.soundsPlayed == 0,
+  "ResetDiagnostics did not return numeric zero counters")
 local world = ingest("AzuregosRecruiter", "LF DPS Azuregos")
 assert(world.type == "World Boss" and world.activity == "Azuregos" and world.intent == "Recruiter", "Azuregos canonical metadata changed")
 assert(#chatAlerts == 1 and #errorAlerts == 1 and #sounds == 1, "World Boss recruiter did not fire exactly once")
@@ -247,10 +255,14 @@ ingest("CustomBfdNormal", "LFM BFD need healer")
 local customBfdNormalDiag = diagnostics()
 assert(customBfdNormalDiag.customMatched == 3 and customBfdNormalDiag.fired == 3,
   "custom BFD normal row incorrectly matched the Mythic AND clause")
+assert(customBfdNormalDiag.intentRejected == 0,
+  "custom BFD normal unexpectedly changed intent rejection count")
+local customChatCount = #chatAlerts
 ingest("CustomApplicant", "DPS LFG Azuregos")
 local customApplicantDiag = diagnostics()
 assert(customApplicantDiag.customMatched == 3 and customApplicantDiag.fired == 3
-  and customApplicantDiag.intentRejected > customBfdNormalDiag.intentRejected,
+  and customApplicantDiag.intentRejected == 1
+  and #chatAlerts == customChatCount,
   "custom applicant bypassed Recruiting intent refinement")
 assert(customApplicantDiag.customMatched == 3 and customApplicantDiag.fired == 3, "custom comma OR or whitespace AND semantics changed")
 resetCase()

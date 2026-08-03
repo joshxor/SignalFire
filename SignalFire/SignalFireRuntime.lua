@@ -701,8 +701,25 @@ do
 
     function A:GetDiagnostics()
       sf153_migrate()
-      local out = {cacheSize=self.cacheSize or 0, activeProfile=sf153_profile_id(), currentCooldown=sf153_options().publicAlertCooldown}
-      for key, value in pairs(self.stats or {}) do out[key] = value end
+      local out = {
+        evaluations = 0,
+        matched = 0,
+        fired = 0,
+        deduped = 0,
+        disabled = 0,
+        intentRejected = 0,
+        roleRejected = 0,
+        xpAuraRejected = 0,
+        typeRejected = 0,
+        activityRejected = 0,
+        difficultyRejected = 0,
+        customMatched = 0,
+        soundsPlayed = 0,
+        cacheSize = tonumber(self.cacheSize or 0) or 0,
+        activeProfile = sf153_profile_id(),
+        currentCooldown = tonumber(sf153_options().publicAlertCooldown or 20) or 20,
+      }
+      for key, value in pairs(self.stats or {}) do out[key] = tonumber(value or 0) or 0 end
       return out
     end
 

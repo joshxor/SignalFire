@@ -54,6 +54,15 @@ need(owner, 'maxCacheEntries = 192', "bounded semantic dedupe cache");
 need(owner, 'function A:ResetDedupe()', "profile transition dedupe reset");
 need(owner, 'function A:GetDiagnostics()', "bounded diagnostics API");
 need(owner, 'function A:ResetDiagnostics()', "diagnostics reset API");
+const diagnosticsStart = owner.indexOf("function A:GetDiagnostics()");
+const diagnosticsEnd = owner.indexOf("function A:ResetDiagnostics()", diagnosticsStart);
+if (diagnosticsStart < 0 || diagnosticsEnd < 0) throw new Error("Pass D source verification failed: diagnostics boundary");
+const diagnostics = owner.slice(diagnosticsStart, diagnosticsEnd);
+for (const field of ["evaluations", "matched", "fired", "deduped", "disabled", "intentRejected", "roleRejected", "xpAuraRejected", "typeRejected", "activityRejected", "difficultyRejected", "customMatched", "soundsPlayed"]) {
+  needPattern(diagnostics, new RegExp(`\\b${field}\\s*=\\s*0\\b`), `stable diagnostic default ${field}`);
+}
+needPattern(diagnostics, /for\s+key\s*,\s*value\s+in\s+pairs\(self\.stats\s+or\s+\{\}\)/, "diagnostic stats overlay");
+needPattern(diagnostics, /out\[key\]\s*=\s*tonumber\(value\s+or\s+0\)\s+or\s+0/, "numeric diagnostic stats overlay");
 need(owner, 'A.EvaluateCanonical = A.Evaluate', "canonical evaluation entry point");
 need(owner, 'B.NotifyForPublicGroup = function', "final alert owner installation");
 need(owner, 'Sound\\\\Interface\\\\RaidWarning.wav', "WoW 3.3.5 sound fallback");
