@@ -13,6 +13,28 @@ BronzeLFG_DB.options.inlineChatLinks = true
 BronzeLFG_DB.options.chatLinkScope = "all"
 B.SignalFireTestSay = true
 
+runtime.Apply()
+
+local initialRuntime =
+  assert(
+    runtime.GetParserRuntimeState(),
+    "initial parser runtime state missing"
+  )
+
+assert(
+  initialRuntime.sourceActive == true
+    and initialRuntime.workerOwnerActive == true
+    and initialRuntime.suspended == false
+    and initialRuntime.queueDepth == 0
+    and initialRuntime.workerScript == false,
+  "parser runtime was not active and idle after Apply"
+)
+
+assert(
+  B._sf153FinalAlertOwner == true,
+  "Pass D final alert owner was lost during parser Apply"
+)
+
 local chatAlerts, errorAlerts, sounds = {}, {}, {}
 DEFAULT_CHAT_FRAME.AddMessage = function(_, text) table.insert(chatAlerts, tostring(text or "")) end
 UIErrorsFrame = {AddMessage=function(_, text) table.insert(errorAlerts, tostring(text or "")) end}
@@ -54,15 +76,39 @@ end
 local function ingest(author, text)
   local rec = runtime.IngestSource(author, text, "3. Newcomers", "CHAT_MSG_CHANNEL")
   assert(type(rec) == "table", "canonical source rejected: " .. text)
+  assert(rec.done ~= true, "source parser record completed before deferred worker: " .. text)
+  assert(type(B._sfP3Queue) == "table" and #B._sfP3Queue > 0,
+    "source parser record did not enter deferred queue: " .. text)
+  local queued = assert(runtime.GetParserRuntimeState(), "queued parser runtime state missing")
+  assert(queued.queueDepth > 0,
+    "source parser queue depth was not positive: " .. text)
   drainQueue()
   local row = assert(findRow(author, text), "canonical row missing: " .. text)
   assert(row.sf151StableLink == true and row.key == row.id, "alert input was not the canonical row")
   return row
 end
 
+local clearedRuntimeVerified = false
+
 local function resetCase()
   clearOutput()
   clearRows()
+  if not clearedRuntimeVerified then
+    local postClear =
+      assert(
+        runtime.GetParserRuntimeState(),
+        "post-clear parser runtime state missing"
+      )
+
+    assert(
+      postClear.sourceActive == true
+        and postClear.suspended == false
+        and postClear.queueDepth == 0
+        and postClear.workerScript == false,
+      "ClearRuntimeCaches changed active parser ownership"
+    )
+    clearedRuntimeVerified = true
+  end
   alerts:ResetDiagnostics()
   local opts = BronzeLFG_DB.options
   opts.notifyEnabled, opts.publicAlertEnabled, opts.notifySound = true, true, true
