@@ -1,0 +1,246 @@
+local addonRoot = assert(arg and arg[1], "addon root is required")
+local loader = assert(arg and arg[2], "prepared production loader is required")
+dofile(loader)
+
+local B = assert(BronzeLFG, "SignalFire did not load")
+local runtime = assert(SignalFireChatRuntime151, "Public Groups parser runtime missing")
+local alerts = assert(SignalFirePublicGroupAlerts153, "Pass D alert owner missing")
+
+BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+BronzeLFG_DB.options.serverProfile = "Ascension"
+BronzeLFG_DB.options.publicGroups = true
+BronzeLFG_DB.options.inlineChatLinks = true
+BronzeLFG_DB.options.chatLinkScope = "all"
+B.SignalFireTestSay = true
+
+local chatAlerts, errorAlerts, sounds = {}, {}, {}
+DEFAULT_CHAT_FRAME.AddMessage = function(_, text) table.insert(chatAlerts, tostring(text or "")) end
+UIErrorsFrame = {AddMessage=function(_, text) table.insert(errorAlerts, tostring(text or "")) end}
+PlaySoundFile = function(path) table.insert(sounds, tostring(path or "")) end
+
+local function clearOutput()
+  chatAlerts, errorAlerts, sounds = {}, {}, {}
+end
+
+local function clearRows()
+  B.publicGroups = {}
+  if runtime.ClearRuntimeCaches then runtime.ClearRuntimeCaches() end
+  if B.SF151_InvalidatePublicGroupsData then B:SF151_InvalidatePublicGroupsData("pass-d-alert-reset") end
+end
+
+local function drainQueue()
+  local frame = assert(B._sfP3Frame, "Phase 3 worker frame missing")
+  local update = frame:GetScript("OnUpdate")
+  if type(update) ~= "function" and runtime.StartParserWork then
+    assert(runtime.StartParserWork() == true, "Phase 3 worker did not start")
+    update = assert(frame:GetScript("OnUpdate"), "Phase 3 worker update missing")
+  end
+  local guard = 0
+  while #(B._sfP3Queue or {}) > 0 do
+    assert(type(update) == "function", "Phase 3 worker script was not installed")
+    update(frame, .1)
+    guard = guard + 1
+    assert(guard < 100, "Phase 3 worker did not drain")
+  end
+end
+
+local function findRow(author, text)
+  for _, row in pairs(B.publicGroups or {}) do
+    if tostring(row.player or "") == author and tostring(row.rawMessage or row.message or "") == text then return row end
+  end
+  return nil
+end
+
+local function ingest(author, text)
+  local rec = runtime.IngestSource(author, text, "3. Newcomers", "CHAT_MSG_CHANNEL")
+  assert(type(rec) == "table", "canonical source rejected: " .. text)
+  drainQueue()
+  local row = assert(findRow(author, text), "canonical row missing: " .. text)
+  assert(row.sf151StableLink == true and row.key == row.id, "alert input was not the canonical row")
+  return row
+end
+
+local function resetCase()
+  clearOutput()
+  clearRows()
+  alerts:ResetDiagnostics()
+  local opts = BronzeLFG_DB.options
+  opts.notifyEnabled, opts.publicAlertEnabled, opts.notifySound = true, true, true
+  opts.publicAlertCooldown = 20
+  opts.publicAlertIntentFilter = "All Intents"
+  opts.publicAlertRoleFilter = "All Roles"
+  opts.publicAlertXPAuraFilter = "All Listings"
+  opts.publicAlertWorldBoss, opts.publicAlertEvent = true, false
+  opts.publicAlertWorldBossMode = "Any World Boss"
+  opts.publicAlertRaid, opts.publicAlertDungeon, opts.publicAlertKey = false, false, false
+  opts.publicAlertRaidFilter, opts.publicAlertDungeonFilter, opts.publicAlertKeyFilter = "Any Raid", "Any Dungeon", "Any Key"
+  opts.publicAlertDungeonDifficulty = "All Difficulties"
+  opts.publicAlertCustomEnabled, opts.publicAlertCustomText = false, ""
+end
+
+local function diagnostics()
+  return alerts:GetDiagnostics()
+end
+
+-- A/B: World Boss canonical type and Recruiting intent, while the UI remains hidden.
+resetCase()
+local world = ingest("AzuregosRecruiter", "LF DPS Azuregos")
+assert(world.type == "World Boss" and world.activity == "Azuregos" and world.intent == "Recruiter", "Azuregos canonical metadata changed")
+assert(#chatAlerts == 1 and #errorAlerts == 1 and #sounds == 1, "World Boss recruiter did not fire exactly once")
+assert(sounds[1] == "Sound\\Interface\\RaidWarning.wav", "Pass D did not use the safe RaidWarning sound")
+local noPanelYet = B.sfe153AlertsRulesPanel == nil and B.publicPanel == nil
+assert(noPanelYet, "hidden-panel alert test opened Public Groups UI")
+
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+clearOutput()
+ingest("AzuregosApplicant", "DPS LFG Azuregos")
+assert(#chatAlerts == 0 and #errorAlerts == 0 and #sounds == 0, "Applicant row alerted under Recruiting")
+ingest("KazzakRecruiter", "LFM Kazzak")
+assert(#chatAlerts == 1 and string.find(chatAlerts[1], "Lord Kazzak", 1, true), "Kazzak was not canonicalized in alert output")
+clearOutput()
+ingest("KazzakTour", "LFM for Worldboss Tour Instance Loot FFA w/ me ilvl+spec start: Kazzak")
+assert(#chatAlerts == 1 and string.find(chatAlerts[1], "Lord Kazzak", 1, true), "live Kazzak fixture did not alert")
+
+-- C: Selected World Bosses and profile-owned selection state.
+resetCase()
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+BronzeLFG_DB.options.publicAlertWorldBossMode = "Selected World Bosses"
+alerts:SetWorldBossSelection("Azuregos", true, "Ascension")
+alerts:SetWorldBossSelection("Lord Kazzak", false, "Ascension")
+ingest("SelectedAzuregos", "LF DPS Azuregos")
+ingest("SelectedKazzak", "LFM Kazzak")
+assert(#chatAlerts == 1 and string.find(chatAlerts[1], "Azuregos", 1, true), "selected World Boss mode did not honor Azuregos-only state")
+resetCase()
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+BronzeLFG_DB.options.publicAlertWorldBossMode = "Selected World Bosses"
+alerts:SetWorldBossSelection("Azuregos", false, "Ascension")
+alerts:SetWorldBossSelection("Lord Kazzak", true, "Ascension")
+ingest("InverseAzuregos", "LF DPS Azuregos")
+ingest("InverseKazzak", "LFM Kazzak")
+assert(#chatAlerts == 1 and string.find(chatAlerts[1], "Lord Kazzak", 1, true), "selected World Boss inverse state failed")
+BronzeLFG_DB.options.serverProfile = "Triumvirate"
+local triSelections = alerts:GetWorldBossSelections("Triumvirate")
+assert(triSelections.Azuregos == nil and triSelections["Lord Kazzak"] == nil, "Ascension boss selections leaked into Triumvirate")
+local triBosses = alerts:GetWorldBosses("Triumvirate")
+if triBosses[1] then
+  alerts:SetWorldBossSelection(triBosses[1], true, "Triumvirate")
+  assert(alerts:GetWorldBossSelections("Ascension")[triBosses[1]] == nil, "Triumvirate selection leaked into Ascension")
+end
+BronzeLFG_DB.options.serverProfile = "Ascension"
+
+-- D: Recruiting intent solves raid LFG spam and remains independent of view filters.
+resetCase()
+BronzeLFG_DB.options.publicAlertWorldBoss = false
+BronzeLFG_DB.options.publicAlertRaid = true
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+ingest("RaidApplicant1", "LFG ZG")
+ingest("RaidApplicant2", "DPS LFG ZG")
+ingest("RaidRecruiter", "LFM ZG need DPS")
+local raidDiag = diagnostics()
+assert(raidDiag.fired == 1 and #chatAlerts == 1, "Raid Recruiting rule did not reject LFG spam")
+
+-- E: Plain Mythic is Dungeon, RDF has no Mythic difficulty, and Mythic+ is Key.
+resetCase()
+BronzeLFG_DB.options.publicAlertWorldBoss = false
+BronzeLFG_DB.options.publicAlertDungeon = true
+BronzeLFG_DB.options.publicAlertDungeonDifficulty = "Mythic"
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+ingest("MythicRecruiter", "LFM BFD Mythic need healer")
+ingest("MythicApplicant", "DPS LFG BFD Mythic")
+ingest("RdfRecruiter", "LFM RDF need DPS")
+ingest("RdfApplicant", "DPS LFG RDF")
+ingest("MythicPlusRecruiter", "LFM BFD M+5 need healer")
+assert(diagnostics().fired == 1 and #chatAlerts == 1, "Dungeon Mythic rule leaked RDF, Applicant, or Mythic+")
+BronzeLFG_DB.options.publicAlertDungeon = false
+BronzeLFG_DB.options.publicAlertKey = true
+ingest("KeyRecruiter", "LFM BFD M+5 need healer")
+assert(diagnostics().fired == 2 and #chatAlerts == 2 and string.find(chatAlerts[2], "Key", 1, true), "Key rule did not own Mythic+")
+
+-- F/G: Role and XP Aura refinements are canonical AND restrictions.
+resetCase()
+BronzeLFG_DB.options.publicAlertWorldBoss = false
+BronzeLFG_DB.options.publicAlertDungeon = true
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+BronzeLFG_DB.options.publicAlertRoleFilter = "Healer"
+ingest("HealerNeeded", "LFM BFD need healer")
+ingest("DpsOnly", "LFM BFD need DPS")
+assert(diagnostics().fired == 1, "Healer role refinement did not reject DPS-only row")
+resetCase()
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+BronzeLFG_DB.options.publicAlertXPAuraFilter = "XP Aura Only"
+ingest("AuraWorld", "LFM Azuregos need DPS XP aura")
+ingest("PlainWorld", "LFM Azuregos need DPS")
+assert(diagnostics().fired == 1 and diagnostics().xpAuraRejected >= 1, "XP Aura refinement changed")
+
+-- H/I: Custom OR/AND syntax and one fire for multiple matching rules.
+resetCase()
+BronzeLFG_DB.options.publicAlertWorldBoss = false
+BronzeLFG_DB.options.publicAlertCustomEnabled = true
+BronzeLFG_DB.options.publicAlertCustomText = "azuregos, kazzak, bfd mythic"
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+ingest("CustomAzuregos", "LF DPS Azuregos")
+ingest("CustomKazzak", "LFM Kazzak")
+ingest("CustomBfdMythic", "LFM BFD Mythic need healer")
+ingest("CustomBfdNormal", "LFM BFD need healer")
+ingest("CustomApplicant", "DPS LFG Azuregos")
+assert(diagnostics().customMatched == 3 and diagnostics().fired == 3, "custom comma OR or whitespace AND semantics changed")
+resetCase()
+BronzeLFG_DB.options.publicAlertWorldBoss = true
+BronzeLFG_DB.options.publicAlertCustomEnabled = true
+BronzeLFG_DB.options.publicAlertCustomText = "azuregos"
+ingest("DoubleMatch", "LF DPS Azuregos")
+local doubleDiag = diagnostics()
+assert(doubleDiag.matched == 1 and doubleDiag.customMatched == 1 and doubleDiag.fired == 1
+  and #chatAlerts == 1 and #errorAlerts == 1 and #sounds == 1, "built-in and custom rules produced duplicate alerts")
+
+-- J: semantic cooldown suppresses equivalent rebroadcasts, then permits expiry and activity change.
+resetCase()
+BronzeLFG_DB.options.publicAlertIntentFilter = "Recruiting"
+ingest("RepeatPlayer", "LFM Azuregos")
+ingest("RepeatPlayer", "LFM Azuregos need DPS")
+assert(diagnostics().deduped == 1 and diagnostics().fired == 1, "semantic rebroadcast dedupe failed")
+SignalFireHarnessAdvanceTime(21)
+ingest("RepeatPlayer", "LFM Azuregos need healer")
+ingest("RepeatPlayer", "LFM Kazzak")
+assert(diagnostics().fired == 3, "cooldown expiry or meaningful activity change did not re-alert")
+assert(diagnostics().cacheSize <= 192, "alert dedupe cache exceeded its bound")
+
+-- K: master and sound controls remain independent.
+resetCase()
+BronzeLFG_DB.options.notifyEnabled = false
+BronzeLFG_DB.options.publicAlertEnabled = false
+ingest("DisabledAlerts", "LFM Azuregos")
+assert(#chatAlerts == 0 and #errorAlerts == 0 and #sounds == 0 and diagnostics().disabled == 1, "disabled alerts produced output")
+BronzeLFG_DB.options.notifyEnabled = true
+BronzeLFG_DB.options.publicAlertEnabled = true
+BronzeLFG_DB.options.notifySound = false
+ingest("SilentAlerts", "LFM Azuregos")
+assert(#chatAlerts == 1 and #errorAlerts == 1 and #sounds == 0, "sound toggle suppressed visual alert")
+
+-- L: the new configuration is lazy, reusable, profile-aware, and does not
+-- replace the visible Public Groups filter state.
+assert(B:ShowOptions() ~= false, "Options panel did not open")
+assert(B.sf153ConfigureAlertRulesButton and B.sfe153AlertsRulesPanel == nil, "Pass D rules panel was not lazy")
+local configure = assert(B.sf153ConfigureAlertRulesButton:GetScript("OnClick"), "Configure Alert Rules callback missing")
+configure(B.sf153ConfigureAlertRulesButton)
+local rulesPanel = assert(B.sfe153AlertsRulesPanel, "Pass D rules panel was not built")
+assert(rulesPanel:IsShown() and B.sf153IntentDrop and B.sf153WorldModeDrop and B.sf153CustomEdit,
+  "Pass D controls were not created")
+configure(B.sf153ConfigureAlertRulesButton)
+assert(B.sfe153AlertsRulesPanel == rulesPanel, "repeated rule-panel opens duplicated the panel")
+B:HidePanels()
+assert(not rulesPanel:IsShown(), "rules panel did not close with Options lifecycle")
+
+-- M/N/O: canonical-only evaluation, bounded idle architecture, and no chat side effects.
+local beforeParser = tonumber(B._sfP3Stats and B._sfP3Stats.TestParseCalls or 0) or 0
+local directRow = {sf151StableLink=true, sf151CanonicalKey="direct", player="Direct", type="World Boss", activity="Azuregos", intent="Recruiter", roles="DPS", message="keyword"}
+BronzeLFG_DB.options.notifyEnabled = true
+BronzeLFG_DB.options.publicAlertEnabled = true
+BronzeLFG_DB.options.notifySound = false
+alerts:EvaluateCanonical(directRow)
+local afterParser = tonumber(B._sfP3Stats and B._sfP3Stats.TestParseCalls or 0) or 0
+assert(beforeParser == afterParser, "alert evaluation invoked the authoritative parser a second time")
+assert(B._sfP3Frame:GetScript("OnUpdate") == nil or #(B._sfP3Queue or {}) == 0,
+  "alert engine installed a permanent parser worker")
+
+print("Public Groups Alerts & Rules Pass D harness: PASS")

@@ -8052,3 +8052,360 @@ do
   end
 end
 -- SIGNALFIRE_PHASE8_BROWSE_VIEW_END
+
+-- Public Groups Alerts & Rules - Pass D UI owner.
+-- The rules panel is created only after the user opens it. The two quick master
+-- controls remain on the main Options surface; legacy category controls are
+-- hidden after their values have been migrated by SignalFireRuntime.lua.
+do
+  local B = _G.BronzeLFG
+  local A = _G.SignalFirePublicGroupAlerts153
+  if B and A then
+    local function sf153_font(parent, text, size, r, g, b)
+      local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      if fs.SetText then fs:SetText(text or "") end
+      if fs.SetTextColor then fs:SetTextColor(r or 1, g or 1, b or 1) end
+      if fs.SetFont and size then fs:SetFont("Fonts\\FRIZQT__.TTF", size, "") end
+      return fs
+    end
+
+    local function sf153_options()
+      BronzeLFG_DB = BronzeLFG_DB or {}
+      BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+      return BronzeLFG_DB.options
+    end
+
+    local function sf153_profile()
+      if B.SF143_GetProfile then
+        local ok, profile = pcall(B.SF143_GetProfile, B)
+        if ok and type(profile) == "table" then return profile end
+      end
+      local id = B.SF143_GetProfileId and B:SF143_GetProfileId() or (sf153_options().serverProfile or "Triumvirate")
+      return SignalFireProfiles and SignalFireProfiles[id] or nil
+    end
+
+    local function sf153_set_status(text)
+      if B.optionsStatus and B.optionsStatus.SetText then B.optionsStatus:SetText(text or "Options saved.") end
+    end
+
+    local function sf153_set_option(field, value)
+      local opts = sf153_options()
+      opts[field] = value
+      sf153_set_status("Alert rules saved.")
+    end
+
+    local function sf153_check(parent, label, x, y, checked, callback)
+      local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+      check:SetWidth(22); check:SetHeight(22)
+      check:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+      if check.SetChecked then check:SetChecked(checked == true) end
+      check:SetScript("OnClick", function(self)
+        if callback then callback(self:GetChecked() and true or false) end
+      end)
+      local text = sf153_font(parent, label, 10, 1, 1, 1)
+      text:SetPoint("LEFT", check, "RIGHT", 3, 0)
+      return check, text
+    end
+
+    local function sf153_dropdown(parent, field, values, selected, x, y, width, callback)
+      local drop = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
+      drop:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+      drop.values = values or {}
+      drop.sf153Field = field
+      drop.sf153Value = selected
+      if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(drop, width or 130) end
+      local function set_text(value)
+        drop.sf153Value = value
+        if UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, value) end
+        if callback then callback(value) end
+      end
+      drop.sf153SetValues = function(self, list, value)
+        self.values = list or {}
+        local chosen = value
+        local found = false
+        for _, candidate in ipairs(self.values) do if candidate == chosen then found = true; break end end
+        if not found then chosen = self.values[1] end
+        if chosen then set_text(chosen) end
+      end
+      if UIDropDownMenu_Initialize then
+        UIDropDownMenu_Initialize(drop, function()
+          for _, value in ipairs(drop.values or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = value
+            info.notCheckable = true
+            info.func = function() set_text(value) end
+            UIDropDownMenu_AddButton(info)
+          end
+        end)
+      end
+      if selected and UIDropDownMenu_SetText then UIDropDownMenu_SetText(drop, selected) end
+      local lifecycle = _G.SignalFireUILifecycle151
+      if lifecycle and lifecycle.RegisterDropdown then lifecycle:RegisterDropdown(drop) end
+      return drop
+    end
+
+    local function sf153_hide_legacy_control(control)
+      if not control then return end
+      if control.Hide then control:Hide() end
+      if control.Disable then control:Disable() end
+      if control.EnableMouse then control:EnableMouse(false) end
+      local host = control.GetParent and control:GetParent() or nil
+      if host and host.GetRegions then
+        for _, region in ipairs({host:GetRegions()}) do
+          if region and region.GetText and region.Hide then
+            local text = tostring(region:GetText() or "")
+            if text == "Event Listings" or text == "Raid Listings" or text == "Key Listings"
+              or text == "Dungeon Listings" then region:Hide() end
+          end
+        end
+      end
+    end
+
+    local function sf153_hide_legacy_controls()
+      sf153_hide_legacy_control(B.optNotifyHCBB)
+      sf153_hide_legacy_control(B.eventFilterDD)
+      sf153_hide_legacy_control(B.optNotifyRaid)
+      sf153_hide_legacy_control(B.raidFilterDD)
+      sf153_hide_legacy_control(B.optNotifyKey)
+      sf153_hide_legacy_control(B.keyFilterDD)
+      sf153_hide_legacy_control(B.optNotifyDungeon)
+      sf153_hide_legacy_control(B.dungeonFilterDD)
+      sf153_hide_legacy_control(B.dungeonFilterDD5612)
+      sf153_hide_legacy_control(B.dungeonAlertDropdown5613)
+      sf153_hide_legacy_control(B.dungeonAlertDropdown5614)
+      sf153_hide_legacy_control(B.dungeonAlertDropdown5615)
+    end
+
+    local function sf153_profile_values(field, fallback)
+      local profile = sf153_profile()
+      local values = profile and profile[field] or nil
+      if type(values) ~= "table" or #values == 0 then values = fallback end
+      local out = {}
+      for _, value in ipairs(values or {}) do table.insert(out, value) end
+      return out
+    end
+
+    local function sf153_boss_key(name)
+      return string.lower(tostring(name or "")):gsub("[^%w]+", "_")
+    end
+
+    local function sf153_hide_rule_panels(except)
+      local fields = {"sfmmPanel", "sfcpPanel", "sfn138FavoriteOptionsPanel", "sfamPolishPanel", "sfe141EventOptionsPanel"}
+      for _, field in ipairs(fields) do
+        local panel = B[field]
+        if panel and panel ~= except and panel.Hide then panel:Hide() end
+      end
+    end
+
+    local function sf153_refresh_bosses()
+      local panel = B.sfe153AlertsRulesPanel
+      if not panel or not A.GetWorldBosses then return end
+      local opts = sf153_options()
+      if panel.sf153RaidDrop and panel.sf153RaidDrop.sf153SetValues then
+        local values = sf153_profile_values("raidAlertOptions", {"Any Raid"})
+        panel.sf153RaidDrop:sf153SetValues(values, opts.publicAlertRaidFilter or values[1])
+      end
+      if panel.sf153DungeonDrop and panel.sf153DungeonDrop.sf153SetValues then
+        local values = sf153_profile_values("dungeonAlertOptions", {"Any Dungeon"})
+        panel.sf153DungeonDrop:sf153SetValues(values, opts.publicAlertDungeonFilter or values[1])
+      end
+      if panel.sf153KeyDrop and panel.sf153KeyDrop.sf153SetValues then
+        local values = sf153_profile_values("keyAlertOptions", {"Any Key"})
+        panel.sf153KeyDrop:sf153SetValues(values, opts.publicAlertKeyFilter or values[1])
+      end
+      local selected = A.GetWorldBossSelections and A:GetWorldBossSelections() or {}
+      local names = A:GetWorldBosses()
+      panel.sf153BossChecks = panel.sf153BossChecks or {}
+      for key, control in pairs(panel.sf153BossChecks) do
+        control:Hide()
+        if control.sf153Label then control.sf153Label:Hide() end
+        panel.sf153BossChecks[key] = nil
+      end
+      for index, name in ipairs(names or {}) do
+        local key = sf153_boss_key(name)
+        local check = panel.sf153BossChecks[key]
+        if not check then
+          check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+          check:SetWidth(22); check:SetHeight(22)
+          check.sf153BossName = name
+          check.sf153Label = sf153_font(panel, name, 10, .92, .92, .92)
+          check.sf153Label:SetPoint("LEFT", check, "RIGHT", 3, 0)
+          check:SetScript("OnClick", function(self)
+            A:SetWorldBossSelection(self.sf153BossName, self:GetChecked() and true or false)
+            sf153_set_status("Alert rules saved.")
+          end)
+          panel.sf153BossChecks[key] = check
+        end
+        check:ClearAllPoints()
+        check:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -224 - ((index - 1) * 22))
+        check:SetChecked(selected[name] ~= false)
+        check:Show(); check.sf153Label:Show()
+      end
+    end
+
+    local function sf153_build_rules()
+      if B.sfe153AlertsRulesPanel then return B.sfe153AlertsRulesPanel end
+      local panel = CreateFrame("Frame", "SignalFireAlertsRules153", B.optionsPanel)
+      B.sfe153AlertsRulesPanel = panel
+      panel:SetAllPoints(B.optionsPanel)
+      if panel.SetFrameLevel and B.optionsPanel.GetFrameLevel then panel:SetFrameLevel((B.optionsPanel:GetFrameLevel() or 1) + 80) end
+      if panel.SetBackdrop then
+        panel:SetBackdrop({bgFile="Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=14, insets={left=4,right=4,top=4,bottom=4}})
+        panel:SetBackdropColor(0, 0, 0, .985)
+      end
+      sf153_font(panel, "Alerts & Rules", 18, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -10)
+      sf153_font(panel, "Canonical Public Groups alerts; the visible Public Groups filter is independent.", 10, .75, .85, .95):SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -36)
+      local back = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+      back:SetWidth(140); back:SetHeight(26); back:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -8); back:SetText("Back to Options")
+      back:SetScript("OnClick", function()
+        panel:Hide()
+        if B.optionsPanel then B.optionsPanel:Show() end
+        B.currentTab = "Options"
+      end)
+
+      local opts = sf153_options()
+      local master = sf153_check(panel, "Enable Listing Alerts", 20, -62, opts.notifyEnabled ~= false,
+        function(value) opts.notifyEnabled = value; opts.publicAlertEnabled = value; sf153_set_status("Alert rules saved.") end)
+      local sound = sf153_check(panel, "Play Alert Sound", 220, -62, opts.notifySound == true,
+        function(value) opts.notifySound = value; sf153_set_status("Alert rules saved.") end)
+      panel.sf153MasterCheck, panel.sf153SoundCheck = master, sound
+
+      sf153_font(panel, "Repeat cooldown", 10, 1, 1, 1):SetPoint("TOPLEFT", panel, "TOPLEFT", 420, -59)
+      panel.sf153CooldownDrop = sf153_dropdown(panel, "publicAlertCooldown", {"20 sec", "30 sec", "60 sec", "120 sec"}, tostring(opts.publicAlertCooldown or 20) .. " sec", 520, -52, 100,
+        function(value) sf153_set_option("publicAlertCooldown", tonumber(string.match(value, "%d+")) or 20) end)
+
+      sf153_font(panel, "Global refinements", 13, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -94)
+      sf153_font(panel, "Intent", 10, 1, 1, 1):SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -120)
+      panel.sf153IntentDrop = sf153_dropdown(panel, "publicAlertIntentFilter", {"All Intents", "Recruiting", "Seeking Group"}, opts.publicAlertIntentFilter or "All Intents", 70, -113, 125,
+        function(value) sf153_set_option("publicAlertIntentFilter", value) end)
+      sf153_font(panel, "Role", 10, 1, 1, 1):SetPoint("TOPLEFT", panel, "TOPLEFT", 220, -120)
+      panel.sf153RoleDrop = sf153_dropdown(panel, "publicAlertRoleFilter", {"All Roles", "Tank", "Healer", "DPS"}, opts.publicAlertRoleFilter or "All Roles", 260, -113, 105,
+        function(value) sf153_set_option("publicAlertRoleFilter", value) end)
+      sf153_font(panel, "XP Aura", 10, 1, 1, 1):SetPoint("TOPLEFT", panel, "TOPLEFT", 420, -120)
+      panel.sf153AuraDrop = sf153_dropdown(panel, "publicAlertXPAuraFilter", {"All Listings", "XP Aura Only"}, opts.publicAlertXPAuraFilter or "All Listings", 475, -113, 125,
+        function(value) sf153_set_option("publicAlertXPAuraFilter", value) end)
+
+      sf153_font(panel, "World Boss rule", 13, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 20, -165)
+      panel.sf153WorldBossCheck = sf153_check(panel, "World Boss Alerts", 20, -184, opts.publicAlertWorldBoss ~= false,
+        function(value) sf153_set_option("publicAlertWorldBoss", value) end)
+      panel.sf153WorldModeDrop = sf153_dropdown(panel, "publicAlertWorldBossMode", {"Any World Boss", "Selected World Bosses"}, opts.publicAlertWorldBossMode or "Any World Boss", 220, -177, 155,
+        function(value) sf153_set_option("publicAlertWorldBossMode", value); sf153_refresh_bosses() end)
+      sf153_font(panel, "Active profile bosses", 10, .75, .85, .95):SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -210)
+
+      local profile = sf153_profile()
+      local raidValues = sf153_profile_values("raidAlertOptions", {"Any Raid"})
+      local keyValues = sf153_profile_values("keyAlertOptions", {"Any Key"})
+      local dungeonValues = sf153_profile_values("dungeonAlertOptions", {"Any Dungeon"})
+      sf153_font(panel, "Built-in rules", 13, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 430, -165)
+      panel.sf153RaidCheck = sf153_check(panel, "Raid Alerts", 430, -184, opts.publicAlertRaid ~= false,
+        function(value) sf153_set_option("publicAlertRaid", value) end)
+      panel.sf153RaidDrop = sf153_dropdown(panel, "publicAlertRaidFilter", raidValues, opts.publicAlertRaidFilter or opts.notifyRaidFilter or raidValues[1], 530, -177, 150,
+        function(value) sf153_set_option("publicAlertRaidFilter", value) end)
+      panel.sf153DungeonCheck = sf153_check(panel, "Dungeon Alerts", 430, -220, opts.publicAlertDungeon ~= false,
+        function(value) sf153_set_option("publicAlertDungeon", value) end)
+      panel.sf153DungeonDrop = sf153_dropdown(panel, "publicAlertDungeonFilter", dungeonValues, opts.publicAlertDungeonFilter or opts.notifyDungeonFilter or dungeonValues[1], 530, -213, 150,
+        function(value) sf153_set_option("publicAlertDungeonFilter", value) end)
+      panel.sf153DifficultyDrop = sf153_dropdown(panel, "publicAlertDungeonDifficulty", {"All Difficulties", "Normal", "Heroic", "Mythic"}, opts.publicAlertDungeonDifficulty or "All Difficulties", 530, -249, 150,
+        function(value) sf153_set_option("publicAlertDungeonDifficulty", value) end)
+      sf153_font(panel, "Dungeon Difficulty", 10, 1, 1, 1):SetPoint("TOPLEFT", panel, "TOPLEFT", 430, -256)
+      panel.sf153KeyCheck = sf153_check(panel, "Key Alerts", 430, -292, opts.publicAlertKey ~= false,
+        function(value) sf153_set_option("publicAlertKey", value) end)
+      panel.sf153KeyDrop = sf153_dropdown(panel, "publicAlertKeyFilter", keyValues, opts.publicAlertKeyFilter or opts.notifyKeyFilter or keyValues[1], 530, -285, 150,
+        function(value) sf153_set_option("publicAlertKeyFilter", value) end)
+      panel.sf153EventCheck = sf153_check(panel, "Event Alerts", 430, -328, opts.publicAlertEvent == true,
+        function(value) sf153_set_option("publicAlertEvent", value) end)
+
+      sf153_font(panel, "Custom Quick Alert", 13, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 430, -365)
+      panel.sf153CustomCheck = sf153_check(panel, "Enabled", 430, -384, opts.publicAlertCustomEnabled == true,
+        function(value) sf153_set_option("publicAlertCustomEnabled", value) end)
+      local edit = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+      edit:SetWidth(310); edit:SetHeight(24); edit:SetPoint("TOPLEFT", panel, "TOPLEFT", 430, -418)
+      edit:SetAutoFocus(false); edit:SetText(tostring(opts.publicAlertCustomText or ""))
+      edit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); sf153_set_option("publicAlertCustomText", self:GetText()) end)
+      edit:SetScript("OnEditFocusLost", function(self) sf153_set_option("publicAlertCustomText", self:GetText()) end)
+      panel.sf153CustomEdit = edit
+      sf153_font(panel, "comma = OR; spaces inside a clause = AND", 9, .7, .75, .8):SetPoint("TOPLEFT", panel, "TOPLEFT", 430, -447)
+      sf153_refresh_bosses()
+      panel:Hide()
+      return panel
+    end
+
+    local function sf153_attach_options()
+      if not B.optionsPanel then return end
+      sf153_hide_legacy_controls()
+      if not B.sf153ConfigureAlertRulesButton then
+        local button = CreateFrame("Button", nil, B.optionsPanel, "UIPanelButtonTemplate")
+        B.sf153ConfigureAlertRulesButton = button
+        button:SetWidth(180); button:SetHeight(26)
+        button:SetPoint("TOPRIGHT", B.optionsPanel, "TOPRIGHT", -18, -44)
+        button:SetText("Configure Alert Rules")
+        button:SetScript("OnClick", function()
+          local panel = sf153_build_rules()
+          sf153_hide_rule_panels(panel)
+          if B.optionsPanel then B.optionsPanel:Show() end
+          panel:Show()
+          B.currentTab = "Options"
+          sf153_refresh_bosses()
+        end)
+      end
+      B.sf153ConfigureAlertRulesButton:Show()
+    end
+
+    local oldBuildOptions = B.BuildOptions
+    if type(oldBuildOptions) == "function" and not B._sf153BuildOptionsWrapped then
+      B._sf153BuildOptionsWrapped = true
+      B.BuildOptions = function(self, ...)
+        local result = oldBuildOptions(self, ...)
+        sf153_attach_options()
+        return result
+      end
+    end
+
+    local oldShowOptions = B.ShowOptions
+    if type(oldShowOptions) == "function" and not B._sf153ShowOptionsWrapped then
+      B._sf153ShowOptionsWrapped = true
+      B.ShowOptions = function(self, ...)
+        if self.sfe153AlertsRulesPanel then self.sfe153AlertsRulesPanel:Hide() end
+        local result = oldShowOptions(self, ...)
+        sf153_attach_options()
+        return result
+      end
+    end
+
+    local oldSaveOptions = B.SaveOptions
+    if type(oldSaveOptions) == "function" and not B._sf153SaveOptionsWrapped then
+      B._sf153SaveOptionsWrapped = true
+      B.SaveOptions = function(self, ...)
+        local result = oldSaveOptions(self, ...)
+        local opts = sf153_options()
+        opts.publicAlertEnabled = opts.notifyEnabled ~= false
+        return result
+      end
+    end
+
+    local oldHidePanels = B.HidePanels
+    if type(oldHidePanels) == "function" and not B._sf153HidePanelsWrapped then
+      B._sf153HidePanelsWrapped = true
+      B.HidePanels = function(self, ...)
+        local result = oldHidePanels(self, ...)
+        if self.sfe153AlertsRulesPanel then self.sfe153AlertsRulesPanel:Hide() end
+        return result
+      end
+    end
+
+    local oldProfileSet = B.SF143_SetServerProfile
+    if type(oldProfileSet) == "function" and not B._sf153UIProfileWrapped then
+      B._sf153UIProfileWrapped = true
+      B.SF143_SetServerProfile = function(self, ...)
+        local result = oldProfileSet(self, ...)
+        sf153_refresh_bosses()
+        return result
+      end
+    end
+
+    -- Reinstall after SignalFireChat and the Phase 3 UI wrappers so the old
+    -- raw-text alert/dedupe chain cannot become the final owner again.
+    A:InstallFinalOwner()
+    if B.optionsPanel then sf153_attach_options() end
+  end
+end
