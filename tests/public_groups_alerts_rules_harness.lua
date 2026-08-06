@@ -330,16 +330,35 @@ for _, panel in ipairs({B.sfmmPanel, B.sfcpPanel, B.sfn138FavoriteOptionsPanel, 
   assert(not panel or not panel:IsShown(), "Options subpanel remained visible under rules")
 end
 local rulesControls = {
-  rulesPanel.sf153MasterCheck, rulesPanel.sf153SoundCheck, rulesPanel.sf153CooldownDrop,
-  rulesPanel.sf153IntentDrop, rulesPanel.sf153RoleDrop, rulesPanel.sf153AuraDrop,
-  rulesPanel.sf153WorldBossCheck, rulesPanel.sf153WorldModeDrop,
-  rulesPanel.sf153RaidCheck, rulesPanel.sf153DungeonCheck, rulesPanel.sf153DifficultyDrop,
-  rulesPanel.sf153KeyCheck, rulesPanel.sf153EventCheck, rulesPanel.sf153CustomCheck,
-  rulesPanel.sf153CustomEdit,
+  {"master", rulesPanel.sf153MasterCheck},
+  {"sound", rulesPanel.sf153SoundCheck},
+  {"cooldown", rulesPanel.sf153CooldownDrop},
+  {"intent", rulesPanel.sf153IntentDrop},
+  {"role", rulesPanel.sf153RoleDrop},
+  {"xp-aura", rulesPanel.sf153AuraDrop},
+  {"world-boss", rulesPanel.sf153WorldBossCheck},
+  {"world-mode", rulesPanel.sf153WorldModeDrop},
+  {"raid", rulesPanel.sf153RaidCheck},
+  {"raid-filter", rulesPanel.sf153RaidDrop},
+  {"dungeon", rulesPanel.sf153DungeonCheck},
+  {"dungeon-filter", rulesPanel.sf153DungeonDrop},
+  {"difficulty", rulesPanel.sf153DifficultyDrop},
+  {"key", rulesPanel.sf153KeyCheck},
+  {"key-filter", rulesPanel.sf153KeyDrop},
+  {"event", rulesPanel.sf153EventCheck},
+  {"custom", rulesPanel.sf153CustomCheck},
+  {"custom-edit", rulesPanel.sf153CustomEdit},
 }
-for _, control in ipairs(rulesControls) do
-  assert(control and control:IsShown(), "Pass D rules control was not visible")
+local function assertRulesControlsVisible(stage)
+  for _, item in ipairs(rulesControls) do
+    local name, control = item[1], item[2]
+    assert(control, "Pass D rules control missing: " .. name)
+    assert(control:IsShown(), "Pass D rules control not visible: " .. name .. " (" .. stage .. ")")
+  end
 end
+assertRulesControlsVisible("first open")
+local rulesControlRefs = {}
+for _, item in ipairs(rulesControls) do rulesControlRefs[item[1]] = item[2] end
 assert(type(rulesPanel.sf153BossChecks) == "table", "World Boss control registry was not a table")
 local bossRegistry = rulesPanel.sf153BossChecks
 local bossRegistryCount = 0
@@ -370,6 +389,7 @@ rulesPanel.sf153WorldModeDrop:sf153SetValues({"Any World Boss", "Selected World 
 for _, control in pairs(bossRegistry) do
   assert(not control:IsShown(), "Any World Boss mode did not hide selected boss controls")
 end
+assertRulesControlsVisible("after World Boss mode changes")
 
 local repeatedBossRegistryCount = 0
 for key, control in pairs(bossRegistry) do repeatedBossRegistryCount = repeatedBossRegistryCount + 1 end
@@ -377,6 +397,10 @@ assert(repeatedBossRegistryCount == bossRegistryCount, "World Boss registry coun
 openRules(eventEntry)
 assert(B.sfe153AlertsRulesPanel == rulesPanel, "repeated rule-panel opens duplicated the panel")
 assert(rulesPanel.sf153BossChecks == bossRegistry, "World Boss registry table was replaced on refresh")
+assertRulesControlsVisible("reopen")
+for _, item in ipairs(rulesControls) do
+  assert(item[2] == rulesControlRefs[item[1]], "Rules control was recreated on reopen: " .. item[1])
+end
 for key, control in pairs(bossControls) do
   assert(rulesPanel.sf153BossChecks[key] == control, "World Boss control was recreated on same-profile refresh")
 end
@@ -388,13 +412,18 @@ for _, nav in ipairs({B.sfmmOpenButton, B.sfcpOpenButton, B.sfn138FavoriteAlertB
     click(nav)
     assert(not rulesPanel:IsShown(), "Rules page remained visible after another Options page opened")
     assert(B.optionsPanel:IsShown(), "Options content remained hidden after another page opened")
+    openRules(eventEntry)
+    assert(rulesPanel.sf153IntentDrop:IsShown(), "Intent dropdown remained hidden after navigation away and reopen")
+    assertRulesControlsVisible("navigation reopen")
   end
 end
 openRules(eventEntry)
+assertRulesControlsVisible("pre-Back reopen")
 local back = assert(rulesPanel.sf153BackButton, "Rules page Back button was not stored")
 back:GetScript("OnClick")(back)
 assert(not rulesPanel:IsShown() and B.optionsPanel:IsShown(), "Back did not return to the normal Options page")
 openRules(eventEntry)
+assertRulesControlsVisible("Back reopen")
 assert(B.sfe153AlertsRulesPanel == rulesPanel and rulesPanel.sf153BossChecks == bossRegistry,
   "Rules page or World Boss registry was not reused after navigation")
 B:HidePanels()

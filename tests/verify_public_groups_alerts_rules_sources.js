@@ -100,17 +100,26 @@ need(passDUI, "SignalFireUILifecycle151", "standard dropdown lifecycle registrat
 need(passDUI, "sf153_boss_display_name", "bounded World Boss display grouping");
 need(passDUI, 'return "Kaldros Depthbreaker"', "Kaldros duplicate display grouping");
 need(passDUI, "showSelected", "World Boss mode-aware checkbox visibility");
+need(passDUI, "sf153_activate_rules_controls", "single Rules-page control activation owner");
 forbid(passDUI, "publicFilter =", "Public Groups visible Type filter ownership reused by alerts");
 forbid(passDUI, "publicIntentFilter =", "Public Groups visible Intent filter ownership reused by alerts");
 const buildStart = passDUI.indexOf("local function sf153_build_rules");
+const activateStart = passDUI.indexOf("local function sf153_activate_rules_controls");
 const showStart = passDUI.indexOf("local function sf153_show_rules");
 const navStart = passDUI.indexOf("local function sf153_wire_options_navigation", showStart);
-if (buildStart < 0 || showStart < 0 || navStart < 0) throw new Error("Pass D source verification failed: mutually exclusive UI lifecycle boundary");
+if (buildStart < 0 || activateStart < 0 || showStart < 0 || navStart < 0) throw new Error("Pass D source verification failed: mutually exclusive UI lifecycle boundary");
 const buildRules = passDUI.slice(buildStart, showStart);
+const activateRules = passDUI.slice(activateStart, buildStart);
 const showRules = passDUI.slice(showStart, navStart);
 need(buildRules, "local host = B.content", "Rules page content owner");
 need(buildRules, 'CreateFrame("Frame", "SignalFireAlertsRules153", host)', "Rules page is a content sibling");
 need(buildRules, "panel:SetAllPoints(host)", "Rules page content geometry");
+for (const field of ["sf153MasterCheck", "sf153SoundCheck", "sf153CooldownDrop", "sf153IntentDrop", "sf153RoleDrop", "sf153AuraDrop", "sf153WorldBossCheck", "sf153WorldModeDrop", "sf153RaidCheck", "sf153RaidDrop", "sf153DungeonCheck", "sf153DungeonDrop", "sf153DifficultyDrop", "sf153KeyCheck", "sf153KeyDrop", "sf153EventCheck", "sf153CustomCheck", "sf153CustomEdit"]) {
+  need(activateRules, `panel.${field}`, `Rules control activation ${field}`);
+}
+need(activateRules, "control:Show()", "Rules control activation show contract");
+need(passDUI, "sf153_hide_rules()", "navigation-away Rules hide owner");
+need(passDUI, "sf153RulesNavigationWired", "idempotent navigation wiring");
 for (const forbidden of [
   'CreateFrame("Frame", "SignalFireAlertsRules153", B.optionsPanel)',
   "panel:SetAllPoints(B.optionsPanel)",
@@ -121,6 +130,15 @@ for (const forbidden of [
 need(showRules, "if B.HidePanels then B:HidePanels() end", "Rules page closes existing Options panels");
 need(showRules, "sf153_hide_rule_panels(panel)", "Rules page mutually exclusive subpanel lifecycle");
 need(showRules, "if B.optionsPanel then B.optionsPanel:Hide() end", "normal Options page hidden under Rules");
+need(showRules, "sf153_activate_rules_controls(panel)", "Rules page restores registered controls after HidePanels");
+need(showRules, "sf153_refresh_bosses()", "Rules page reapplies conditional World Boss visibility");
+const hideTransitionIndex = showRules.indexOf("if B.HidePanels then B:HidePanels() end");
+const activateCallIndex = showRules.indexOf("sf153_activate_rules_controls(panel)");
+const refreshCallIndex = showRules.indexOf("sf153_refresh_bosses()");
+if (hideTransitionIndex < 0 || activateCallIndex < 0 || refreshCallIndex < 0
+  || hideTransitionIndex > activateCallIndex || activateCallIndex > refreshCallIndex) {
+  throw new Error("Pass D source verification failed: Rules controls restored before final lifecycle transition");
+}
 forbid(showRules, "B.optionsPanel:Show()", "Rules page leaves normal Options content visible");
 const bossesStart = passDUI.indexOf("local function sf153_refresh_bosses");
 const bossesEnd = passDUI.indexOf("local function sf153_build_rules", bossesStart);

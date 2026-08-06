@@ -8306,6 +8306,33 @@ do
       end
     end
 
+    local function sf153_activate_rules_controls(panel)
+      if not panel then return end
+      local alwaysVisible = {
+        panel.sf153MasterCheck,
+        panel.sf153SoundCheck,
+        panel.sf153CooldownDrop,
+        panel.sf153IntentDrop,
+        panel.sf153RoleDrop,
+        panel.sf153AuraDrop,
+        panel.sf153WorldBossCheck,
+        panel.sf153WorldModeDrop,
+        panel.sf153RaidCheck,
+        panel.sf153RaidDrop,
+        panel.sf153DungeonCheck,
+        panel.sf153DungeonDrop,
+        panel.sf153DifficultyDrop,
+        panel.sf153KeyCheck,
+        panel.sf153KeyDrop,
+        panel.sf153EventCheck,
+        panel.sf153CustomCheck,
+        panel.sf153CustomEdit,
+      }
+      for _, control in ipairs(alwaysVisible) do
+        if control and control.Show then control:Show() end
+      end
+    end
+
     local function sf153_build_rules()
       if B.sfe153AlertsRulesPanel then return B.sfe153AlertsRulesPanel end
       local host = B.content
@@ -8407,9 +8434,10 @@ do
       sf153_hide_rule_panels(panel)
       if B.optionsPanel then B.optionsPanel:Hide() end
       panel:Show()
+      sf153_activate_rules_controls(panel)
+      sf153_refresh_bosses()
       if B.frame then B.frame:Show() end
       B.currentTab = "Options"
-      sf153_refresh_bosses()
       return true
     end
 
