@@ -8054,9 +8054,9 @@ end
 -- SIGNALFIRE_PHASE8_BROWSE_VIEW_END
 
 -- Public Groups Alerts & Rules - Pass D UI owner.
--- The rules panel is created only after the user opens it. The two quick master
--- controls remain on the main Options surface; legacy category controls are
--- hidden after their values have been migrated by SignalFireRuntime.lua.
+-- The rules panel is created only after the user opens it. The global rule
+-- controls live on a mutually-exclusive Options content page; legacy category
+-- controls remain migrated for compatibility but are hidden from the main page.
 do
   local B = _G.BronzeLFG
   local A = _G.SignalFirePublicGroupAlerts153
@@ -8162,6 +8162,7 @@ do
     end
 
     local function sf153_hide_legacy_controls()
+      sf153_hide_legacy_control(B.optNotify)
       sf153_hide_legacy_control(B.optNotifyHCBB)
       sf153_hide_legacy_control(B.eventFilterDD)
       sf153_hide_legacy_control(B.optNotifyRaid)
@@ -8169,11 +8170,31 @@ do
       sf153_hide_legacy_control(B.optNotifyKey)
       sf153_hide_legacy_control(B.keyFilterDD)
       sf153_hide_legacy_control(B.optNotifyDungeon)
+      sf153_hide_legacy_control(B.optNotifySound)
       sf153_hide_legacy_control(B.dungeonFilterDD)
       sf153_hide_legacy_control(B.dungeonFilterDD5612)
+      sf153_hide_legacy_control(B.dungeonAlertDropdown)
       sf153_hide_legacy_control(B.dungeonAlertDropdown5613)
       sf153_hide_legacy_control(B.dungeonAlertDropdown5614)
       sf153_hide_legacy_control(B.dungeonAlertDropdown5615)
+      local host = B.optNotify and B.optNotify.GetParent and B.optNotify:GetParent() or nil
+      if host and host.GetRegions then
+        local hiddenLabels = {
+          ["Alerts"] = true,
+          ["Enable Listing Alerts"] = true,
+          ["Sounds"] = true,
+          ["Play Alert Sound"] = true,
+          ["Event Listings"] = true,
+          ["Raid Listings"] = true,
+          ["Key Listings"] = true,
+          ["Dungeon Listings"] = true,
+        }
+        for _, region in ipairs({host:GetRegions()}) do
+          if region and region.GetText and region.Hide and hiddenLabels[tostring(region:GetText() or "")] then
+            region:Hide()
+          end
+        end
+      end
     end
 
     local function sf153_profile_values(field, fallback)
@@ -8189,8 +8210,31 @@ do
       return string.lower(tostring(name or "")):gsub("[^%w]+", "_")
     end
 
+    local function sf153_boss_display_name(name)
+      local value = tostring(name or "")
+      local low = string.lower(value)
+      if low == "kaldros" or low == "kaldros depthbreaker" then
+        return "Kaldros Depthbreaker"
+      end
+      return value
+    end
+
+    local function sf153_boss_selected(selected, name)
+      local value = selected and selected[name]
+      if value == nil and name == "Kaldros Depthbreaker" then value = selected and selected.Kaldros end
+      return value ~= false
+    end
+
+    local function sf153_set_world_boss_selection(name, enabled)
+      if not A.SetWorldBossSelection then return end
+      A:SetWorldBossSelection(name, enabled)
+      if name == "Kaldros Depthbreaker" then
+        A:SetWorldBossSelection("Kaldros", enabled)
+      end
+    end
+
     local function sf153_hide_rule_panels(except)
-      local fields = {"sfmmPanel", "sfcpPanel", "sfn138FavoriteOptionsPanel", "sfamPolishPanel", "sfe141EventOptionsPanel"}
+      local fields = {"sfmmPanel", "sfcpPanel", "sfn138FavoriteOptionsPanel", "sfamPolishPanel", "sfe141EventOptionsPanel", "sfe153AlertsRulesPanel"}
       for _, field in ipairs(fields) do
         local panel = B[field]
         if panel and panel ~= except and panel.Hide then panel:Hide() end
@@ -8215,6 +8259,15 @@ do
       end
       local selected = A.GetWorldBossSelections and A:GetWorldBossSelections() or {}
       local names = A:GetWorldBosses()
+      local displayNames, displaySeen = {}, {}
+      for _, rawName in ipairs(names or {}) do
+        local name = sf153_boss_display_name(rawName)
+        local key = sf153_boss_key(name)
+        if name ~= "" and not displaySeen[key] then
+          displaySeen[key] = true
+          table.insert(displayNames, name)
+        end
+      end
       if type(panel.sf153BossChecks) ~= "table" then
         panel.sf153BossChecks = {}
       end
@@ -8225,7 +8278,8 @@ do
           control.sf153Label:Hide()
         end
       end
-      for index, name in ipairs(names or {}) do
+      local showSelected = tostring(opts.publicAlertWorldBossMode or "Any World Boss") == "Selected World Bosses"
+      for index, name in ipairs(displayNames) do
         local key = sf153_boss_key(name)
         local check = registry[key]
         if not check then
@@ -8234,7 +8288,7 @@ do
           check.sf153Label = sf153_font(panel, name, 10, .92, .92, .92)
           check.sf153Label:SetPoint("LEFT", check, "RIGHT", 3, 0)
           check:SetScript("OnClick", function(self)
-            A:SetWorldBossSelection(self.sf153BossName, self:GetChecked() and true or false)
+            sf153_set_world_boss_selection(self.sf153BossName, self:GetChecked() and true or false)
             sf153_set_status("Alert rules saved.")
           end)
           registry[key] = check
@@ -8243,17 +8297,23 @@ do
         if check.sf153Label and check.sf153Label.SetText then check.sf153Label:SetText(name) end
         check:ClearAllPoints()
         check:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -224 - ((index - 1) * 22))
-        check:SetChecked(selected[name] ~= false)
-        check:Show(); check.sf153Label:Show()
+        check:SetChecked(sf153_boss_selected(selected, name))
+        if showSelected then
+          check:Show(); check.sf153Label:Show()
+        else
+          check:Hide(); check.sf153Label:Hide()
+        end
       end
     end
 
     local function sf153_build_rules()
       if B.sfe153AlertsRulesPanel then return B.sfe153AlertsRulesPanel end
-      local panel = CreateFrame("Frame", "SignalFireAlertsRules153", B.optionsPanel)
+      local host = B.content
+      if not host then return nil end
+      local panel = CreateFrame("Frame", "SignalFireAlertsRules153", host)
       B.sfe153AlertsRulesPanel = panel
-      panel:SetAllPoints(B.optionsPanel)
-      if panel.SetFrameLevel and B.optionsPanel.GetFrameLevel then panel:SetFrameLevel((B.optionsPanel:GetFrameLevel() or 1) + 80) end
+      panel:SetAllPoints(host)
+      if panel.SetFrameLevel and host.GetFrameLevel then panel:SetFrameLevel((host:GetFrameLevel() or 1) + 80) end
       if panel.SetBackdrop then
         panel:SetBackdrop({bgFile="Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=14, insets={left=4,right=4,top=4,bottom=4}})
         panel:SetBackdropColor(0, 0, 0, .985)
@@ -8261,11 +8321,11 @@ do
       sf153_font(panel, "Alerts & Rules", 18, 1, .75, 0):SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -10)
       sf153_font(panel, "Canonical Public Groups alerts; the visible Public Groups filter is independent.", 10, .75, .85, .95):SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -36)
       local back = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+      panel.sf153BackButton = back
       back:SetWidth(140); back:SetHeight(26); back:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -8); back:SetText("Back to Options")
       back:SetScript("OnClick", function()
         panel:Hide()
-        if B.optionsPanel then B.optionsPanel:Show() end
-        B.currentTab = "Options"
+        if B.ShowOptions then B:ShowOptions() elseif B.optionsPanel then B.optionsPanel:Show() end
       end)
 
       local opts = sf153_options()
@@ -8295,7 +8355,8 @@ do
         function(value) sf153_set_option("publicAlertWorldBoss", value) end)
       panel.sf153WorldModeDrop = sf153_dropdown(panel, "publicAlertWorldBossMode", {"Any World Boss", "Selected World Bosses"}, opts.publicAlertWorldBossMode or "Any World Boss", 220, -177, 155,
         function(value) sf153_set_option("publicAlertWorldBossMode", value); sf153_refresh_bosses() end)
-      sf153_font(panel, "Active profile bosses", 10, .75, .85, .95):SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -210)
+      panel.sf153BossHelp = sf153_font(panel, "Select Selected World Bosses to choose active-profile bosses.", 10, .75, .85, .95)
+      panel.sf153BossHelp:SetPoint("TOPLEFT", panel, "TOPLEFT", 24, -210)
 
       local profile = sf153_profile()
       local raidValues = sf153_profile_values("raidAlertOptions", {"Any Raid"})
@@ -8335,25 +8396,52 @@ do
       return panel
     end
 
+    local function sf153_hide_rules()
+      if B.sfe153AlertsRulesPanel and B.sfe153AlertsRulesPanel.Hide then B.sfe153AlertsRulesPanel:Hide() end
+    end
+
+    local function sf153_show_rules()
+      local panel = sf153_build_rules()
+      if not panel then return false end
+      if B.HidePanels then B:HidePanels() end
+      sf153_hide_rule_panels(panel)
+      if B.optionsPanel then B.optionsPanel:Hide() end
+      panel:Show()
+      if B.frame then B.frame:Show() end
+      B.currentTab = "Options"
+      sf153_refresh_bosses()
+      return true
+    end
+
+    local function sf153_wire_options_navigation(button)
+      if not button or button.sf153RulesNavigationWired then return end
+      button.sf153RulesNavigationWired = true
+      local old = button:GetScript("OnClick")
+      button:SetScript("OnClick", function(self, ...)
+        sf153_hide_rules()
+        if B.optionsPanel then B.optionsPanel:Show() end
+        if old then old(self, ...) end
+      end)
+    end
+
     local function sf153_attach_options()
       if not B.optionsPanel then return end
       sf153_hide_legacy_controls()
-      if not B.sf153ConfigureAlertRulesButton then
-        local button = CreateFrame("Button", nil, B.optionsPanel, "UIPanelButtonTemplate")
-        B.sf153ConfigureAlertRulesButton = button
-        button:SetWidth(180); button:SetHeight(26)
-        button:SetPoint("TOPRIGHT", B.optionsPanel, "TOPRIGHT", -18, -44)
-        button:SetText("Configure Alert Rules")
-        button:SetScript("OnClick", function()
-          local panel = sf153_build_rules()
-          sf153_hide_rule_panels(panel)
-          if B.optionsPanel then B.optionsPanel:Show() end
-          panel:Show()
-          B.currentTab = "Options"
-          sf153_refresh_bosses()
-        end)
+      if B.sf153ConfigureAlertRulesButton then
+        sf153_hide_legacy_control(B.sf153ConfigureAlertRulesButton)
       end
-      B.sf153ConfigureAlertRulesButton:Show()
+      if B.sfe141EventOptionsPanel then B.sfe141EventOptionsPanel:Hide() end
+
+      local entry = B.sfe141EventAlertButton
+      if entry then
+        entry:SetText("Alerts & Rules")
+        entry:SetScript("OnClick", function() sf153_show_rules() end)
+        entry:Show(); entry:Enable(); entry:SetAlpha(1)
+      end
+      sf153_wire_options_navigation(B.sfmmOpenButton)
+      sf153_wire_options_navigation(B.sfcpOpenButton)
+      sf153_wire_options_navigation(B.sfn138FavoriteAlertButton)
+      sf153_wire_options_navigation(B.sfamPolishButton)
     end
 
     local oldBuildOptions = B.BuildOptions

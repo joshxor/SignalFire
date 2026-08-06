@@ -81,7 +81,14 @@ const uiStart = ui.indexOf("-- Public Groups Alerts & Rules - Pass D UI owner.")
 if (uiStart < 0) throw new Error("Pass D source verification failed: UI owner marker");
 const passDUI = ui.slice(uiStart);
 need(passDUI, "sfe153AlertsRulesPanel", "lazy Alerts & Rules subpanel");
-need(passDUI, "Configure Alert Rules", "main Options entry point");
+need(passDUI, "sfe141EventAlertButton", "single existing Options alert entry point");
+need(passDUI, 'entry:SetText("Alerts & Rules")', "repurposed Event Alerts entry point");
+need(passDUI, 'entry:SetScript("OnClick", function() sf153_show_rules() end)', "Alerts & Rules navigation callback");
+need(passDUI, "sf153_hide_legacy_controls", "legacy alert controls suppressed on Options");
+need(passDUI, "hiddenLabels", "legacy alert labels suppressed on Options");
+for (const forbidden of ["Configure Alert Rules", 'B.sf153ConfigureAlertRulesButton =']) {
+  forbid(passDUI, forbidden, "separate Configure Alert Rules entry point");
+}
 need(passDUI, "publicAlertIntentFilter", "independent intent rule state");
 need(passDUI, "publicAlertRoleFilter", "independent role rule state");
 need(passDUI, "publicAlertXPAuraFilter", "independent XP Aura rule state");
@@ -90,8 +97,31 @@ need(passDUI, "sf153_refresh_bosses", "profile-aware dynamic World Boss controls
 need(passDUI, "publicAlertDungeonDifficulty", "Dungeon difficulty control");
 need(passDUI, "publicAlertCustomText", "custom quick keyword text");
 need(passDUI, "SignalFireUILifecycle151", "standard dropdown lifecycle registration");
+need(passDUI, "sf153_boss_display_name", "bounded World Boss display grouping");
+need(passDUI, 'return "Kaldros Depthbreaker"', "Kaldros duplicate display grouping");
+need(passDUI, "showSelected", "World Boss mode-aware checkbox visibility");
 forbid(passDUI, "publicFilter =", "Public Groups visible Type filter ownership reused by alerts");
 forbid(passDUI, "publicIntentFilter =", "Public Groups visible Intent filter ownership reused by alerts");
+const buildStart = passDUI.indexOf("local function sf153_build_rules");
+const showStart = passDUI.indexOf("local function sf153_show_rules");
+const navStart = passDUI.indexOf("local function sf153_wire_options_navigation", showStart);
+if (buildStart < 0 || showStart < 0 || navStart < 0) throw new Error("Pass D source verification failed: mutually exclusive UI lifecycle boundary");
+const buildRules = passDUI.slice(buildStart, showStart);
+const showRules = passDUI.slice(showStart, navStart);
+need(buildRules, "local host = B.content", "Rules page content owner");
+need(buildRules, 'CreateFrame("Frame", "SignalFireAlertsRules153", host)', "Rules page is a content sibling");
+need(buildRules, "panel:SetAllPoints(host)", "Rules page content geometry");
+for (const forbidden of [
+  'CreateFrame("Frame", "SignalFireAlertsRules153", B.optionsPanel)',
+  "panel:SetAllPoints(B.optionsPanel)",
+  "B.optionsPanel:Show(); panel:Show()",
+]) {
+  forbid(passDUI, forbidden, "overlay-based Rules page architecture");
+}
+need(showRules, "if B.HidePanels then B:HidePanels() end", "Rules page closes existing Options panels");
+need(showRules, "sf153_hide_rule_panels(panel)", "Rules page mutually exclusive subpanel lifecycle");
+need(showRules, "if B.optionsPanel then B.optionsPanel:Hide() end", "normal Options page hidden under Rules");
+forbid(showRules, "B.optionsPanel:Show()", "Rules page leaves normal Options content visible");
 const bossesStart = passDUI.indexOf("local function sf153_refresh_bosses");
 const bossesEnd = passDUI.indexOf("local function sf153_build_rules", bossesStart);
 if (bossesStart < 0 || bossesEnd < 0) throw new Error("Pass D source verification failed: World Boss registry boundary");
@@ -126,7 +156,11 @@ need(harness, "XP Aura refinement", "XP Aura refinement regression");
 need(harness, "custom comma OR or whitespace AND semantics", "custom quick rule regression");
 need(harness, "duplicate alerts", "multiple-rule one-fire regression");
 need(harness, "semantic rebroadcast dedupe failed", "semantic cooldown regression");
-need(harness, "Pass D rules panel was not lazy", "lazy Options UI regression");
+need(harness, "normal Options content remained visible under rules", "mutually exclusive Options UI regression");
+need(harness, "legacy alert control remained visible on Options", "legacy alert controls regression");
+need(harness, "Selected World Boss mode did not show active-profile boss controls", "selected World Boss UI regression");
+need(harness, "Kaldros duplicate user-facing choice remained", "Kaldros UI grouping regression");
+need(harness, "Rules page remained visible after another Options page opened", "Options page navigation regression");
 need(harness, "alert evaluation invoked the authoritative parser a second time", "no raw reparse regression");
 
 need(workflow, "verify_public_groups_alerts_rules_sources.js", "Pass D source verifier workflow step");

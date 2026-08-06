@@ -298,53 +298,105 @@ BronzeLFG_DB.options.notifySound = false
 ingest("SilentAlerts", "LFM Azuregos")
 assert(#chatAlerts == 1 and #errorAlerts == 1 and #sounds == 0, "sound toggle suppressed visual alert")
 
--- L: the new configuration is lazy, reusable, profile-aware, and does not
--- replace the visible Public Groups filter state.
+-- L: the new configuration is a mutually exclusive Options page with one entry point.
+BronzeLFG_DB.options.publicAlertWorldBossMode = "Any World Boss"
 assert(B:ShowOptions() ~= false, "Options panel did not open")
-assert(B.sf153ConfigureAlertRulesButton and B.sfe153AlertsRulesPanel == nil, "Pass D rules panel was not lazy")
-local configure = assert(B.sf153ConfigureAlertRulesButton:GetScript("OnClick"), "Configure Alert Rules callback missing")
-configure(B.sf153ConfigureAlertRulesButton)
+local eventEntry = assert(B.sfe141EventAlertButton, "Alerts & Rules entry point was not created")
+assert(eventEntry:IsShown(), "Alerts & Rules entry point was not visible")
+assert(eventEntry:GetText() == "Alerts & Rules", "existing Event Alerts entry point was not repurposed")
+assert(not (B.sf153ConfigureAlertRulesButton and B.sf153ConfigureAlertRulesButton:IsShown()),
+  "separate Configure Alert Rules entry point remained visible")
+local legacyControls = {
+  B.optNotify, B.optNotifySound, B.optNotifyHCBB, B.eventFilterDD,
+  B.optNotifyRaid, B.raidFilterDD, B.optNotifyKey, B.keyFilterDD,
+  B.optNotifyDungeon, B.dungeonFilterDD, B.dungeonFilterDD5612,
+  B.dungeonAlertDropdown, B.dungeonAlertDropdown5613,
+  B.dungeonAlertDropdown5614, B.dungeonAlertDropdown5615,
+}
+for _, control in ipairs(legacyControls) do
+  assert(not control or not control:IsShown(), "legacy alert control remained visible on Options")
+end
+local listingAlertEntries = eventEntry:IsShown() and 1 or 0
+if B.sf153ConfigureAlertRulesButton and B.sf153ConfigureAlertRulesButton:IsShown() then listingAlertEntries = listingAlertEntries + 1 end
+assert(listingAlertEntries == 1, "only one listing-alert navigation entry was visible")
+
+local openRules = assert(eventEntry:GetScript("OnClick"), "Alerts & Rules callback missing")
+openRules(eventEntry)
 local rulesPanel = assert(B.sfe153AlertsRulesPanel, "Pass D rules panel was not built")
 assert(rulesPanel:IsShown(), "Pass D rules panel was not shown")
-assert(rulesPanel.sf153MasterCheck, "Pass D master control was not created")
-assert(rulesPanel.sf153SoundCheck, "Pass D sound control was not created")
-assert(rulesPanel.sf153CooldownDrop, "Pass D cooldown control was not created")
-assert(rulesPanel.sf153IntentDrop, "Pass D Intent dropdown was not created")
-assert(rulesPanel.sf153RoleDrop, "Pass D Role dropdown was not created")
-assert(rulesPanel.sf153AuraDrop, "Pass D XP Aura dropdown was not created")
-assert(rulesPanel.sf153WorldBossCheck, "Pass D World Boss control was not created")
-assert(rulesPanel.sf153WorldModeDrop, "Pass D World Boss mode dropdown was not created")
-assert(rulesPanel.sf153RaidCheck, "Pass D Raid control was not created")
-assert(rulesPanel.sf153DungeonCheck, "Pass D Dungeon control was not created")
-assert(rulesPanel.sf153DifficultyDrop, "Pass D Dungeon difficulty dropdown was not created")
-assert(rulesPanel.sf153KeyCheck, "Pass D Key control was not created")
-assert(rulesPanel.sf153EventCheck, "Pass D Event control was not created")
-assert(rulesPanel.sf153CustomCheck, "Pass D Custom Quick Alert control was not created")
-assert(rulesPanel.sf153CustomEdit, "Pass D Custom Quick Alert edit box was not created")
+assert(rulesPanel:GetParent() == B.content, "Pass D rules page was not owned by the main content area")
+assert(not B.optionsPanel:IsShown(), "normal Options content remained visible under rules")
+for _, panel in ipairs({B.sfmmPanel, B.sfcpPanel, B.sfn138FavoriteOptionsPanel, B.sfamPolishPanel, B.sfe141EventOptionsPanel}) do
+  assert(not panel or not panel:IsShown(), "Options subpanel remained visible under rules")
+end
+local rulesControls = {
+  rulesPanel.sf153MasterCheck, rulesPanel.sf153SoundCheck, rulesPanel.sf153CooldownDrop,
+  rulesPanel.sf153IntentDrop, rulesPanel.sf153RoleDrop, rulesPanel.sf153AuraDrop,
+  rulesPanel.sf153WorldBossCheck, rulesPanel.sf153WorldModeDrop,
+  rulesPanel.sf153RaidCheck, rulesPanel.sf153DungeonCheck, rulesPanel.sf153DifficultyDrop,
+  rulesPanel.sf153KeyCheck, rulesPanel.sf153EventCheck, rulesPanel.sf153CustomCheck,
+  rulesPanel.sf153CustomEdit,
+}
+for _, control in ipairs(rulesControls) do
+  assert(control and control:IsShown(), "Pass D rules control was not visible")
+end
 assert(type(rulesPanel.sf153BossChecks) == "table", "World Boss control registry was not a table")
 local bossRegistry = rulesPanel.sf153BossChecks
 local bossRegistryCount = 0
 local bossControls = {}
-local bossVisibleCount = 0
 for key, control in pairs(bossRegistry) do
   bossRegistryCount = bossRegistryCount + 1
-  if control and control.IsShown and control:IsShown() then
+  assert(not control:IsShown(), "Any World Boss mode left boss controls visible")
+end
+assert(bossRegistryCount > 0, "World Boss control registry was empty")
+rulesPanel.sf153WorldModeDrop:sf153SetValues({"Any World Boss", "Selected World Bosses"}, "Selected World Bosses")
+local selectedVisibleCount = 0
+local kaldrosChoices = 0
+local kaldrosLabel = nil
+for key, control in pairs(bossRegistry) do
+  if control:IsShown() then
     bossControls[key] = control
-    bossVisibleCount = bossVisibleCount + 1
+    selectedVisibleCount = selectedVisibleCount + 1
+  end
+  local rawName = string.lower(tostring(control.sf153BossName or ""))
+  if rawName == "kaldros" or rawName == "kaldros depthbreaker" then
+    kaldrosChoices = kaldrosChoices + 1
+    kaldrosLabel = control.sf153Label and control.sf153Label:GetText() or ""
   end
 end
-assert(bossVisibleCount > 0, "no active-profile World Boss controls were visible")
-configure(B.sf153ConfigureAlertRulesButton)
+assert(selectedVisibleCount > 0, "Selected World Boss mode did not show active-profile boss controls")
+assert(kaldrosChoices == 1 and kaldrosLabel == "Kaldros Depthbreaker", "Kaldros duplicate user-facing choice remained")
+rulesPanel.sf153WorldModeDrop:sf153SetValues({"Any World Boss", "Selected World Bosses"}, "Any World Boss")
+for _, control in pairs(bossRegistry) do
+  assert(not control:IsShown(), "Any World Boss mode did not hide selected boss controls")
+end
+
+local repeatedBossRegistryCount = 0
+for key, control in pairs(bossRegistry) do repeatedBossRegistryCount = repeatedBossRegistryCount + 1 end
+assert(repeatedBossRegistryCount == bossRegistryCount, "World Boss registry count changed on same-profile refresh")
+openRules(eventEntry)
 assert(B.sfe153AlertsRulesPanel == rulesPanel, "repeated rule-panel opens duplicated the panel")
 assert(rulesPanel.sf153BossChecks == bossRegistry, "World Boss registry table was replaced on refresh")
-local repeatedBossRegistryCount = 0
-for key, control in pairs(rulesPanel.sf153BossChecks) do
-  repeatedBossRegistryCount = repeatedBossRegistryCount + 1
-end
-assert(repeatedBossRegistryCount == bossRegistryCount, "World Boss registry count changed on same-profile refresh")
 for key, control in pairs(bossControls) do
   assert(rulesPanel.sf153BossChecks[key] == control, "World Boss control was recreated on same-profile refresh")
 end
+
+for _, nav in ipairs({B.sfmmOpenButton, B.sfcpOpenButton, B.sfn138FavoriteAlertButton, B.sfamPolishButton}) do
+  if nav then
+    local click = assert(nav:GetScript("OnClick"), "Options navigation callback missing")
+    openRules(eventEntry)
+    click(nav)
+    assert(not rulesPanel:IsShown(), "Rules page remained visible after another Options page opened")
+    assert(B.optionsPanel:IsShown(), "Options content remained hidden after another page opened")
+  end
+end
+openRules(eventEntry)
+local back = assert(rulesPanel.sf153BackButton, "Rules page Back button was not stored")
+back:GetScript("OnClick")(back)
+assert(not rulesPanel:IsShown() and B.optionsPanel:IsShown(), "Back did not return to the normal Options page")
+openRules(eventEntry)
+assert(B.sfe153AlertsRulesPanel == rulesPanel and rulesPanel.sf153BossChecks == bossRegistry,
+  "Rules page or World Boss registry was not reused after navigation")
 B:HidePanels()
 assert(not rulesPanel:IsShown(), "rules panel did not close with Options lifecycle")
 
