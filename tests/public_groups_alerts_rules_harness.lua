@@ -320,6 +320,28 @@ local listingAlertEntries = eventEntry:IsShown() and 1 or 0
 if B.sf153ConfigureAlertRulesButton and B.sf153ConfigureAlertRulesButton:IsShown() then listingAlertEntries = listingAlertEntries + 1 end
 assert(listingAlertEntries == 1, "only one listing-alert navigation entry was visible")
 
+local function assertCentralOptionsOwner(navName, nav)
+  assert(nav, "Options navigation button missing: " .. navName)
+  local current = nav:GetScript("OnClick")
+  local owner = nav.sfui1434ClickOwner
+  assert(type(owner) == "function", "central Options navigation owner missing: " .. navName)
+  assert(current == owner, "central Options navigation owner was replaced: " .. navName)
+  return owner
+end
+
+local modulesOwner = assertCentralOptionsOwner("Modules", B.sfmmOpenButton)
+assertCentralOptionsOwner("Chat & Parsing", B.sfcpOpenButton)
+assertCentralOptionsOwner("Favorite Alerts", B.sfn138FavoriteAlertButton)
+assertCentralOptionsOwner("Polish Settings", B.sfamPolishButton)
+assertCentralOptionsOwner("Alerts & Rules", eventEntry)
+if B.sfmmBodyButton then assertCentralOptionsOwner("Manage Modules", B.sfmmBodyButton) end
+
+B:SFUI1434_Apply()
+assert(B.sfmmOpenButton:GetScript("OnClick") == B.sfmmOpenButton.sfui1434ClickOwner,
+  "central Options navigation owner was not restored after SFUI1434_Apply")
+assert(B.sfmmOpenButton.sfui1434ClickOwner == modulesOwner,
+  "SFUI1434_Apply recreated the Modules navigation owner without a callback replacement")
+
 local openRules = assert(eventEntry:GetScript("OnClick"), "Alerts & Rules callback missing")
 openRules(eventEntry)
 local rulesPanel = assert(B.sfe153AlertsRulesPanel, "Pass D rules panel was not built")
@@ -413,21 +435,21 @@ local optionNavs = {
 }
 for _, item in ipairs(optionNavs) do
   local navName, nav = item[1], item[2]
-  if nav then
-    local click = assert(nav:GetScript("OnClick"), "Options navigation callback missing: " .. navName)
-    openRules(eventEntry)
-    assert(rulesPanel:IsShown(), "Rules page did not open before " .. navName)
-    click(nav)
-    assert(not rulesPanel:IsShown(), "Rules page remained visible after " .. navName .. " opened")
-    assert(B.optionsPanel:IsShown(), "Options content remained hidden after " .. navName .. " opened")
-    openRules(eventEntry)
-    assert(rulesPanel == B.sfe153AlertsRulesPanel, "Rules panel changed after " .. navName .. " navigation")
-    assert(rulesPanel.sf153IntentDrop:IsShown(), "Intent dropdown remained hidden after " .. navName .. " navigation")
-    assertRulesControlsVisible("after " .. navName .. " navigation reopen")
-  end
+  assertCentralOptionsOwner(navName, nav)
+  local click = assert(nav:GetScript("OnClick"), "Options navigation callback missing: " .. navName)
+  openRules(eventEntry)
+  assert(rulesPanel:IsShown(), "Rules page did not open before " .. navName)
+  click(nav)
+  assert(not rulesPanel:IsShown(), "Rules page remained visible after " .. navName .. " opened")
+  assert(B.optionsPanel:IsShown(), "Options content remained hidden after " .. navName .. " opened")
+  openRules(eventEntry)
+  assert(rulesPanel == B.sfe153AlertsRulesPanel, "Rules panel changed after " .. navName .. " navigation")
+  assert(rulesPanel.sf153IntentDrop:IsShown(), "Intent dropdown remained hidden after " .. navName .. " navigation")
+  assertRulesControlsVisible("after " .. navName .. " navigation reopen")
 end
 
 if B.sfmmBodyButton then
+  assertCentralOptionsOwner("Manage Modules", B.sfmmBodyButton)
   openRules(eventEntry)
   assert(rulesPanel:IsShown(), "Rules page did not open before Manage Modules")
   local bodyClick = assert(B.sfmmBodyButton:GetScript("OnClick"), "Manage Modules callback missing")

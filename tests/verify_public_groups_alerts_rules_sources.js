@@ -116,6 +116,12 @@ const sfuiHeader = ui.slice(sfuiHeaderStart, sfuiHeaderEnd);
 need(sfuiSubpanels, "BLFG.sfe153AlertsRulesPanel", "central Options subpanel registry includes Rules");
 need(sfuiHeader, "sfui_hide_subpanels(nil)", "central Options navigation hides Rules");
 need(sfuiHeader, "if BLFG.optionsPanel then BLFG.optionsPanel:Show() end", "central Options navigation restores the Options host");
+need(sfuiHeader, "button.sfui1434ClickOwner", "central Options navigation tracks exact callback ownership");
+need(sfuiHeader, "current == button.sfui1434ClickOwner", "central Options navigation verifies current callback ownership");
+need(sfuiHeader, "button.sfui1434DownstreamClick", "central Options navigation records its downstream callback");
+need(sfuiHeader, 'button:SetScript("OnClick", owner)', "central Options navigation installs its exact callback owner");
+forbid(sfuiHeader, "button.sfui1434Wired then return", "historical callback flag is not the ownership guard");
+need(ui, "function BLFG:SFUI1434_WireHeaderButton(button)", "central Options callback repair entry point");
 const buildStart = passDUI.indexOf("local function sf153_build_rules");
 const activateStart = passDUI.indexOf("local function sf153_activate_rules_controls");
 const showStart = passDUI.indexOf("local function sf153_show_rules");
@@ -151,6 +157,8 @@ if (hideTransitionIndex < 0 || activateCallIndex < 0 || refreshCallIndex < 0
   throw new Error("Pass D source verification failed: Rules controls restored before final lifecycle transition");
 }
 forbid(showRules, "B.optionsPanel:Show()", "Rules page leaves normal Options content visible");
+const attachRules = passDUI.slice(attachStart, passDUI.indexOf("local oldBuildOptions", attachStart));
+need(attachRules, "B:SFUI1434_WireHeaderButton(entry)", "Rules entry returns to the central callback owner after replacement");
 const bossesStart = passDUI.indexOf("local function sf153_refresh_bosses");
 const bossesEnd = passDUI.indexOf("local function sf153_build_rules", bossesStart);
 if (bossesStart < 0 || bossesEnd < 0) throw new Error("Pass D source verification failed: World Boss registry boundary");
@@ -191,6 +199,10 @@ need(harness, "Selected World Boss mode did not show active-profile boss control
 need(harness, "Kaldros duplicate user-facing choice remained", "Kaldros UI grouping regression");
 need(harness, "local optionNavs", "named Options navigation coverage");
 need(harness, "navName", "navigation-specific failure messages");
+need(harness, "central Options navigation owner missing", "central callback owner presence regression");
+need(harness, "central Options navigation owner was replaced", "central callback owner identity regression");
+need(harness, "local modulesOwner", "central callback owner reapply regression");
+need(harness, "SFUI1434_Apply recreated the Modules navigation owner", "central callback wrapper stacking regression");
 need(harness, "Rules page remained visible after Manage Modules opened", "Modules body navigation regression");
 need(harness, "Rules page remained visible after direct ShowOptions", "direct ShowOptions navigation regression");
 need(harness, "alert evaluation invoked the authoritative parser a second time", "no raw reparse regression");

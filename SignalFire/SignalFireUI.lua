@@ -91,17 +91,26 @@ do
     end
 
     local function sfui_wire_header_button(button)
-      if not button or button.sfui1434Wired then return end
-      button.sfui1434Wired = true
-      local old = button:GetScript("OnClick")
-      button:SetScript("OnClick", function(self, ...)
+      if not button then return end
+      local current = button:GetScript("OnClick")
+      if button.sfui1434ClickOwner and current == button.sfui1434ClickOwner then return end
+
+      local downstream = current
+      local owner = function(self, ...)
         sfui_hide_subpanels(nil)
         if BLFG.optionsPanel then BLFG.optionsPanel:Show() end
-        if old then old(self, ...) end
+        if downstream then downstream(self, ...) end
         for _, panel in ipairs(sfui_subpanels()) do
           if panel and panel.IsShown and panel:IsShown() then sfui_style_subpanel(panel) end
         end
-      end)
+      end
+      button.sfui1434ClickOwner = owner
+      button.sfui1434DownstreamClick = downstream
+      button:SetScript("OnClick", owner)
+    end
+
+    function BLFG:SFUI1434_WireHeaderButton(button)
+      sfui_wire_header_button(button)
     end
 
     local function sfui_layout_options_header()
@@ -8451,6 +8460,7 @@ do
       if entry then
         entry:SetText("Alerts & Rules")
         entry:SetScript("OnClick", function() sf153_show_rules() end)
+        if B.SFUI1434_WireHeaderButton then B:SFUI1434_WireHeaderButton(entry) end
         entry:Show(); entry:Enable(); entry:SetAlpha(1)
       end
     end
