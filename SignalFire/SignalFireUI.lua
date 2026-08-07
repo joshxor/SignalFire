@@ -81,13 +81,17 @@ do
           end
         end
       end
-      if not panel.sfui1434Footer then
+      local footer = panel.sfui1434Footer
+      local footerType = type(footer)
+      if footerType ~= "table" and footerType ~= "userdata" then footer = nil end
+      if not footer then
         local fs = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         panel.sfui1434Footer = fs
+        footer = fs
         fs:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, 12)
         fs:SetTextColor(.45, .85, 1)
       end
-      panel.sfui1434Footer:SetText(sfui_version_label())
+      if footer and footer.SetText then footer:SetText(sfui_version_label()) end
     end
 
     local function sfui_wire_header_button(button)

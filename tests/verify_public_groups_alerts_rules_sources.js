@@ -113,9 +113,20 @@ if (sfuiSubpanelsStart < 0 || sfuiSubpanelsEnd < 0 || sfuiHeaderStart < 0 || sfu
 }
 const sfuiSubpanels = ui.slice(sfuiSubpanelsStart, sfuiSubpanelsEnd);
 const sfuiHeader = ui.slice(sfuiHeaderStart, sfuiHeaderEnd);
+const sfuiStyleStart = ui.indexOf("local function sfui_style_subpanel");
+const sfuiStyleEnd = ui.indexOf("local function sfui_wire_header_button", sfuiStyleStart);
+if (sfuiStyleStart < 0 || sfuiStyleEnd < 0) {
+  throw new Error("Pass D source verification failed: shared subpanel styling boundary");
+}
+const sfuiStyle = ui.slice(sfuiStyleStart, sfuiStyleEnd);
 need(sfuiSubpanels, "BLFG.sfe153AlertsRulesPanel", "central Options subpanel registry includes Rules");
 need(sfuiHeader, "sfui_hide_subpanels(nil)", "central Options navigation hides Rules");
 need(sfuiHeader, "if BLFG.optionsPanel then BLFG.optionsPanel:Show() end", "central Options navigation restores the Options host");
+need(sfuiStyle, "local footer = panel.sfui1434Footer", "shared footer ownership reads the custom field");
+needPattern(sfuiStyle, /local\s+footerType\s*=\s*type\(\s*footer\s*\)/, "shared footer type validation");
+needPattern(sfuiStyle, /footerType\s*~=\s*["']table["']\s+and\s+footerType\s*~=\s*["']userdata["']\s+then\s+footer\s*=\s*nil/, "shared footer rejects invalid custom values");
+need(sfuiStyle, 'panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")', "shared footer recreates missing or invalid ownership");
+needPattern(sfuiStyle, /if\s+footer\s+and\s+footer\.SetText\s+then\s+footer:SetText\(/, "shared footer hydrates the validated owner");
 need(sfuiHeader, "button.sfui1434ClickOwner", "central Options navigation tracks exact callback ownership");
 need(sfuiHeader, "current == button.sfui1434ClickOwner", "central Options navigation verifies current callback ownership");
 need(sfuiHeader, "button.sfui1434DownstreamClick", "central Options navigation records its downstream callback");
@@ -203,6 +214,9 @@ need(harness, "central Options navigation owner missing", "central callback owne
 need(harness, "central Options navigation owner was replaced", "central callback owner identity regression");
 need(harness, "local modulesOwner", "central callback owner reapply regression");
 need(harness, "SFUI1434_Apply recreated the Modules navigation owner", "central callback wrapper stacking regression");
+need(harness, "Rules panel shared footer was not created", "shared footer creation regression");
+need(harness, "Rules panel shared footer was not a usable FontString", "shared footer capability regression");
+need(harness, "Rules panel shared footer was not hydrated", "shared footer hydration regression");
 need(harness, "Rules page remained visible after Manage Modules opened", "Modules body navigation regression");
 need(harness, "Rules page remained visible after direct ShowOptions", "direct ShowOptions navigation regression");
 need(harness, "alert evaluation invoked the authoritative parser a second time", "no raw reparse regression");

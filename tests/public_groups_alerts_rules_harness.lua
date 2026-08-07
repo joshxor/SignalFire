@@ -348,6 +348,10 @@ local rulesPanel = assert(B.sfe153AlertsRulesPanel, "Pass D rules panel was not 
 assert(rulesPanel:IsShown(), "Pass D rules panel was not shown")
 assert(rulesPanel:GetParent() == B.content, "Pass D rules page was not owned by the main content area")
 assert(not B.optionsPanel:IsShown(), "normal Options content remained visible under rules")
+local footer = rulesPanel.sfui1434Footer
+assert(type(footer) == "table", "Rules panel shared footer was not created")
+assert(type(footer.SetText) == "function", "Rules panel shared footer was not a usable FontString")
+assert(tostring(footer:GetText() or "") ~= "", "Rules panel shared footer was not hydrated")
 for _, panel in ipairs({B.sfmmPanel, B.sfcpPanel, B.sfn138FavoriteOptionsPanel, B.sfamPolishPanel, B.sfe141EventOptionsPanel}) do
   assert(not panel or not panel:IsShown(), "Options subpanel remained visible under rules")
 end
