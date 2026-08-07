@@ -622,12 +622,28 @@ or a clearer selected/off state. Do not implement this in PR #21.
 # 18. Public Groups Discovery and Alerts Roadmap
 
 The previous vague conditional Search Pass C is superseded by the concrete
-follow-up sequence below. Pass C is live-approved and closeout is pending.
-Pass D remains explicitly deferred until Pass C is formally merged.
+follow-up sequence below. Pass C is complete and merged. Pass D is the active
+feature round.
 
 ## 18.1 Public Groups World Boss Discovery and Recruiting Intent - Pass C
 
-**Status: LIVE APPROVED / CLOSEOUT PENDING**
+**Status: COMPLETE AND MERGED**
+
+PR: #22
+
+Merge SHA: `6413e99458828d6c1e8dabe62a401a4d0eb8636f`
+
+Post-merge workflow: #133
+
+Run ID: `30772837579`
+
+Package job: `91562878553`
+
+Artifact: `SignalFire-1.5.3`
+
+Artifact ID: `8841072745`
+
+Digest: `sha256:abb23c555e7741eb909b34d478c257aa972bd729a9b3f2e95c6bc34229311780`
 
 Pass C makes Public Groups reliably identify the high-value group posts that
 alerting will later consume. Pass D alerts and rules are out of scope for this
@@ -726,8 +742,10 @@ Pass B, Marketplace, Runtime FPS, and Listing/Broadcast regressions.
 
 ## 18.2 Pass D - Public Groups Alerts and Rules
 
-Pass D remains the next feature after Pass C closeout. It begins only after
-Pass C establishes reliable canonical rows and intent.
+**Status: ACTIVE**
+
+Pass D is the active feature round now that Pass C has established reliable
+canonical rows and intent.
 Alerts must be driven by genuinely new or meaningfully changed canonical Public
 Groups rows, never by raw chat substring matches.
 
@@ -984,14 +1002,13 @@ Never destroy unrelated local work.
 
 Unless reprioritized by the user:
 
-## Priority 1 — Public Groups World Boss Discovery and Recruiting Intent
+## Priority 1 — Public Groups Alerts and Rules — Pass D
 
 Status:
 
-- Pass C is live-approved with closeout pending;
+- Pass C is complete and merged as PR #22;
 - World Boss discovery and canonical Recruiting/Seeking intent are complete;
-- Pass D alerts and rules remain deferred until Pass C is merged;
-- no alerting production scope is part of Pass C.
+- Pass D is the active canonical-row alert-engine, rules UI, and regression pass.
 
 ## Priority 2 — Activity Discovery Pass B
 
@@ -1001,11 +1018,11 @@ Status:
 - exact merged artifact passed CI and live smoke testing;
 - use the closeout evidence in Section 16.
 
-## Priority 3 — Public Groups Alerts and Rules
+## Priority 3 — Public Groups Alerts and Rules follow-up
 
 Status:
 
-- planned after Pass C, as Pass D;
+- Pass D is active in the reusable exact-links worktree;
 - alert only from canonical Public Groups rows and intent metadata;
 - use the requirements in Section 18.2.
 

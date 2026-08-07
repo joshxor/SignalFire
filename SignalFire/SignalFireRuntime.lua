@@ -236,6 +236,528 @@ do
   until true
 end
 
+-- Public Groups Alerts & Rules - Pass D.
+-- This is the final alert owner.  It consumes only the canonical row committed
+-- by Phase 3 and deliberately does not call the historical notification stack.
+do
+  repeat
+    local B = _G.BronzeLFG
+    if not B then break end
+
+    local A = _G.SignalFirePublicGroupAlerts153 or {}
+    _G.SignalFirePublicGroupAlerts153 = A
+    A.owner = "SignalFireRuntime.lua"
+    A.schema = 1
+    A.maxCacheEntries = 192
+    A.cache = A.cache or {}
+    A.cacheOrder = A.cacheOrder or {}
+    A.cacheSize = tonumber(A.cacheSize or 0) or 0
+    A.stats = A.stats or {}
+    A.activeProfile = A.activeProfile
+
+    local function sf153_clock()
+      if time then return tonumber(time()) or 0 end
+      if GetTime then return tonumber(GetTime()) or 0 end
+      return 0
+    end
+
+    local function sf153_lower(value)
+      return string.lower(tostring(value or ""))
+    end
+
+    local function sf153_trim(value)
+      local out = tostring(value or "")
+      out = string.gsub(out, "^%s+", "")
+      out = string.gsub(out, "%s+$", "")
+      return out
+    end
+
+    local function sf153_normalize(value)
+      local out = sf153_lower(value)
+      out = string.gsub(out, "[^%w]+", " ")
+      out = string.gsub(out, "%s+", " ")
+      return sf153_trim(out)
+    end
+
+    local function sf153_options()
+      BronzeLFG_DB = BronzeLFG_DB or {}
+      BronzeLFG_DB.options = BronzeLFG_DB.options or {}
+      return BronzeLFG_DB.options
+    end
+
+    local function sf153_profile_id()
+      local id = nil
+      if B.SF143_GetProfileId then
+        local ok, value = pcall(B.SF143_GetProfileId, B)
+        if ok then id = value end
+      end
+      if not id or tostring(id) == "" then
+        local opts = sf153_options()
+        id = opts.serverProfile or "Triumvirate"
+      end
+      id = tostring(id or "Triumvirate")
+      if id ~= "Ascension" and id ~= "Triumvirate" then id = "Triumvirate" end
+      return id
+    end
+
+    local function sf153_profile()
+      if B.SF143_GetProfile then
+        local ok, value = pcall(B.SF143_GetProfile, B)
+        if ok and type(value) == "table" then return value end
+      end
+      local id = sf153_profile_id()
+      if SignalFireProfiles and SignalFireProfiles[id] then return SignalFireProfiles[id] end
+      return nil
+    end
+
+    local function sf153_note(field, amount)
+      A.stats[field] = (tonumber(A.stats[field] or 0) or 0) + (amount or 1)
+    end
+
+    local function sf153_migrate()
+      local opts = sf153_options()
+      local marker = tonumber(opts.publicAlertRulesSchema or 0) or 0
+      if marker < 1 then
+        local eventFilter = tostring(opts.notifyEventFilter or "Any Event")
+        local eventEnabled = opts.notifyHCBB ~= false
+        local worldBossEnabled = false
+        local eventRuleEnabled = false
+        if eventEnabled then
+          if eventFilter == "World Boss" then
+            worldBossEnabled = true
+          elseif eventFilter == "General Event" then
+            eventRuleEnabled = true
+          else
+            -- Any Event historically included World Boss posts.
+            worldBossEnabled = true
+            eventRuleEnabled = true
+          end
+        end
+
+        opts.publicAlertWorldBoss = opts.publicAlertWorldBoss
+        if opts.publicAlertWorldBoss == nil then opts.publicAlertWorldBoss = worldBossEnabled end
+        opts.publicAlertEnabled = opts.publicAlertEnabled
+        if opts.publicAlertEnabled == nil then opts.publicAlertEnabled = opts.notifyEnabled ~= false end
+        opts.publicAlertEvent = opts.publicAlertEvent
+        if opts.publicAlertEvent == nil then opts.publicAlertEvent = eventRuleEnabled end
+        opts.publicAlertRaid = opts.publicAlertRaid
+        if opts.publicAlertRaid == nil then opts.publicAlertRaid = opts.notifyRaid ~= false end
+        opts.publicAlertDungeon = opts.publicAlertDungeon
+        if opts.publicAlertDungeon == nil then opts.publicAlertDungeon = opts.notifyDungeon ~= false end
+        opts.publicAlertKey = opts.publicAlertKey
+        if opts.publicAlertKey == nil then opts.publicAlertKey = opts.notifyKey ~= false end
+        opts.publicAlertRaidFilter = opts.publicAlertRaidFilter or opts.notifyRaidFilter or "Any Raid"
+        opts.publicAlertKeyFilter = opts.publicAlertKeyFilter or opts.notifyKeyFilter or "Any Key"
+        opts.publicAlertDungeonFilter = opts.publicAlertDungeonFilter or opts.notifyDungeonFilter or "Any Dungeon"
+        opts.publicAlertIntentFilter = opts.publicAlertIntentFilter or "All Intents"
+        opts.publicAlertRoleFilter = opts.publicAlertRoleFilter or "All Roles"
+        opts.publicAlertXPAuraFilter = opts.publicAlertXPAuraFilter or "All Listings"
+        opts.publicAlertDungeonDifficulty = opts.publicAlertDungeonDifficulty or "All Difficulties"
+        opts.publicAlertWorldBossMode = opts.publicAlertWorldBossMode or "Any World Boss"
+        opts.publicAlertCustomEnabled = opts.publicAlertCustomEnabled == true
+        opts.publicAlertCustomText = tostring(opts.publicAlertCustomText or "")
+        opts.publicAlertCooldown = tonumber(opts.publicAlertCooldown or 20) or 20
+        opts.publicAlertWorldBossesByProfile = opts.publicAlertWorldBossesByProfile or {}
+        opts.publicAlertRulesSchema = 1
+      end
+
+      -- Fill fields added by later revisions without disturbing migrated choices.
+      opts.publicAlertWorldBossesByProfile = opts.publicAlertWorldBossesByProfile or {}
+      if opts.publicAlertEnabled == nil then opts.publicAlertEnabled = opts.notifyEnabled ~= false end
+      if opts.publicAlertWorldBoss == nil then opts.publicAlertWorldBoss = true end
+      if opts.publicAlertEvent == nil then opts.publicAlertEvent = false end
+      if opts.publicAlertRaid == nil then opts.publicAlertRaid = opts.notifyRaid ~= false end
+      if opts.publicAlertDungeon == nil then opts.publicAlertDungeon = opts.notifyDungeon ~= false end
+      if opts.publicAlertKey == nil then opts.publicAlertKey = opts.notifyKey ~= false end
+      opts.publicAlertRaidFilter = opts.publicAlertRaidFilter or opts.notifyRaidFilter or "Any Raid"
+      opts.publicAlertKeyFilter = opts.publicAlertKeyFilter or opts.notifyKeyFilter or "Any Key"
+      opts.publicAlertDungeonFilter = opts.publicAlertDungeonFilter or opts.notifyDungeonFilter or "Any Dungeon"
+      opts.publicAlertIntentFilter = opts.publicAlertIntentFilter or "All Intents"
+      opts.publicAlertRoleFilter = opts.publicAlertRoleFilter or "All Roles"
+      opts.publicAlertXPAuraFilter = opts.publicAlertXPAuraFilter or "All Listings"
+      opts.publicAlertDungeonDifficulty = opts.publicAlertDungeonDifficulty or "All Difficulties"
+      opts.publicAlertWorldBossMode = opts.publicAlertWorldBossMode or "Any World Boss"
+      opts.publicAlertCooldown = tonumber(opts.publicAlertCooldown or 20) or 20
+      if opts.publicAlertCooldown ~= 20 and opts.publicAlertCooldown ~= 30
+        and opts.publicAlertCooldown ~= 60 and opts.publicAlertCooldown ~= 120 then
+        opts.publicAlertCooldown = 20
+      end
+      return opts
+    end
+
+    local function sf153_boss_names(profile)
+      local out, seen = {}, {}
+      for _, name in ipairs((profile and profile.worldBosses) or {}) do
+        name = sf153_trim(name)
+        if name ~= "" and name ~= "Custom World Boss" and not seen[name] then
+          seen[name] = true
+          table.insert(out, name)
+        end
+      end
+      return out
+    end
+
+    local function sf153_selections(profileId, create)
+      local opts = sf153_migrate()
+      local all = opts.publicAlertWorldBossesByProfile
+      if create then
+        all[profileId] = all[profileId] or {}
+        local profile = profileId == sf153_profile_id() and sf153_profile() or (SignalFireProfiles and SignalFireProfiles[profileId])
+        for _, name in ipairs(sf153_boss_names(profile)) do
+          if all[profileId][name] == nil then all[profileId][name] = true end
+        end
+      end
+      return all[profileId] or {}
+    end
+
+    function A:GetProfileId()
+      return sf153_profile_id()
+    end
+
+    function A:GetWorldBosses(profileId)
+      profileId = tostring(profileId or sf153_profile_id())
+      local profile = profileId == sf153_profile_id() and sf153_profile() or (SignalFireProfiles and SignalFireProfiles[profileId])
+      local out = sf153_boss_names(profile)
+      return out
+    end
+
+    function A:GetWorldBossSelections(profileId)
+      profileId = tostring(profileId or sf153_profile_id())
+      return sf153_selections(profileId, profileId == sf153_profile_id())
+    end
+
+    function A:SetWorldBossSelection(name, enabled, profileId)
+      profileId = tostring(profileId or sf153_profile_id())
+      local selections = sf153_selections(profileId, profileId == sf153_profile_id())
+      name = sf153_trim(name)
+      if name ~= "" then selections[name] = enabled == true end
+      return selections[name] == true
+    end
+
+    local function sf153_row_activities(row)
+      local out = {}
+      if type(row and row.activities) == "table" then
+        for _, value in ipairs(row.activities) do
+          value = sf153_trim(value)
+          if value ~= "" then table.insert(out, value) end
+        end
+      elseif type(row and row.activities) == "string" and sf153_trim(row.activities) ~= "" then
+        for value in string.gmatch(row.activities, "[^/]+") do table.insert(out, sf153_trim(value)) end
+      end
+      if #out == 0 then
+        local activity = sf153_trim(row and row.activity or "")
+        for value in string.gmatch(activity, "[^/]+") do table.insert(out, sf153_trim(value)) end
+      end
+      return out
+    end
+
+    local function sf153_world_boss_matches(row, opts)
+      if tostring(row and row.type or "") ~= "World Boss" then return false end
+      if opts.publicAlertWorldBoss == false then return false end
+      if tostring(opts.publicAlertWorldBossMode or "Any World Boss") ~= "Selected World Bosses" then return true end
+      local selected = sf153_selections(sf153_profile_id(), true)
+      for _, activity in ipairs(sf153_row_activities(row)) do
+        if activity ~= "World Boss" and selected[activity] == true then return true end
+      end
+      return false
+    end
+
+    local function sf153_activity_filter(row, value, generic)
+      value = tostring(value or generic)
+      if value == "" or value == generic or value == "Any" or value == "Any " .. generic:gsub("^Any ", "") then return true end
+      return sf153_trim(row and row.activity or "") == sf153_trim(value)
+    end
+
+    local function sf153_role_matches(row, value)
+      value = tostring(value or "All Roles")
+      if value == "All Roles" or value == "All" or value == "" then return true end
+      local roles = " " .. sf153_normalize(row and row.roles or "") .. " "
+      return string.find(roles, " " .. sf153_normalize(value) .. " ", 1, true) ~= nil
+    end
+
+    local function sf153_intent_matches(row, value)
+      value = tostring(value or "All Intents")
+      if value == "All Intents" or value == "All" or value == "" then return true end
+      if value == "Recruiting" then return tostring(row and row.intent or "") == "Recruiter" end
+      if value == "Seeking Group" then return tostring(row and row.intent or "") == "Applicant" end
+      return true
+    end
+
+    local function sf153_corpus(row)
+      row = row or {}
+
+      local activities = ""
+      if type(row.activities) == "table" then
+        local values = {}
+        for _, value in ipairs(row.activities) do
+          table.insert(values, tostring(value or ""))
+        end
+        activities = table.concat(values, " ")
+      elseif type(row.activities) == "string" then
+        activities = row.activities
+      end
+
+      local parts = {
+        tostring(row.player or ""), tostring(row.type or ""),
+        tostring(row.activity or ""), tostring(activities or ""),
+        tostring(row.message or ""), tostring(row.rawMessage or ""),
+        tostring(row.intent or ""), tostring(row.roles or ""),
+        tostring(row.tags or ""), tostring(row.channel or ""),
+        tostring(row.difficulty or ""), tostring(row.keyLevel or ""),
+        row.xpAura == true and "XP Aura" or "",
+      }
+      return " " .. sf153_normalize(table.concat(parts, " ")) .. " "
+    end
+
+    local function sf153_custom_matches(row, opts)
+      if opts.publicAlertCustomEnabled ~= true then return false end
+      local text = sf153_trim(opts.publicAlertCustomText or "")
+      if text == "" then return false end
+      local corpus = sf153_corpus(row)
+      for clause in string.gmatch(text, "[^,]+") do
+        local normalized = sf153_normalize(clause)
+        local all = normalized ~= ""
+        for token in string.gmatch(normalized, "%S+") do
+          if not string.find(corpus, " " .. token .. " ", 1, true) then all = false; break end
+        end
+        if all then return true end
+      end
+      return false
+    end
+
+    local function sf153_activity_key(row)
+      local values = sf153_row_activities(row)
+      if #values == 0 then return sf153_normalize(row and row.activity or "") end
+      return sf153_normalize(table.concat(values, " / "))
+    end
+
+    local function sf153_semantic_key(row, profileId)
+      return table.concat({
+        sf153_normalize(profileId), sf153_normalize(row and row.player),
+        sf153_normalize(row and row.type), sf153_activity_key(row),
+        sf153_normalize(row and row.intent), sf153_normalize(row and row.difficulty),
+        tostring(row and row.keyLevel or ""),
+      }, "\031")
+    end
+
+    local function sf153_prune_cache(stamp)
+      local order = A.cacheOrder
+      local index = 1
+      while index <= #order and (#order - index + 1) > A.maxCacheEntries do
+        local item = order[index]
+        if item and A.cache[item.key] == item.stamp then
+          A.cache[item.key] = nil
+          A.cacheSize = math.max(0, A.cacheSize - 1)
+        end
+        index = index + 1
+      end
+      if index > 1 then
+        local remaining = {}
+        for i = index, #order do table.insert(remaining, order[i]) end
+        A.cacheOrder = remaining
+      end
+      local removed = 0
+      while #A.cacheOrder > A.maxCacheEntries * 2 do
+        local item = table.remove(A.cacheOrder, 1)
+        if item and A.cache[item.key] == item.stamp then
+          A.cache[item.key] = nil
+          A.cacheSize = math.max(0, A.cacheSize - 1)
+        end
+        removed = removed + 1
+        if removed >= 16 then break end
+      end
+      if stamp then
+        local oldest = A.cacheOrder[1]
+        if oldest and stamp - (tonumber(oldest.stamp or 0) or 0) > 900 then
+          local item = table.remove(A.cacheOrder, 1)
+          if item and A.cache[item.key] == item.stamp then
+            A.cache[item.key] = nil
+            A.cacheSize = math.max(0, A.cacheSize - 1)
+          end
+        end
+      end
+    end
+
+    local function sf153_record_rule(row, opts)
+      local rules = {}
+      local typeName = tostring(row and row.type or "")
+      if typeName == "World Boss" and sf153_world_boss_matches(row, opts) then table.insert(rules, "World Boss") end
+      if typeName == "Raid" and opts.publicAlertRaid ~= false
+        and sf153_activity_filter(row, opts.publicAlertRaidFilter or opts.notifyRaidFilter, "Any Raid") then
+        table.insert(rules, "Raid")
+      end
+      if typeName == "Dungeon" and opts.publicAlertDungeon ~= false then
+        if sf153_activity_filter(row, opts.publicAlertDungeonFilter or opts.notifyDungeonFilter, "Any Dungeon") then
+          local difficulty = tostring(opts.publicAlertDungeonDifficulty or "All Difficulties")
+          if difficulty == "All Difficulties" or difficulty == "" or tostring(row.difficulty or "") == difficulty then
+            table.insert(rules, "Dungeon")
+          else
+            sf153_note("difficultyRejected")
+          end
+        else
+          sf153_note("activityRejected")
+        end
+      end
+      if typeName == "Key" and opts.publicAlertKey ~= false
+        and sf153_activity_filter(row, opts.publicAlertKeyFilter or opts.notifyKeyFilter, "Any Key") then
+        table.insert(rules, "Key")
+      end
+      if typeName == "Event" and opts.publicAlertEvent == true then table.insert(rules, "Event") end
+      if sf153_custom_matches(row, opts) then
+        table.insert(rules, "Custom Quick Alert")
+        sf153_note("customMatched")
+      end
+      return rules
+    end
+
+    local function sf153_color(typeName)
+      if typeName == "Raid" then return .3, 1, .45 end
+      if typeName == "Dungeon" then return .25, .65, 1 end
+      if typeName == "Key" then return .75, .45, 1 end
+      if typeName == "Event" then return 1, .55, .15 end
+      return 1, .82, 0
+    end
+
+    local function sf153_alert_line(row)
+      local typeName = tostring(row and row.type or "Listing")
+      local activity = sf153_trim(row and row.activity or "listing")
+      if activity == "" then activity = "listing" end
+      local player = sf153_trim(row and row.player or "someone")
+      if player == "" then player = "someone" end
+      local intent = tostring(row and row.intent or "")
+      if intent ~= "" then return "SignalFire Alert: " .. typeName .. " - " .. activity .. " from " .. player .. " (" .. intent .. ")" end
+      return "SignalFire Alert: " .. typeName .. " - " .. activity .. " from " .. player
+    end
+
+    function A:ResetDedupe()
+      self.cache = {}
+      self.cacheOrder = {}
+      self.cacheSize = 0
+      self.activeProfile = sf153_profile_id()
+      return true
+    end
+
+    function A:Evaluate(row)
+      sf153_migrate()
+      sf153_note("evaluations")
+      if type(row) ~= "table" then return false end
+      local profileId = sf153_profile_id()
+      if self.activeProfile and self.activeProfile ~= profileId then self:ResetDedupe() end
+      self.activeProfile = profileId
+      local opts = sf153_options()
+      if opts.publicAlertEnabled == false or opts.notifyEnabled == false then
+        sf153_note("disabled")
+        return false
+      end
+      if row.sf151StableLink ~= true and row.sf151CanonicalKey == nil then
+        sf153_note("typeRejected")
+        return false
+      end
+      local intent = tostring(opts.publicAlertIntentFilter or "All Intents")
+      if not sf153_intent_matches(row, intent) then sf153_note("intentRejected"); return false end
+      local role = tostring(opts.publicAlertRoleFilter or "All Roles")
+      if not sf153_role_matches(row, role) then sf153_note("roleRejected"); return false end
+      if tostring(opts.publicAlertXPAuraFilter or "All Listings") == "XP Aura Only" and row.xpAura ~= true then
+        sf153_note("xpAuraRejected")
+        return false
+      end
+
+      local rules = sf153_record_rule(row, opts)
+      if #rules == 0 then
+        sf153_note("typeRejected")
+        return false
+      end
+      sf153_note("matched")
+      local stamp = sf153_clock()
+      sf153_prune_cache(stamp)
+      local key = sf153_semantic_key(row, profileId)
+      local last = tonumber(self.cache[key] or 0) or 0
+      local cooldown = tonumber(opts.publicAlertCooldown or 20) or 20
+      if last > 0 and stamp - last < cooldown then
+        sf153_note("deduped")
+        return false
+      end
+      if self.cache[key] == nil then self.cacheSize = self.cacheSize + 1 end
+      self.cache[key] = stamp
+      table.insert(self.cacheOrder, {key=key, stamp=stamp})
+      sf153_prune_cache(stamp)
+
+      local line = sf153_alert_line(row)
+      local r, g, b = sf153_color(tostring(row.type or ""))
+      if UIErrorsFrame and UIErrorsFrame.AddMessage then UIErrorsFrame:AddMessage(line, r, g, b, 1.0, 5) end
+      if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00SignalFire Alert:|r " .. string.sub(line, string.len("SignalFire Alert: ") + 1))
+      end
+      sf153_note("fired")
+      if opts.notifySound == true and PlaySoundFile then
+        local path = "Sound\\Interface\\RaidWarning.wav"
+        PlaySoundFile(path)
+        sf153_note("soundsPlayed")
+      end
+      return true, rules, line
+    end
+
+    A.EvaluateCanonical = A.Evaluate
+
+    function A:GetDiagnostics()
+      sf153_migrate()
+      local out = {
+        evaluations = 0,
+        matched = 0,
+        fired = 0,
+        deduped = 0,
+        disabled = 0,
+        intentRejected = 0,
+        roleRejected = 0,
+        xpAuraRejected = 0,
+        typeRejected = 0,
+        activityRejected = 0,
+        difficultyRejected = 0,
+        customMatched = 0,
+        soundsPlayed = 0,
+        cacheSize = tonumber(self.cacheSize or 0) or 0,
+        activeProfile = sf153_profile_id(),
+        currentCooldown = tonumber(sf153_options().publicAlertCooldown or 20) or 20,
+      }
+      for key, value in pairs(self.stats or {}) do out[key] = tonumber(value or 0) or 0 end
+      return out
+    end
+
+    function A:ResetDiagnostics()
+      self.stats = {}
+      self:ResetDedupe()
+      return true
+    end
+
+    function A:InstallFinalOwner()
+      if not B then return false end
+      B.NotifyForPublicGroup = function(_, row)
+        return A:EvaluateCanonical(row)
+      end
+      B._sf153FinalAlertOwner = true
+      return true
+    end
+
+    sf153_migrate()
+    A.activeProfile = sf153_profile_id()
+    A:InstallFinalOwner()
+
+    if not B._sf153ProfileHookInstalled then
+      B._sf153ProfileHookInstalled = true
+      local oldProfileSet = B.SF143_SetServerProfile
+      if type(oldProfileSet) == "function" then
+        B.SF143_SetServerProfile = function(self, ...)
+          local before = sf153_profile_id()
+          local result = oldProfileSet(self, ...)
+          local after = sf153_profile_id()
+          if before ~= after then A:ResetDedupe() end
+          return result
+        end
+      end
+    end
+  until true
+end
+
 -- Server profiles
 do
   repeat
@@ -1400,4 +1922,26 @@ do
       if B and B.SFModulesApply then B:SFModulesApply() end
     end)
   until true
+end
+
+-- The profile API is declared earlier than this final block. Reinstall the
+-- owner after every Runtime wrapper is present and clear semantic ownership on
+-- profile transitions without adding a timer or chat parser.
+do
+  local B = _G.BronzeLFG
+  local A = _G.SignalFirePublicGroupAlerts153
+  if B and A then
+    A:InstallFinalOwner()
+    if not B._sf153ProfileHookInstalledLate and type(B.SF143_SetServerProfile) == "function" then
+      B._sf153ProfileHookInstalledLate = true
+      local oldProfileSet = B.SF143_SetServerProfile
+      B.SF143_SetServerProfile = function(self, ...)
+        local before = A:GetProfileId()
+        local result = oldProfileSet(self, ...)
+        local after = A:GetProfileId()
+        if before ~= after then A:ResetDedupe() end
+        return result
+      end
+    end
+  end
 end
