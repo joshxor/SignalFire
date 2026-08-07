@@ -53,6 +53,7 @@ do
       if BLFG.sfn138FavoriteOptionsPanel then table.insert(panels, BLFG.sfn138FavoriteOptionsPanel) end
       if BLFG.sfamPolishPanel then table.insert(panels, BLFG.sfamPolishPanel) end
       if BLFG.sfe141EventOptionsPanel then table.insert(panels, BLFG.sfe141EventOptionsPanel) end
+      if BLFG.sfe153AlertsRulesPanel then table.insert(panels, BLFG.sfe153AlertsRulesPanel) end
       return panels
     end
 
@@ -95,6 +96,7 @@ do
       local old = button:GetScript("OnClick")
       button:SetScript("OnClick", function(self, ...)
         sfui_hide_subpanels(nil)
+        if BLFG.optionsPanel then BLFG.optionsPanel:Show() end
         if old then old(self, ...) end
         for _, panel in ipairs(sfui_subpanels()) do
           if panel and panel.IsShown and panel:IsShown() then sfui_style_subpanel(panel) end
@@ -8423,10 +8425,6 @@ do
       return panel
     end
 
-    local function sf153_hide_rules()
-      if B.sfe153AlertsRulesPanel and B.sfe153AlertsRulesPanel.Hide then B.sfe153AlertsRulesPanel:Hide() end
-    end
-
     local function sf153_show_rules()
       local panel = sf153_build_rules()
       if not panel then return false end
@@ -8439,17 +8437,6 @@ do
       if B.frame then B.frame:Show() end
       B.currentTab = "Options"
       return true
-    end
-
-    local function sf153_wire_options_navigation(button)
-      if not button or button.sf153RulesNavigationWired then return end
-      button.sf153RulesNavigationWired = true
-      local old = button:GetScript("OnClick")
-      button:SetScript("OnClick", function(self, ...)
-        sf153_hide_rules()
-        if B.optionsPanel then B.optionsPanel:Show() end
-        if old then old(self, ...) end
-      end)
     end
 
     local function sf153_attach_options()
@@ -8466,10 +8453,6 @@ do
         entry:SetScript("OnClick", function() sf153_show_rules() end)
         entry:Show(); entry:Enable(); entry:SetAlpha(1)
       end
-      sf153_wire_options_navigation(B.sfmmOpenButton)
-      sf153_wire_options_navigation(B.sfcpOpenButton)
-      sf153_wire_options_navigation(B.sfn138FavoriteAlertButton)
-      sf153_wire_options_navigation(B.sfamPolishButton)
     end
 
     local oldBuildOptions = B.BuildOptions

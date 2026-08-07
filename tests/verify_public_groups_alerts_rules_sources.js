@@ -103,14 +103,27 @@ need(passDUI, "showSelected", "World Boss mode-aware checkbox visibility");
 need(passDUI, "sf153_activate_rules_controls", "single Rules-page control activation owner");
 forbid(passDUI, "publicFilter =", "Public Groups visible Type filter ownership reused by alerts");
 forbid(passDUI, "publicIntentFilter =", "Public Groups visible Intent filter ownership reused by alerts");
+forbid(passDUI, "sf153_wire_options_navigation", "second Pass D per-button navigation wrapper");
+const sfuiSubpanelsStart = ui.indexOf("local function sfui_subpanels()");
+const sfuiSubpanelsEnd = ui.indexOf("local function sfui_hide_subpanels", sfuiSubpanelsStart);
+const sfuiHeaderStart = ui.indexOf("local function sfui_wire_header_button");
+const sfuiHeaderEnd = ui.indexOf("local function sfui_layout_options_header", sfuiHeaderStart);
+if (sfuiSubpanelsStart < 0 || sfuiSubpanelsEnd < 0 || sfuiHeaderStart < 0 || sfuiHeaderEnd < 0) {
+  throw new Error("Pass D source verification failed: established Options lifecycle boundary");
+}
+const sfuiSubpanels = ui.slice(sfuiSubpanelsStart, sfuiSubpanelsEnd);
+const sfuiHeader = ui.slice(sfuiHeaderStart, sfuiHeaderEnd);
+need(sfuiSubpanels, "BLFG.sfe153AlertsRulesPanel", "central Options subpanel registry includes Rules");
+need(sfuiHeader, "sfui_hide_subpanels(nil)", "central Options navigation hides Rules");
+need(sfuiHeader, "if BLFG.optionsPanel then BLFG.optionsPanel:Show() end", "central Options navigation restores the Options host");
 const buildStart = passDUI.indexOf("local function sf153_build_rules");
 const activateStart = passDUI.indexOf("local function sf153_activate_rules_controls");
 const showStart = passDUI.indexOf("local function sf153_show_rules");
-const navStart = passDUI.indexOf("local function sf153_wire_options_navigation", showStart);
-if (buildStart < 0 || activateStart < 0 || showStart < 0 || navStart < 0) throw new Error("Pass D source verification failed: mutually exclusive UI lifecycle boundary");
+const attachStart = passDUI.indexOf("local function sf153_attach_options", showStart);
+if (buildStart < 0 || activateStart < 0 || showStart < 0 || attachStart < 0) throw new Error("Pass D source verification failed: mutually exclusive UI lifecycle boundary");
 const buildRules = passDUI.slice(buildStart, showStart);
 const activateRules = passDUI.slice(activateStart, buildStart);
-const showRules = passDUI.slice(showStart, navStart);
+const showRules = passDUI.slice(showStart, attachStart);
 need(buildRules, "local host = B.content", "Rules page content owner");
 need(buildRules, 'CreateFrame("Frame", "SignalFireAlertsRules153", host)', "Rules page is a content sibling");
 need(buildRules, "panel:SetAllPoints(host)", "Rules page content geometry");
@@ -118,8 +131,6 @@ for (const field of ["sf153MasterCheck", "sf153SoundCheck", "sf153CooldownDrop",
   need(activateRules, `panel.${field}`, `Rules control activation ${field}`);
 }
 need(activateRules, "control:Show()", "Rules control activation show contract");
-need(passDUI, "sf153_hide_rules()", "navigation-away Rules hide owner");
-need(passDUI, "sf153RulesNavigationWired", "idempotent navigation wiring");
 for (const forbidden of [
   'CreateFrame("Frame", "SignalFireAlertsRules153", B.optionsPanel)',
   "panel:SetAllPoints(B.optionsPanel)",
@@ -178,7 +189,10 @@ need(harness, "normal Options content remained visible under rules", "mutually e
 need(harness, "legacy alert control remained visible on Options", "legacy alert controls regression");
 need(harness, "Selected World Boss mode did not show active-profile boss controls", "selected World Boss UI regression");
 need(harness, "Kaldros duplicate user-facing choice remained", "Kaldros UI grouping regression");
-need(harness, "Rules page remained visible after another Options page opened", "Options page navigation regression");
+need(harness, "local optionNavs", "named Options navigation coverage");
+need(harness, "navName", "navigation-specific failure messages");
+need(harness, "Rules page remained visible after Manage Modules opened", "Modules body navigation regression");
+need(harness, "Rules page remained visible after direct ShowOptions", "direct ShowOptions navigation regression");
 need(harness, "alert evaluation invoked the authoritative parser a second time", "no raw reparse regression");
 
 need(workflow, "verify_public_groups_alerts_rules_sources.js", "Pass D source verifier workflow step");

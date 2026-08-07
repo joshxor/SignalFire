@@ -405,18 +405,38 @@ for key, control in pairs(bossControls) do
   assert(rulesPanel.sf153BossChecks[key] == control, "World Boss control was recreated on same-profile refresh")
 end
 
-for _, nav in ipairs({B.sfmmOpenButton, B.sfcpOpenButton, B.sfn138FavoriteAlertButton, B.sfamPolishButton}) do
+local optionNavs = {
+  {"Modules", B.sfmmOpenButton},
+  {"Chat & Parsing", B.sfcpOpenButton},
+  {"Favorite Alerts", B.sfn138FavoriteAlertButton},
+  {"Polish Settings", B.sfamPolishButton},
+}
+for _, item in ipairs(optionNavs) do
+  local navName, nav = item[1], item[2]
   if nav then
-    local click = assert(nav:GetScript("OnClick"), "Options navigation callback missing")
+    local click = assert(nav:GetScript("OnClick"), "Options navigation callback missing: " .. navName)
     openRules(eventEntry)
+    assert(rulesPanel:IsShown(), "Rules page did not open before " .. navName)
     click(nav)
-    assert(not rulesPanel:IsShown(), "Rules page remained visible after another Options page opened")
-    assert(B.optionsPanel:IsShown(), "Options content remained hidden after another page opened")
+    assert(not rulesPanel:IsShown(), "Rules page remained visible after " .. navName .. " opened")
+    assert(B.optionsPanel:IsShown(), "Options content remained hidden after " .. navName .. " opened")
     openRules(eventEntry)
-    assert(rulesPanel.sf153IntentDrop:IsShown(), "Intent dropdown remained hidden after navigation away and reopen")
-    assertRulesControlsVisible("navigation reopen")
+    assert(rulesPanel == B.sfe153AlertsRulesPanel, "Rules panel changed after " .. navName .. " navigation")
+    assert(rulesPanel.sf153IntentDrop:IsShown(), "Intent dropdown remained hidden after " .. navName .. " navigation")
+    assertRulesControlsVisible("after " .. navName .. " navigation reopen")
   end
 end
+
+if B.sfmmBodyButton then
+  openRules(eventEntry)
+  assert(rulesPanel:IsShown(), "Rules page did not open before Manage Modules")
+  local bodyClick = assert(B.sfmmBodyButton:GetScript("OnClick"), "Manage Modules callback missing")
+  bodyClick(B.sfmmBodyButton)
+  assert(not rulesPanel:IsShown(), "Rules page remained visible after Manage Modules opened")
+  openRules(eventEntry)
+  assertRulesControlsVisible("after Manage Modules navigation reopen")
+end
+
 openRules(eventEntry)
 assertRulesControlsVisible("pre-Back reopen")
 local back = assert(rulesPanel.sf153BackButton, "Rules page Back button was not stored")
@@ -426,6 +446,15 @@ openRules(eventEntry)
 assertRulesControlsVisible("Back reopen")
 assert(B.sfe153AlertsRulesPanel == rulesPanel and rulesPanel.sf153BossChecks == bossRegistry,
   "Rules page or World Boss registry was not reused after navigation")
+
+openRules(eventEntry)
+assert(rulesPanel:IsShown(), "Rules page did not open before direct ShowOptions regression")
+B:ShowOptions()
+assert(not rulesPanel:IsShown(), "Rules page remained visible after direct ShowOptions")
+assert(B.optionsPanel:IsShown(), "normal Options page did not reopen after direct ShowOptions")
+openRules(eventEntry)
+assertRulesControlsVisible("after direct ShowOptions reopen")
+
 B:HidePanels()
 assert(not rulesPanel:IsShown(), "rules panel did not close with Options lifecycle")
 
